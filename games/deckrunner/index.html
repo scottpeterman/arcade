@@ -99,6 +99,9 @@ button:focus-visible{outline:2px solid var(--cyan);outline-offset:2px}
 .card .go{font-family:var(--disp);font-size:15px;letter-spacing:.3em;padding:12px 26px;color:var(--brass-hi);border-color:var(--brass)}
 .card .go:hover{background:rgba(217,164,65,.12)}
 .card .best{float:right;color:var(--brass-dim);font-size:12px;margin-top:14px}
+.look{display:flex;align-items:center;gap:8px;margin:0 0 18px;font-size:12px;letter-spacing:.2em;color:var(--brass-dim)}
+.look button{font-size:12px;letter-spacing:.22em;padding:7px 14px;color:#9c8350;border-color:var(--brass-dim);background:transparent}
+.look button.on{color:var(--brass-hi);border-color:var(--brass);background:rgba(217,164,65,.14)}
 .card .bh{font-size:clamp(24px,4.6vw,40px);letter-spacing:.16em}
 .bname{color:var(--brass);letter-spacing:.3em;font-size:13px;margin:4px 0 18px}
 .intel{grid-template-columns:auto 1fr;border-top:1px solid var(--brass-dim);border-bottom:1px solid var(--brass-dim);padding:10px 0}
@@ -206,9 +209,12 @@ button:focus-visible{outline:2px solid var(--cyan);outline-offset:2px}
       <b>WASD / arrows</b><span>keyboard aim</span>
       <b>P · M · G</b><span>pause · sound · glow</span>
       <b>V · R · B</b><span>solid / vector hull · chunky / fine pixels · world backdrop</span>
+      <b>Stick outboard past the edge</b><span>peel off and come about for another pass</span>
       <b>Touch</b><span>drag to aim, hold to fire</span>
     </div>
     <p style="font-size:13px;color:#9c8350">Below 22 altitude you score double. Linked quad hits hardest when the target sits at your convergence range.</p>
+    <div class="look" role="group" aria-label="Cabinet"><span>CABINET</span>
+      <button id="bSolid" type="button" aria-pressed="true">SOLID</button><button id="bVector" type="button" aria-pressed="false">VECTOR</button></div>
     <button class="go" id="bGo" type="button">LAUNCH</button>
     <span class="best" id="best"></span>
     <details class="clog"><summary id="clogSum">BUILD</summary><div id="clogBody"></div></details>
@@ -332,6 +338,7 @@ const SEG = 50, CW = 20, FAR = 1500, HULL_BOT = -60, NEAR = 2;
 // lower hull: deck edge drops CHINE to a chine line, then slopes in to a keel KW either side of centre
 const KEEL = -58, KW = 24, CHINE = 10, SPON_Y = -24;
 let COLS = 12, HW = 120;   // set per ship by genShip()
+let viewBack = 0;          // extra cull distance behind the camera; FAR while coming about
 const COLORS = { brass:'#d9a441', brassHi:'#ffd98a', cyan:'#6fe3ff', red:'#ff4a3a',
                  green:'#7dffa8', mag:'#ff6ad5', white:'#fff1d6', orange:'#ff9a3a',
                  yellow:'#ffe07a', hot:'#fffaf0' };
@@ -471,7 +478,10 @@ const DART = {
   v: [[0,0,10],[-10,0,-6],[10,0,-6],[0,3,-4],[0,-2,-5],[0,0,-7],[-11,4,-9],[11,4,-9]],
   e: [[0,1],[0,2],[1,5],[2,5],[0,3],[3,5],[0,4],[4,5],[1,3],[2,3],[1,6],[6,3],[2,7],[7,3]]
 };
-function mk() { return { v: [], e: [] }; }
+// Faces for the skinned fighters: [material, i0, i1, ...]. Materials: 0 hull metal, 1 red trim,
+// 2 engine glow (unlit), 3 canopy glass, 4 turret gunmetal.
+function mk() { return { v: [], e: [], f: [] }; }
+function face(m, mat, b, idx) { m.f.push([mat].concat(idx.map(i => b + i))); }
 function add(m, pts, edges) { const b = m.v.length; pts.forEach(p => m.v.push(p)); edges.forEach(([a, c]) => m.e.push([b + a, b + c])); return b; }
 // Lofted crescent wing. sweep > 0 puts the horns forward (reverse crescent), < 0 trails them.
 function wing(m, o) {
@@ -486,7 +496,10 @@ function wing(m, o) {
     const t = (o.thick || 1) * Math.sqrt(Math.max(0, 1 - s * s)) + 0.12;
     const ring = (i === 0 || i === N - 1 || i % 2 === 0) ? [[0,1],[1,2],[2,3],[3,0]] : [];
     const b = add(m, [[x, y, zL], [x, y + t, zm], [x, y, zT], [x, y - t * 0.55, zm]], ring);
-    if (prev.length) for (let k = 0; k < 4; k++) m.e.push([prev[prev.length - 1] + k, b + k]);
+    if (prev.length) {
+      const a = prev[prev.length - 1];
+      for (let k = 0; k < 4; k++) { m.e.push([a + k, b + k]); m.f.push([1, a + k, a + (k + 1) % 4, b + (k + 1) % 4, b + k]); }
+    }
     prev.push(b);
   }
   return prev;
@@ -495,6 +508,8 @@ function pod(m, o) {       // faceted fuselage: nose, tail, 4-point waist, optio
   const { zf, zb, zm, w, h, y = 0 } = o;
   const b = add(m, [[0, y, zf], [0, y, zb], [-w, y, zm], [w, y, zm], [0, y + h, zm], [0, y - h * 0.7, zm]],
     [[0,2],[0,3],[0,4],[0,5],[1,2],[1,3],[1,4],[1,5],[2,4],[4,3],[3,5],[5,2]]);
+  for (const t of [[0,2,4],[0,4,3],[0,3,5],[0,5,2],[1,4,2],[1,3,4],[1,5,3],[1,2,5]]) face(m, 0, b, t);
+  if (o.canopy) { const c = m.v.length; face(m, 3, c, [0,2,1]); face(m, 3, c, [0,1,3]); }
   if (o.canopy) add(m, [[0, y + h, zm], [0, y + h * 0.8, zm + (zf - zm) * 0.55], [-w * 0.45, y + h * 0.55, zm + (zf - zm) * 0.3], [w * 0.45, y + h * 0.55, zm + (zf - zm) * 0.3]],
     [[0,1],[1,2],[1,3],[2,0],[3,0]]);
   return b;
@@ -504,7 +519,10 @@ function nacelle(m, x, y, z0, z1, r) {   // small hex engine can
   for (let k = 0; k < 6; k++) { const a = k * Math.PI / 3; pts.push([x + Math.cos(a) * r, y + Math.sin(a) * r, z0]); }
   for (let k = 0; k < 6; k++) { const a = k * Math.PI / 3; pts.push([x + Math.cos(a) * r * 0.8, y + Math.sin(a) * r * 0.8, z1]); }
   for (let k = 0; k < 6; k++) { e.push([k, (k + 1) % 6]); e.push([6 + k, 6 + (k + 1) % 6]); if (k % 2 === 0) e.push([k, 6 + k]); }
-  add(m, pts, e);
+  const b = add(m, pts, e);
+  for (let k = 0; k < 6; k++) face(m, 0, b, [k, (k + 1) % 6, 6 + (k + 1) % 6, 6 + k]);
+  face(m, 0, b, [0, 1, 2, 3, 4, 5]);
+  face(m, 2, b, [6, 7, 8, 9, 10, 11]);
 }
 const HARROW = (() => {     // light fighter: gull-winged reverse crescent (design C from the viewer)
   const m = mk();
@@ -524,7 +542,13 @@ const WARDEN = (() => {
   const p = v.length;
   v.push([3,0,0],[-3,0,0],[6,0,5],[5,0,14],[-6,0,5],[-5,0,14]);
   e.push([0, p], [3, p + 1], [p + 2, p + 3], [p + 4, p + 5]);
-  return { v, e };
+  // faces: the ring as a flat annulus (inner vertices are face-only), the body box with a glowing tail
+  const f = [], ri = v.length;
+  for (let k = 0; k < 6; k++) { const a = k * Math.PI / 3; v.push([Math.cos(a)*8.6, 0, Math.sin(a)*8.6]); }
+  for (let k = 0; k < 6; k++) f.push([1, k, (k + 1) % 6, ri + (k + 1) % 6, ri + k]);
+  for (const [mat, q] of [[2,[0,1,2,3]],[0,[4,5,6,7]],[0,[0,1,5,4]],[0,[3,2,6,7]],[0,[0,3,7,4]],[0,[1,2,6,5]]])
+    f.push([mat].concat(q.map(i => b + i)));
+  return { v, e, f };
 })();
 
 // ---------------------------------------------------------------- ship generation
@@ -824,9 +848,9 @@ function surfaceAt(x, z) {
 }
 
 // ---------------------------------------------------------------- state
-const game = { state:'title', wave:1, score:0, speed:180, spawnT:1, time:0, mult:1, lockMsgT:0,
+const game = { state:'title', turn:null, peelT:0, wave:1, score:0, speed:180, spawnT:1, time:0, mult:1, lockMsgT:0,
                clearT:-1, dieT:0, msgT:0, msg2T:0, best:0, flicker:1 };
-const P = { vx:0, vy:0, shield:8, max:8, bc:1, bflash:0, regenT:0, heat:0, overheat:false, mode:'ALT', alt:0, conv:320, fireT:0, hitCD:0, flash:0 };
+const P = { wv:[0, 0, 0], vx:0, vy:0, shield:8, max:8, bc:1, bflash:0, regenT:0, heat:0, overheat:false, mode:'ALT', alt:0, conv:320, fireT:0, hitCD:0, flash:0 };
 const aim = { x: 0, y: 0 };
 let firing = false, kbAim = false;
 const keys = {};
@@ -1225,7 +1249,7 @@ function crash(n) {
   damage(n);
 }
 function die() {
-  game.state = 'dying'; game.dieT = 0;
+  game.state = 'dying'; game.dieT = 0; game.turn = null;
   for (let i = 0; i < 6; i++) burst(cam.x + rand(-8,8), cam.y + rand(-6,6), cam.z + rand(10,30), i % 2 ? 'white' : 'orange', rand(14,26), 18, 1.4);
   sndBoom(1.3, cam.x, cam.y, cam.z + 10); setHum(0);
   $('warn').classList.remove('on');
@@ -1300,7 +1324,7 @@ function fire() {
     const z = cam.z + r[2]*ox + u[2]*oy + f[2]*oz;
     let vx = cpx - x, vy = cpy - y, vz = cpz - z;
     const l = Math.hypot(vx, vy, vz) || 1;
-    bolts.push({ x, y, z, px:x, py:y, pz:z, vx: vx/l*S, vy: vy/l*S, vz: vz/l*S + game.speed, life: 1.0, dmg, alive:true });
+    bolts.push({ x, y, z, px:x, py:y, pz:z, vx: vx/l*S + P.wv[0], vy: vy/l*S + P.wv[1], vz: vz/l*S + P.wv[2], life: 1.0, dmg, alive:true });
   }
   P.heat += link ? 9.5 : 3;
   if (P.heat >= 100) { P.heat = 100; P.overheat = true; showMsg2('GUNS OVERHEATED', 'red', 1.2); sfx('overheat'); }
@@ -1383,6 +1407,12 @@ function updatePlayer(dt) {
     P.vx *= -0.3;
   }
   cam.x = nx;
+  // hold the stick outboard past the hull edge to peel off and come about
+  if (ship && ship.kind === 'line' && !ship.dying && Math.abs(nx) >= HW + 24 && cam.y > 8 &&
+      Math.sign(ax) === Math.sign(nx) && Math.abs(ax) > 0.55) {
+    game.peelT += dt;
+    if (game.peelT > 0.3) { startComeAbout(Math.sign(nx)); return; }
+  } else game.peelT = 0;
   cam.y = clamp(cam.y + P.vy*dt, -36, 170);
   cam.z += game.speed*dt;
 
@@ -1411,7 +1441,11 @@ function updatePlayer(dt) {
   cam.yaw = P.vx * 0.0016;
   cam.pitch = P.vy * 0.0016;
   cam.roll = -P.vx * 0.0045;
-
+  P.wv[0] = 0; P.wv[1] = 0; P.wv[2] = game.speed;
+  updateGuns(dt);
+}
+// guns, heat, burst charge and shield regen: shared by normal flight and the come-about
+function updateGuns(dt) {
   if (feat('regen') && P.shield < P.max) {
     P.regenT += dt;
     if (P.regenT >= BAL.regenDelay) { P.shield++; P.regenT = 0; sfx('chime', { rate: 1.5, vol: 0.35 }); }
@@ -1479,8 +1513,14 @@ function unitRand() { const a = rand(-1, 1), b = rand(-1, 1), c = rand(-1, 1), l
 function enemyShoot(x, y, z) {
   const s = ship ? ship.cfg.boltSpd : 230;
   const dx = cam.x - x, dy = cam.y - y, dz = cam.z - z, dist = Math.hypot(dx, dy, dz);
-  const t = dist / (s + game.speed);
-  const tx = cam.x + P.vx*t*0.6 + rand(-6, 6), ty = cam.y + P.vy*t*0.4 + rand(-4, 4), tz = cam.z + game.speed*t;
+  let tx, ty, tz;
+  if (game.turn) {                                  // coming about: lead along the ship's real path
+    const t = dist / s;
+    tx = cam.x + P.wv[0]*t*0.85 + rand(-6, 6); ty = cam.y + P.wv[1]*t*0.85 + rand(-4, 4); tz = cam.z + P.wv[2]*t*0.85;
+  } else {
+    const t = dist / (s + game.speed);
+    tx = cam.x + P.vx*t*0.6 + rand(-6, 6); ty = cam.y + P.vy*t*0.4 + rand(-4, 4); tz = cam.z + game.speed*t;
+  }
   let vx = tx - x, vy = ty - y, vz = tz - z;
   const l = Math.hypot(vx, vy, vz) || 1;
   const dirs = [], spk = [];
@@ -1559,7 +1599,7 @@ function updateEnemies(dt) {
 
 // ---------------------------------------------------------------- waves
 function startWave(n) {
-  game.wave = n;
+  game.wave = n; game.turn = null; game.peelT = 0; viewBack = 0;
   ship = genShip(n);
   game.speed = ship.cfg.speed;
   cam.x = 0; cam.y = 60; cam.z = -520; P.vx = P.vy = 0;
@@ -1690,6 +1730,8 @@ function updateShip(dt) {
     }
     return;
   }
+  if (game.turn) return;
+  if (cam.z > ship.len + 60 && ship.reactor.alive && ship.kind === 'line') { startComeAbout(cam.x >= 0 ? 1 : -1); return; }
   if (cam.z > ship.len + 60 && ship.reactor.alive) {
     cam.z = -380; cam.y = 60; cam.x = 0;
     fighters.length = 0; ebolts.length = 0; bolts.length = 0;
@@ -1700,6 +1742,74 @@ function updateShip(dt) {
                ship.gensAlive > 0 ? 'green' : 'mag', 2.6);
     } else
     showMsg2(ship.gensAlive > 0 ? ship.gensAlive + ' GENERATORS STILL UP' : 'REACTOR EXPOSED · RUN THE TRENCH', ship.gensAlive > 0 ? 'green' : 'mag', 2.4);
+  }
+}
+
+// ---------------------------------------------------------------- coming about
+// Peel off the side (hold the stick outboard past the hull edge) or clear the stern, and the
+// ship flies a racetrack: a banked half-turn out to a lane beside the hull, a fast run back
+// along the hull toward the bow, and a second banked half-turn in to line up for the next pass.
+// The guns stay live through the turn, and turrets inside the forward view fire back (never
+// from behind). Holding the stick hard into the turn on the run back cuts the loop short: the
+// ship banks straight back in over that stretch of hull. Otherwise the ship flies itself; the
+// hull keeps all its damage. Positions are
+// computed from the path at the ship's flight speed, so the hull goes by at the pace it
+// does on a pass.
+function startComeAbout(sgn) {
+  const x0 = cam.x, y0 = cam.y, z0 = cam.z, lane = sgn * (HW + 150);
+  const r1 = Math.abs(lane - x0) / 2, r2 = Math.abs(lane) / 2, zb = Math.min(-380, z0 - 300);
+  const vA = game.speed, B = z0 - zb, tB = B / vA;               // the whole loop at flight speed
+  game.turn = { sgn, x0, y0, z0, lane, r1, r2, zb, B, vA, t: 0,
+                tA: Math.PI * r1 / vA, tB, tC: Math.PI * r2 / vA };
+  viewBack = FAR;
+  fighters.length = 0; ebolts.length = 0;
+  P.vx = P.vy = 0; game.peelT = 0;
+  showMsg('COMING ABOUT', 'brassHi', 2.4); sfx('flyby', { vol: 1.2 });
+}
+function updateTurn(dt) {
+  const T = game.turn, sgn = T.sgn, ease = u => u * u * (3 - 2 * u);
+  T.t += dt;
+  let t = T.t, x, y, z, yaw, roll = 0, pitch = -0.06;
+  if (t < T.tA) {                                            // out: half-turn to the lane
+    const u = t / T.tA, th = Math.PI * u;
+    x = T.x0 + sgn * T.r1 * (1 - Math.cos(th)); z = T.z0 + T.r1 * Math.sin(th);
+    y = T.y0 + (-12 - T.y0) * ease(u);                     // drop below the deck edge to see the side
+    yaw = sgn * th; roll = -sgn * 0.85 * Math.sin(th);
+  } else if ((t -= T.tA) < T.tB) {                           // back along the hull, looking in at it
+    // keep the stick into the turn and the ship keeps banking: it turns in here, over this
+    // part of the hull, instead of running on to the bow
+    const ax = clamp((aim.x - W/2) / (W/2), -1, 1);
+    T.push = ax * sgn > 0.85 ? (T.push || 0) + dt : 0;
+    if (t > 0.25 && T.push > 0.3 && T.z0 - T.vA * t < ship.len - 200) { T.tB = t; T.zb = T.z0 - T.vA * t; }
+    const u = Math.min(1, t / T.tB);
+    x = T.lane; z = T.z0 - T.vA * t; y = -12;
+    yaw = sgn * (Math.PI + 0.55 * Math.sin(Math.PI * u)); pitch = 0.02;
+  } else if ((t -= T.tB) < T.tC) {                           // in: half-turn onto the centreline
+    const u = t / T.tC, ph = Math.PI * u;
+    x = T.lane / 2 + sgn * T.r2 * Math.cos(ph); z = T.zb - T.r2 * Math.sin(ph);
+    y = -12 + 72 * ease(u);
+    yaw = sgn * (Math.PI + ph + 0.45 * Math.sin(ph)); roll = -sgn * 0.85 * Math.sin(ph);   // look into the turn at the bow
+  } else {                                                   // lined up: hand back the stick
+    game.turn = null; viewBack = 0;
+    cam.x = 0; cam.y = 60; cam.z = T.zb; cam.yaw = 0; cam.pitch = 0; cam.roll = 0;
+    aim.x = W/2; aim.y = H/2; game.spawnT = 1.5;
+    showMsg2(ship.gensAlive > 0 ? ship.gensAlive + ' GENERATORS STILL UP' : 'REACTOR EXPOSED · RUN THE TRENCH',
+             ship.gensAlive > 0 ? 'green' : 'mag', 2.4);
+    return;
+  }
+  if (dt > 0) { P.wv[0] = (x - cam.x) / dt; P.wv[1] = (y - cam.y) / dt; P.wv[2] = (z - cam.z) / dt; }
+  cam.x = x; cam.y = y; cam.z = z; cam.yaw = yaw; cam.pitch = pitch; cam.roll = roll;
+  updateBasis();                                             // guns aim from this frame's view
+  updateGuns(dt);
+  // turrets you can see can see you: only guns inside the forward view open fire, so nothing
+  // shoots you in the back while the ship swings round
+  const cfg = ship.cfg, f = cam.f, cosV = Math.cos(0.75);
+  for (const tu of ship.turrets) {
+    if (!tu.alive) continue;
+    const vx = tu.x - cam.x, vy = tu.by + 6 - cam.y, vz = tu.z - cam.z, d = Math.hypot(vx, vy, vz);
+    if (d < 120 || d > 650 || (vx*f[0] + vy*f[1] + vz*f[2]) / d < cosV) continue;
+    tu.fireT -= dt;
+    if (tu.fireT <= 0) { enemyShoot(tu.x, tu.by + 6, tu.z); tu.fireT = rand(2.2, 4.2) / cfg.fireMul; }
   }
 }
 
@@ -1823,7 +1933,7 @@ function drawHull() {
   const kz0 = Hl.rb, kz1 = L - Hl.rs;
   // x and y of the lower-hull chine-to-keel edge (bow or stern rake) at depth z, else null
   const rake = (z, zA, zB) => zB > zA ? (z - zA) / (zB - zA) : 1;
-  const s0 = Math.max(0, Math.floor((cam.z - 10) / SEG)), s1 = Math.min(ship.segs - 1, Math.floor((cam.z + FAR) / SEG));
+  const s0 = Math.max(0, Math.floor((cam.z - 10 - viewBack) / SEG)), s1 = Math.min(ship.segs - 1, Math.floor((cam.z + FAR) / SEG));
   for (let s = s0; s <= s1; s++) {
     const z0 = s*SEG, z1 = z0 + SEG, h = ship.h[s], hp = s > 0 ? ship.h[s - 1] : null;
     for (let b = 0; b <= COLS; b++) {
@@ -1880,16 +1990,17 @@ function drawObjs() {
   const hb = game.flicker, T = game.time;
   for (const o of ship.objs) {
     const dz = o.z - cam.z;
-    if (dz < -40 || dz > FAR) continue;
+    if (dz < -40 - viewBack || dz > FAR) continue;
     switch (o.type) {
       case 'tur':
         if (o.alive) {
-          box(o.x - 4, o.by, o.z - 4, o.x + 4, o.by + 3, o.z + 4, 'red', 0.85*hb);
-          hring(o.x, o.by + 3, o.z, 3.2, 6, 'red', 0.85*hb);
+          const ob = zTest ? 0.6 : 1;
+          box(o.x - 4, o.by, o.z - 4, o.x + 4, o.by + 3, o.z + 4, 'red', 0.85*hb*ob);
+          hring(o.x, o.by + 3, o.z, 3.2, 6, 'red', 0.85*hb*ob);
           const a = Math.atan2(cam.x - o.x, cam.z - o.z), sa = Math.sin(a), ca = Math.cos(a);
           for (const s of [-1.4, 1.4]) {
             const bx = o.x + ca*s, bz = o.z - sa*s;
-            L3(bx, o.by + 5, bz, bx + sa*9, o.by + 7.5, bz + ca*9, 'red', hb);
+            L3(bx, o.by + 5, bz, bx + sa*9, o.by + 7.5, bz + ca*9, 'red', hb*ob);
           }
         } else {
           L3(o.x - 5, o.by + 0.3, o.z - 5, o.x + 5, o.by + 0.3, o.z + 5, 'brass', 0.35*hb);
@@ -2033,7 +2144,7 @@ function drawGlows() {
   ctx.globalCompositeOperation = 'source-over';
 }
 function drawActors() {
-  for (const f of fighters) drawModel(f.model, f.x, f.y, f.z, Math.PI, f.bank, 1.2, 'red', 1);
+  for (const f of fighters) drawModel(f.model, f.x, f.y, f.z, Math.PI, f.bank, 1.2, 'red', zTest ? 0.7 : 1);
   const T = game.time;
   for (const e of ebolts) drawPlasma(e, T);
   for (const b of bolts) {
@@ -2779,6 +2890,166 @@ function drawPoly(p, G) {
     }
   }
 }
+// ---- skinned actors
+// Fighters and turrets are flat-shaded facets rasterized into the hull's z-buffer after the hull,
+// so the hull hides them and they hide what's behind them. Their red vector edges are drawn
+// afterwards, depth-tested, at reduced brightness: a lit solid body that still reads as enemy.
+// Each actor samples the hull shadow map once, so fighters darken passing through block shadows.
+const MATS = [[0.30, 0.31, 0.35], [0.46, 0.11, 0.08], [1.00, 0.45, 0.20], [0.10, 0.17, 0.26], [0.24, 0.25, 0.27]];
+const FA = new Float64Array(96), FB = new Float64Array(96), FP = new Float64Array(96), FW = new Float64Array(96);
+function fillFlat(P, n, r, g, b) {
+  let anyNear = false, anyFront = false;
+  for (let i = 0; i < n; i++) {
+    toCam(P[i*3], P[i*3+1], P[i*3+2], XF);
+    FA[i*3] = XF[0]; FA[i*3+1] = XF[1]; FA[i*3+2] = XF[2];
+    if (XF[2] >= NEAR) anyNear = true;
+    if (XF[2] < FAR) anyFront = true;
+  }
+  if (!anyNear || !anyFront) return;
+  let m = 0;
+  for (let i = 0; i < n; i++) {
+    const a = i*3, c = ((i + 1) % n)*3, za = FA[a+2], zc = FA[c+2], ina = za >= NEAR, inc = zc >= NEAR;
+    if (ina) { FB[m*3] = FA[a]; FB[m*3+1] = FA[a+1]; FB[m*3+2] = za; m++; }
+    if (ina !== inc) { const t = (NEAR - za) / (zc - za); FB[m*3] = FA[a] + (FA[c] - FA[a])*t; FB[m*3+1] = FA[a+1] + (FA[c+1] - FA[a+1])*t; FB[m*3+2] = NEAR; m++; }
+  }
+  if (m < 3) return;
+  let xmin = 1e9, xmax = -1e9, ymin = 1e9, ymax = -1e9;
+  for (let i = 0; i < m; i++) {
+    const o = i*3, iz = 1 / FB[o+2], sx = rcx + FB[o]*iz*rFx, sy = rcy - FB[o+1]*iz*rFy;
+    FP[o] = sx; FP[o+1] = sy; FP[o+2] = iz;
+    if (sx < xmin) xmin = sx; if (sx > xmax) xmax = sx; if (sy < ymin) ymin = sy; if (sy > ymax) ymax = sy;
+  }
+  const RW = RB.w, RH = RB.h;
+  if (xmax < 0 || xmin > RW || ymax < 0 || ymin > RH) return;
+  const px = RB.px, zbuf = RB.zb;
+  const y0 = Math.max(0, Math.ceil(ymin - 0.5)), y1 = Math.min(RH, Math.ceil(ymax - 0.5));
+  for (let y = y0; y < y1; y++) {
+    const yc = y + 0.5;
+    let xl = 1e9, xr = -1e9, lz = 0, rz = 0;
+    for (let i = 0, j = m - 1; i < m; j = i++) {
+      const oi = i*3, oj = j*3, yi = FP[oi+1], yj = FP[oj+1];
+      if ((yi <= yc && yc < yj) || (yj <= yc && yc < yi)) {
+        const t = (yc - yi) / (yj - yi), x = FP[oi] + t*(FP[oj] - FP[oi]), iz = FP[oi+2] + t*(FP[oj+2] - FP[oi+2]);
+        if (x < xl) { xl = x; lz = iz; }
+        if (x > xr) { xr = x; rz = iz; }
+      }
+    }
+    if (xr <= xl) continue;
+    const x0 = Math.max(0, Math.ceil(xl - 0.5)), x1 = Math.min(RW, Math.ceil(xr - 0.5));
+    if (x1 <= x0) continue;
+    const dz = (rz - lz) / (xr - xl);
+    let iz = lz + dz*(x0 + 0.5 - xl);
+    const row = y*RW;
+    for (let x = x0; x < x1; x++, iz += dz) {
+      const z = 1 / iz, zi = row + x;
+      if (z < zbuf[zi] && z < FAR) {
+        zbuf[zi] = z;
+        const fg = FOG[(z*FOGK) | 0], rr = r*fg, gg = g*fg, bb = b*fg;
+        px[zi] = 0xff000000 | ((bb > 255 ? 255 : bb) << 16) | ((gg > 255 ? 255 : gg) << 8) | (rr > 255 ? 255 : rr);
+      }
+    }
+  }
+}
+// shade one facet (world-space verts in P) and fill it; the normal is flipped to face the camera,
+// so winding doesn't matter and open sheets (wings, the ring) light from either side
+function shadeFace(P, n, mat, shade) {
+  let nx = 0, ny = 0, nz = 0, cx = 0, cy = 0, cz = 0;
+  for (let i = 0; i < n; i++) {
+    const a = i*3, b = ((i + 1) % n)*3;
+    nx += (P[a+1] - P[b+1])*(P[a+2] + P[b+2]); ny += (P[a+2] - P[b+2])*(P[a] + P[b]); nz += (P[a] - P[b])*(P[a+1] + P[b+1]);
+    cx += P[a]; cy += P[a+1]; cz += P[a+2];
+  }
+  const l = Math.hypot(nx, ny, nz);
+  if (l < 1e-9) return;
+  nx /= l; ny /= l; nz /= l;
+  if (nx*(cx/n - cam.x) + ny*(cy/n - cam.y) + nz*(cz/n - cam.z) > 0) { nx = -nx; ny = -ny; nz = -nz; }
+  const c = MATS[mat];
+  let r, g, b;
+  if (mat === 2) { r = c[0]*255*rFlick; g = c[1]*255*rFlick; b = c[2]*255*rFlick; }
+  else {
+    let lam = nx*SUNL[0] + ny*SUNL[1] + nz*SUNL[2];
+    lam = (lam > 0 ? lam : 0)*shade;
+    const hv = mat === 3 ? Math.pow(Math.max(0, lam), 6)*0.9 : 0;          // canopy glint
+    r = (c[0]*(AMB[0]*1.6 + SUNC[0]*lam) + hv)*255*rFlick;
+    g = (c[1]*(AMB[1]*1.6 + SUNC[1]*lam) + hv)*255*rFlick;
+    b = (c[2]*(AMB[2]*1.6 + SUNC[2]*lam) + hv)*255*rFlick;
+  }
+  fillFlat(P, n, r, g, b);
+}
+// 0..1 sunlight at a world point from the hull shadow map
+function sunAt(G, x, y, z) {
+  let gx = x, gz = z;
+  if (rDisc) { const pz = rZc - z; gx = x*rRs + pz*rRc; gz = x*rRc - pz*rRs; }
+  gx = (gx - G.x0) / G.res; gz = (gz - G.z0) / G.res;
+  if (gx < 0 || gz < 0 || gx >= G.w - 1 || gz >= G.h - 1) return 1;
+  const S = G.S[(gz | 0)*G.w + (gx | 0)];
+  const lit = (y - S)*0.45 + 0.5;
+  return lit < 0 ? 0 : lit > 1 ? 1 : lit;
+}
+function rasterFighter(f, G) {
+  const m = f.model, sc = 1.2, cyw = Math.cos(Math.PI), syw = Math.sin(Math.PI), cr = Math.cos(f.bank), sr = Math.sin(f.bank);
+  const V = m.wv || (m.wv = new Float64Array(m.v.length*3));
+  for (let i = 0; i < m.v.length; i++) {
+    const [x, y, z] = m.v[i], x1 = x*cr - y*sr, y1 = x*sr + y*cr;
+    V[i*3] = f.x + (x1*cyw + z*syw)*sc; V[i*3+1] = f.y + y1*sc; V[i*3+2] = f.z + (-x1*syw + z*cyw)*sc;
+  }
+  const shade = sunAt(G, f.x, f.y, f.z);
+  for (const fc of m.f) {
+    const n = fc.length - 1;
+    for (let k = 0; k < n; k++) { const o = fc[k + 1]*3; FW[k*3] = V[o]; FW[k*3+1] = V[o+1]; FW[k*3+2] = V[o+2]; }
+    shadeFace(FW, n, fc[0], shade);
+  }
+}
+function quadW(a, b, c, d, mat, shade) {
+  FW[0] = a[0]; FW[1] = a[1]; FW[2] = a[2]; FW[3] = b[0]; FW[4] = b[1]; FW[5] = b[2];
+  FW[6] = c[0]; FW[7] = c[1]; FW[8] = c[2]; FW[9] = d[0]; FW[10] = d[1]; FW[11] = d[2];
+  shadeFace(FW, 4, mat, shade);
+}
+function rasterTurret(o, G) {
+  const x = o.x, y = o.by, z = o.z, shade = sunAt(G, x, y + 4, z);
+  // base: a low armoured box
+  const x0 = x - 4, x1 = x + 4, z0 = z - 4, z1 = z + 4, y1 = y + 3;
+  quadW([x0, y, z0], [x1, y, z0], [x1, y1, z0], [x0, y1, z0], 4, shade);
+  quadW([x0, y, z1], [x1, y, z1], [x1, y1, z1], [x0, y1, z1], 4, shade);
+  quadW([x0, y, z0], [x0, y, z1], [x0, y1, z1], [x0, y1, z0], 4, shade);
+  quadW([x1, y, z0], [x1, y, z1], [x1, y1, z1], [x1, y1, z0], 4, shade);
+  quadW([x0, y1, z0], [x1, y1, z0], [x1, y1, z1], [x0, y1, z1], 4, shade);
+  // turret: a hex frustum turned toward the player
+  const a = Math.atan2(cam.x - x, cam.z - z), sa = Math.sin(a), ca = Math.cos(a);
+  const ring = (r, yy) => { const out = []; for (let k = 0; k < 6; k++) { const t = a + k*Math.PI/3 + Math.PI/6; out.push([x + Math.sin(t)*r, yy, z + Math.cos(t)*r]); } return out; };
+  const lo = ring(3.4, y1), hi = ring(2.5, y + 5.6);
+  for (let k = 0; k < 6; k++) quadW(lo[k], lo[(k + 1) % 6], hi[(k + 1) % 6], hi[k], 1, shade);
+  for (let k = 0; k < 6; k++) { FW[k*3] = hi[k][0]; FW[k*3+1] = hi[k][1]; FW[k*3+2] = hi[k][2]; }
+  shadeFace(FW, 6, 1, shade);
+  // twin barrels along the same lines the vector turret draws
+  const w = 0.6;
+  for (const s of [-1.4, 1.4]) {
+    const bx = x + ca*s, bz = z - sa*s, p0 = [bx, y + 5, bz], p1 = [bx + sa*9, y + 7.5, bz + ca*9];
+    let dx = p1[0] - p0[0], dy = p1[1] - p0[1], dz = p1[2] - p0[2];
+    const L = Math.hypot(dx, dy, dz); dx /= L; dy /= L; dz /= L;
+    const sx = ca, sz = -sa;                                           // horizontal side vector
+    const ux = dy*sz, uy = dz*sx - dx*sz, uz = -dy*sx;                 // up = d x side
+    const ul = Math.hypot(ux, uy, uz) || 1;
+    const S = [sx*w, 0, sz*w], U = [ux/ul*w, uy/ul*w, uz/ul*w];
+    const c = (p, i, j) => [p[0] + S[0]*i + U[0]*j, p[1] + S[1]*i + U[1]*j, p[2] + S[2]*i + U[2]*j];
+    const corners = [[1, 1], [-1, 1], [-1, -1], [1, -1]];
+    for (let k = 0; k < 4; k++) {
+      const [i0, j0] = corners[k], [i1, j1] = corners[(k + 1) % 4];
+      quadW(c(p0, i0, j0), c(p0, i1, j1), c(p1, i1, j1), c(p1, i0, j0), 0, shade);
+    }
+    quadW(c(p1, 1, 1), c(p1, -1, 1), c(p1, -1, -1), c(p1, 1, -1), 4, shade);
+  }
+}
+function rasterActors(G) {
+  if (!ship) return;
+  for (const o of ship.turrets) {
+    if (!o.alive) continue;
+    const dz = o.z - cam.z;
+    if (dz < -40 - viewBack || dz > FAR) continue;
+    rasterTurret(o, G);
+  }
+  for (const f of fighters) if (f.alive && f.model.f) rasterFighter(f, G);
+}
 const VIS = [];
 function rasterShip() {
   const S = ship;
@@ -2816,13 +3087,14 @@ function rasterShip() {
   };
   if (rDisc) { for (const p of sol.polys) consider(p); }
   else {
-    const zlo = cam.z - 60, zhi = cam.z + FAR;
+    const zlo = cam.z - 60 - viewBack, zhi = cam.z + FAR;
     for (const p of sol.polys) { if (p.zmin > zhi) break; if (p.zmax >= zlo) consider(p); }
   }
   for (const t of sol.towers) for (const p of (t.alive ? t.geoA : t.geoD)) consider(p);
   VIS.sort((a, b) => a.key - b.key);
   for (const p of VIS) drawPoly(p, G);
   fighterShadows(B, G);
+  rasterActors(G);
   B.g.putImageData(B.img, 0, 0);
   const sm = ctx.imageSmoothingEnabled;
   ctx.imageSmoothingEnabled = false;
@@ -2916,13 +3188,15 @@ function update(rdt) {
   if (game.state === 'brief') { briefFly(dt); updateFx(dt); updateHUD(); return; }
   if (game.state === 'dying') {
     game.dieT += dt;
-    cam.z += game.speed*dt*Math.max(0, 1 - game.dieT);
+    const k = dt*Math.max(0, 1 - game.dieT);
+    cam.x += P.wv[0]*k; cam.y += P.wv[1]*k; cam.z += P.wv[2]*k;
     cam.roll += dt*2.2; cam.pitch -= dt*0.4;
     P.flash = Math.max(0, 1 - game.dieT*0.6);
     updateBolts(dt); updateEnemies(dt); updateFx(dt);
     if (game.dieT > 2.2) gameOver();
     return;
   }
+  if (game.turn) { updateAim(rdt); updateTurn(dt); updateBolts(dt); updateShip(dt); updateFx(dt); updateHUD(); return; }
   updateAim(rdt);
   updatePlayer(dt);
   updateBolts(dt);
@@ -3044,6 +3318,16 @@ function setConv(v) { P.conv = clamp(Math.round(v / 10)*10, 150, 700); }
 
 // ---------------------------------------------------------------- input
 $('bGo').addEventListener('click', launch);
+// cabinet choice on the title card: textured solid hull, or the pure vector cabinet
+function setSolid(v) {
+  solid = v;
+  try { localStorage.setItem('deckrunner_solid', solid ? '1' : '0'); } catch (err) {}
+  const a = $('bSolid'), b = $('bVector');
+  if (a && b) { a.classList.toggle('on', solid); b.classList.toggle('on', !solid); a.setAttribute('aria-pressed', solid); b.setAttribute('aria-pressed', !solid); }
+}
+$('bSolid').addEventListener('click', e => { e.stopPropagation(); setSolid(true); });
+$('bVector').addEventListener('click', e => { e.stopPropagation(); setSolid(false); });
+setSolid(solid);
 $('best').textContent = game.best ? 'BEST ' + String(game.best).padStart(7, '0') : '';
 $('bMode').addEventListener('click', e => { e.stopPropagation(); toggleMode(); });
 $('bSnd').addEventListener('click', e => { e.stopPropagation(); toggleSnd(); });
@@ -3088,7 +3372,7 @@ window.addEventListener('keydown', e => {
   if (e.code === 'KeyM') toggleSnd();
   if (e.code === 'KeyG') glow = !glow;
   if (e.code === 'KeyB') { worldOn = !worldOn; try { localStorage.setItem('deckrunner_world', worldOn ? '1' : '0'); } catch (err) {} showMsg2(worldOn ? 'WORLD ON' : 'WORLD OFF', 'cyan', 1.2); }
-  if (e.code === 'KeyV') { solid = !solid; try { localStorage.setItem('deckrunner_solid', solid ? '1' : '0'); } catch (err) {} showMsg2(solid ? 'SOLID HULL' : 'VECTOR HULL', 'cyan', 1.2); }
+  if (e.code === 'KeyV') { setSolid(!solid); showMsg2(solid ? 'SOLID HULL' : 'VECTOR HULL', 'cyan', 1.2); }
   if (e.code === 'KeyR') { fine = !fine; showMsg2(fine ? 'FINE PIXELS' : 'CHUNKY PIXELS', 'cyan', 1.2); }
   if ((e.code === 'KeyP' || e.code === 'Escape') && (game.state === 'play' || game.state === 'paused')) togglePause();
   if (e.code === 'BracketLeft') setConv(P.conv - 20);
@@ -3100,7 +3384,7 @@ window.addEventListener('keyup', e => { keys[e.code] = false; if (e.code === 'Sp
 window.addEventListener('blur', () => { firing = false; for (const k in keys) keys[k] = false; });
 
 aim.x = W/2; aim.y = H/2;
-try { if (new URLSearchParams(location.search).has('debug')) window.DR = { cam, game, P, fighters, get ship() { return ship; }, setSolid(v) { solid = v; }, setFine(v) { fine = v; } }; } catch (e) {}
+try { if (new URLSearchParams(location.search).has('debug')) window.DR = { cam, game, P, fighters, ebolts, get ship() { return ship; }, setSolid(v) { solid = v; }, setFine(v) { fine = v; } }; } catch (e) {}
 requestAnimationFrame(frame);
 })();
 </script>

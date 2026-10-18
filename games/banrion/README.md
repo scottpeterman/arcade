@@ -12,6 +12,14 @@ play.
 
 By Scott Peterman.
 
+<p align="center">
+  <img src="docs/screenshots/low-angle-kingside.png" width="720" alt="A Closed Ruy Lopez at move 16 against the engine, seen from White's kingside">
+</p>
+<p align="center">
+  <img src="docs/screenshots/vs-engine-ruy-lopez.png" width="356" alt="The same game in the default view, with the move list">
+  <img src="docs/screenshots/overhead.png" width="356" alt="The board from overhead">
+</p>
+
 ---
 
 The splash holds for `SPLASH_MS` (4000) and can be tapped away after
