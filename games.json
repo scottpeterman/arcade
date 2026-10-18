@@ -1,0 +1,95 @@
+{
+  "title": "Vector Arcade",
+  "subtitle": "Wireframe and vector games for the browser. No installs, no accounts.",
+  "author": "Scott Peterman",
+  "repo": "https://github.com/scottpeterman/arcade",
+  "games": [
+    {
+      "slug": "banrion",
+      "title": "Banrion",
+      "tagline": "3D wireframe chess. Play a friend over the internet or the built-in engine.",
+      "path": "games/banrion/",
+      "thumb": "games/banrion/thumb.webp",
+      "tags": ["chess", "multiplayer", "3d"],
+      "input": ["mouse", "touch"],
+      "players": "1-2",
+      "shelf": "featured",
+      "readme": "games/banrion/README.md"
+    },
+    {
+      "slug": "deckrunner",
+      "title": "Deckrunner",
+      "tagline": "Capital-ship assault in the spirit of the '83 cabinet. Seven waves, then the starbase.",
+      "path": "games/deckrunner/",
+      "thumb": "games/deckrunner/thumb.webp",
+      "tags": ["shooter", "3d"],
+      "input": ["keyboard", "mouse", "touch"],
+      "players": "1",
+      "shelf": "featured",
+      "readme": "games/deckrunner/README.md"
+    },
+    {
+      "slug": "bounty-hunter",
+      "title": "Bounty Hunter",
+      "tagline": "Fight your way up the tower, floor by floor. Mutants first, then robots.",
+      "path": "games/bounty-hunter/",
+      "thumb": "games/bounty-hunter/thumb.webp",
+      "tags": ["crawler", "3d"],
+      "input": ["keyboard"],
+      "players": "1",
+      "shelf": "featured"
+    },
+    {
+      "slug": "vector-command",
+      "title": "Vector Command",
+      "tagline": "Defense console. Hold the line against incoming waves.",
+      "path": "games/vector-command/",
+      "thumb": "games/vector-command/thumb.webp",
+      "tags": ["arcade", "defense"],
+      "input": ["mouse", "touch"],
+      "players": "1",
+      "shelf": "featured"
+    },
+    {
+      "slug": "puppis-echo",
+      "title": "Puppis Echo",
+      "tagline": "WebGL flight and combat in deep space.",
+      "path": "games/puppis-echo/",
+      "thumb": "games/puppis-echo/thumb.webp",
+      "tags": ["shooter", "3d", "webgl"],
+      "input": ["keyboard", "touch"],
+      "players": "1",
+      "shelf": "featured"
+    },
+    {
+      "slug": "piece-lab",
+      "title": "Piece Lab",
+      "tagline": "Banrion's wireframe piece designer.",
+      "path": "games/banrion/piece_lab.html",
+      "thumb": "lab/thumbs/piece-lab.webp",
+      "tags": ["tool"],
+      "input": ["mouse"],
+      "shelf": "lab"
+    },
+    {
+      "slug": "fighter-viewer",
+      "title": "Fighter Viewer",
+      "tagline": "Deckrunner's enemy fighter model viewer.",
+      "path": "games/deckrunner/tools/fighter_viewer.html",
+      "thumb": "lab/thumbs/fighter-viewer.webp",
+      "tags": ["tool"],
+      "input": ["mouse"],
+      "shelf": "lab"
+    },
+    {
+      "slug": "ringworld",
+      "title": "Ringworld",
+      "tagline": "A ringworld megastructure, explorable in WebGL.",
+      "path": "lab/ringworld/",
+      "thumb": "lab/thumbs/ringworld.webp",
+      "tags": ["webgl", "visualization"],
+      "input": ["mouse", "touch"],
+      "shelf": "lab"
+    }
+  ]
+}

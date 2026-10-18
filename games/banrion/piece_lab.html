@@ -1,0 +1,1280 @@
+<!-- chesslab/piece_lab.html -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>PIECE LAB</title>
+<style>
+  :root{
+    --bg:#02040c;
+    --cyan:#5fd0ff;
+    --amber:#ffb545;
+    --amber-dim:#7a5520;
+    --panel:#060a16;
+    --line:#16233d;
+    --txt:#c8d6e8;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--txt);
+    font:12px/1.4 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;overflow:hidden}
+  /* Grid, not flex. A flex row sized the canvas from its width:100% basis and
+     its automatic minimum size, which let the canvas refuse to shrink and
+     squeezed the panel down to a sliver on a wide desktop window. A
+     minmax(0,1fr) track cannot do that. */
+  #app{position:fixed;inset:0;display:grid;grid-template-rows:minmax(0,1fr) auto}
+  #view{display:block;width:100%;height:100%;min-width:0;min-height:0;touch-action:none}
+  /* readout + buttons are one top-left stack, so a readout that wraps on a
+     narrow screen pushes the buttons down instead of sitting under them */
+  #overlay{position:absolute;top:8px;left:10px;display:flex;flex-direction:column;
+    align-items:flex-start;gap:6px;z-index:5;max-width:calc(100% - 20px)}
+  #readout{pointer-events:none;
+    color:var(--amber);font-size:11px;letter-spacing:.08em;text-shadow:0 0 8px #ffb54566}
+  #readout b{color:var(--cyan);font-weight:400}
+  .ovbtn{background:#08101fdd;border:1px solid var(--line);color:var(--txt);
+    padding:7px 11px;font-family:inherit;font-size:10px;letter-spacing:.12em;cursor:pointer;
+    border-radius:2px;backdrop-filter:blur(2px)}
+  .ovbtn[aria-pressed="true"]{border-color:var(--cyan);color:var(--cyan);
+    box-shadow:0 0 10px #5fd0ff33}
+  .ovbtn[aria-pressed="false"]{color:#5a6b82}
+  #benchout{color:var(--amber);font-size:10.5px;letter-spacing:.06em;white-space:pre;
+    text-shadow:0 0 8px #ffb54544;pointer-events:none}
+  #benchout b{color:var(--cyan);font-weight:400}
+
+  #panel{background:var(--panel);border-top:1px solid var(--line);
+    max-height:52vh;min-width:0;overflow:auto}
+  #tabs{display:flex;border-bottom:1px solid var(--line)}
+  .tab{flex:1;padding:9px 4px;text-align:center;letter-spacing:.14em;font-size:10px;
+    color:var(--amber-dim);cursor:pointer;background:none;border:0;border-right:1px solid var(--line);
+    font-family:inherit}
+  .tab:last-child{border-right:0}
+  .tab[aria-selected="true"]{color:var(--amber);background:#0b1220;box-shadow:inset 0 -2px 0 var(--amber)}
+  .pane{display:none;padding:10px 12px 16px}
+  .pane.on{display:block}
+
+  .row{display:flex;align-items:center;gap:8px;margin:7px 0}
+  .row label{flex:0 0 84px;color:var(--amber-dim);letter-spacing:.08em;font-size:10px}
+  .row output{flex:0 0 46px;text-align:right;color:var(--cyan)}
+  input[type=range]{flex:1;accent-color:#3aa0d8;background:transparent}
+  .chips{display:flex;flex-wrap:wrap;gap:6px}
+  .chip{padding:8px 12px;border:1px solid var(--line);background:#080d1a;color:var(--txt);
+    font-family:inherit;font-size:11px;letter-spacing:.1em;cursor:pointer;border-radius:2px}
+  .chip[aria-pressed="true"]{border-color:var(--cyan);color:var(--cyan);
+    box-shadow:0 0 10px #5fd0ff33,inset 0 0 10px #5fd0ff14}
+  .sw{width:24px;height:24px;padding:0;border:1px solid #2a3a55;border-radius:2px;
+    cursor:pointer;position:relative}
+  .sw[aria-pressed="true"]{box-shadow:0 0 0 2px var(--bg),0 0 0 3px #fff,0 0 12px currentColor}
+  #prof{display:block;width:100%;height:230px;background:#04070f;border:1px solid var(--line);
+    touch-action:none;margin-top:8px}
+  .hint{color:#4a5a72;font-size:10px;margin-top:6px}
+  textarea{width:100%;height:150px;background:#04070f;color:var(--cyan);border:1px solid var(--line);
+    font:11px/1.35 ui-monospace,monospace;padding:8px;resize:vertical}
+
+  /* debug console */
+  #dbg{position:fixed;left:0;right:0;bottom:0;max-height:46vh;background:#0a0305;
+    border-top:1px solid #6b1a1a;display:none;flex-direction:column;z-index:99}
+  #dbg.on{display:flex}
+  #dbgbar{display:flex;align-items:center;gap:8px;padding:6px 8px;background:#160608;
+    border-bottom:1px solid #6b1a1a}
+  #dbgbar span{flex:1;color:#ff8a8a;letter-spacing:.12em;font-size:10px}
+  #dbgbar button{background:#240a0d;color:#ffb4b4;border:1px solid #6b1a1a;padding:5px 10px;
+    font-family:inherit;font-size:10px;letter-spacing:.1em;cursor:pointer}
+  #dbglog{overflow:auto;padding:8px;font-size:10.5px;white-space:pre-wrap;color:#ffcfcf}
+  /* lives in the overlay stack now — pinned bottom-left it sat on top of the
+     panel's own controls whenever the panel was the bottom row */
+  #dbgtoggle{background:#0b1220;color:var(--amber-dim);
+    border:1px solid var(--line);padding:6px 9px;font-family:inherit;font-size:10px;
+    letter-spacing:.1em;cursor:pointer;opacity:.55}
+
+  @media(min-width:900px){
+    #app{grid-template-rows:none;grid-template-columns:minmax(0,1fr) 340px}
+    #panel{max-height:none;border-top:0;border-left:1px solid var(--line)}
+    #overlay{max-width:calc(100% - 360px)}
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <canvas id="view"></canvas>
+  <div id="panel">
+    <div id="tabs">
+      <button class="tab" data-pane="p-piece"  aria-selected="true">PIECE</button>
+      <button class="tab" data-pane="p-prof">PROFILE</button>
+      <button class="tab" data-pane="p-rend">RENDER</button>
+      <button class="tab" data-pane="p-out">EXPORT</button>
+    </div>
+
+    <div class="pane on" id="p-piece">
+      <div class="chips" id="modechips">
+        <button class="chip" data-mode="piece" aria-pressed="true">SINGLE PIECE</button>
+        <button class="chip" data-mode="board" aria-pressed="false">FULL BOARD</button>
+      </div>
+      <div class="chips" id="piecechips" style="margin-top:8px"></div>
+      <div class="hint">Drag to orbit &middot; pinch or wheel to zoom &middot; two-finger drag to raise/lower the eye</div>
+    </div>
+
+    <div class="pane" id="p-prof">
+      <div class="chips" id="profchips"></div>
+      <canvas id="prof"></canvas>
+      <div class="chips" style="margin-top:8px">
+        <button class="chip" id="addpt">ADD POINT</button>
+        <button class="chip" id="delpt">DELETE POINT</button>
+        <button class="chip" id="resetpt">RESET PIECE</button>
+      </div>
+      <div class="hint">Drag a node to reshape the silhouette. The 3D view rebuilds live.
+        Left edge is the axis of revolution &mdash; a node sitting on it closes the surface.</div>
+    </div>
+
+    <div class="pane" id="p-rend">
+      <div class="row"><label>DENSITY</label>
+        <span id="geoscope" style="flex:1;color:var(--cyan);font-size:10px;letter-spacing:.08em"></span>
+        <button class="chip" id="geoclear" style="padding:5px 9px">USE GLOBAL</button></div>
+      <div class="row"><label>MERIDIANS</label><input type="range" id="s-mer" min="4" max="48" step="1"><output id="o-mer"></output></div>
+      <div class="row"><label>RING SEGS</label><input type="range" id="s-rseg" min="6" max="48" step="2"><output id="o-rseg"></output></div>
+      <div class="row"><label>RING EVERY</label><input type="range" id="s-rev" min="1" max="5" step="1"><output id="o-rev"></output></div>
+      <div class="row"><label>GLOW</label><input type="range" id="s-glow" min="0" max="150" step="1"><output id="o-glow"></output></div>
+      <div class="row"><label>FALLOFF</label><input type="range" id="s-fall" min="0" max="100" step="1"><output id="o-fall"></output></div>
+      <div class="row"><label>REFL DETAIL</label><input type="range" id="s-rd" min="12" max="100" step="1"><output id="o-rd"></output></div>
+      <div class="row"><label>REFL ALPHA</label><input type="range" id="s-ra" min="0" max="70" step="1"><output id="o-ra"></output></div>
+      <div class="row" style="margin-top:12px"><label>PLAYER A</label>
+        <span id="sw-a" class="chips" style="flex:1"></span></div>
+      <div class="row"><label>PLAYER B</label>
+        <span id="sw-b" class="chips" style="flex:1"></span></div>
+      <div class="hint" id="sidehint"></div>
+      <div class="chips" style="margin-top:8px">
+        <button class="chip" id="t-refl" aria-pressed="true">REFLECTIONS</button>
+        <button class="chip" id="t-rglow" aria-pressed="false">REFL FULL GLOW</button>
+        <button class="chip" id="t-motes" aria-pressed="true">MOTES</button>
+        <button class="chip" id="t-grid" aria-pressed="true">BOARD</button>
+        <button class="chip" id="t-nodes" aria-pressed="true">NODES</button>
+      </div>
+    </div>
+
+    <div class="pane" id="p-out">
+      <div class="chips"><button class="chip" id="dump">DUMP PROFILES</button><button class="chip" id="copyout">COPY</button><button class="chip" id="loadout">LOAD</button></div>
+      <textarea id="out" spellcheck="false" placeholder="DUMP PROFILES writes the editable geometry here as JSON."></textarea>
+      <div class="hint">Paste this into the game build. Every piece except the knight is fully described
+        by its (radius, height) profile.</div>
+    </div>
+  </div>
+</div>
+<div id="overlay">
+  <div id="readout"></div>
+  <button id="ov-refl" class="ovbtn" aria-pressed="true">REFL ON</button>
+  <button id="ov-bench" class="ovbtn">MEASURE A/B</button>
+  <div id="benchout"></div>
+  <button id="dbgtoggle">DBG</button>
+</div>
+<div id="dbg">
+  <div id="dbgbar"><span>DEBUG CONSOLE</span>
+    <button id="dbgcopy">COPY</button><button id="dbgclear">CLEAR</button><button id="dbghide">HIDE</button></div>
+  <div id="dbglog"></div>
+</div>
+
+<script>
+/* ============================================================
+   PIECE LAB — wireframe chess geometry workbench
+   Single file, no dependencies, file:// safe.
+   Everything you'd want to tune lives in TUNE.
+   ============================================================ */
+
+const TUNE = {
+  cam:   { yaw:0.62, pitch:0.34, dist:9.2, targetY:0.55, focal:1.25, near:0.12,
+           minPitch:-0.15, maxPitch:1.25, minDist:1.6, maxDist:26 },
+  piece: { dist:2.9, targetY:0.55 },     // camera when framing one piece
+  geo:   { meridians:18, ringSegs:26, ringEvery:1 },   // global default density
+  // Per-piece density overrides, merged over TUNE.geo. The knight is a plate
+  // mesh, not a lathe, so it hits a readable density far sooner than the five
+  // surfaces of revolution do.
+  geoBy: { knight:{ meridians:8 } },
+  glow:  { strength:0.85,                // master multiplier on the soft passes
+           passes:[[5.5,0.055],[2.6,0.13],[1.0,0.90]] },   // [lineWidth, alpha]
+  depth: { bands:6, near:2.5, far:20, falloff:0.55 },      // far segments dim toward falloff
+  refl:  { on:true, alpha:0.26, squash:0.96,
+           detail:0.45,      // reflection mesh density as a fraction of the real one
+           fullGlow:false },  // reflections normally get the core stroke only
+  motes: { on:true, count:150, spread:26 },
+  board: { on:true, n:8, sq:1.0, nodes:true },
+  // Pieces only. The grid and motes keep their own colours — the two side
+  // colours below do not touch them.
+  color: { light:'#7fdcff', dark:'#2f6dff', board:'#1f6fd0', mote:'#3aa8ff' },
+  sideA: 'cyan',        // near army  -> TUNE.color.light
+  sideB: 'blue',        // far army   -> TUNE.color.dark
+  // One list, offered to both players. Roughly light-to-deep within each hue,
+  // so you can pick a bright/dark pair out of the same family or mix families.
+  swatches: {
+    ice:      { label:'ICE',      hex:'#dff4ff' },
+    cyan:     { label:'CYAN',     hex:'#7fdcff' },
+    blue:     { label:'BLUE',     hex:'#2f6dff' },
+    gold:     { label:'GOLD',     hex:'#ffe08a' },
+    amber:    { label:'AMBER',    hex:'#ffb545' },
+    brass:    { label:'BRASS',    hex:'#b8891f' },
+    ember:    { label:'EMBER',    hex:'#d1660a' },
+    lime:     { label:'LIME',     hex:'#b6ff9c' },
+    crt:      { label:'CRT GREEN',hex:'#3dff6b' },
+    phosphor: { label:'PHOSPHOR', hex:'#17a34a' },
+    coral:    { label:'CORAL',    hex:'#ffab99' },
+    plasma:   { label:'PLASMA',   hex:'#ff5240' },
+    crimson:  { label:'CRIMSON',  hex:'#c81e12' },
+    violet:   { label:'VIOLET',   hex:'#c88cff' },
+    indigo:   { label:'INDIGO',   hex:'#7c3aed' }
+  }
+};
+
+/* ---------- debug console (phone sessions have no devtools) ---------- */
+const DBG = (()=>{ 
+  const el=document.getElementById('dbglog'), box=document.getElementById('dbg');
+  let buf=[];
+  function push(kind,msg){
+    const t=new Date().toISOString().substr(11,12);
+    buf.push(`[${t}] ${kind}: ${msg}`);
+    if(buf.length>300) buf.shift();
+    el.textContent=buf.join('\n'); el.scrollTop=el.scrollHeight;
+  }
+  function open(){ box.classList.add('on'); }
+  window.onerror=(m,src,ln,col)=>{ push('ERR',`${m} @${(src||'').split('/').pop()}:${ln}:${col}`); open(); };
+  window.addEventListener('unhandledrejection',e=>{ push('REJECT',String(e.reason&&e.reason.stack||e.reason)); open(); });
+  const ce=console.error.bind(console);
+  console.error=(...a)=>{ push('CONSOLE',a.map(String).join(' ')); open(); ce(...a); };
+  document.getElementById('dbgcopy').onclick=async()=>{
+    const txt=buf.join('\n')||'(empty)';
+    try{ await navigator.clipboard.writeText(txt); }
+    catch(_){ const ta=document.createElement('textarea'); ta.value=txt; document.body.appendChild(ta);
+              ta.select(); document.execCommand('copy'); ta.remove(); }
+    push('INFO','log copied');
+  };
+  document.getElementById('dbgclear').onclick=()=>{ buf=[]; el.textContent=''; };
+  document.getElementById('dbghide').onclick=()=>box.classList.remove('on');
+  document.getElementById('dbgtoggle').onclick=()=>box.classList.toggle('on');
+  return { log:m=>push('INFO',m), open };
+})();
+
+/* ============================================================
+   PROFILE BUILDERS
+   A profile is an ordered list of [radius, height] from the base
+   up. Rotate it around Y and you have the piece.
+   ============================================================ */
+function ln(p,r1,y1,n){ const [r0,y0]=p[p.length-1];
+  for(let i=1;i<=n;i++){ const t=i/n; p.push([r0+(r1-r0)*t, y0+(y1-y0)*t]); } return p; }
+function arc(p,cr,cy,rad,a0,a1,n){
+  for(let i=1;i<=n;i++){ const t=i/n,a=a0+(a1-a0)*t;
+    p.push([cr+Math.cos(a)*rad, cy+Math.sin(a)*rad]); } return p; }
+const D=Math.PI/180;
+
+function baseFlare(r){ // shared plinth every piece stands on
+  const p=[[0,0]];
+  ln(p,r,0,2); ln(p,r,0.045,1); ln(p,r*0.87,0.075,1); ln(p,r*0.70,0.115,2);
+  return p;
+}
+
+const DEFAULTS = {
+  pawn(){ const p=baseFlare(0.27);
+    ln(p,0.115,0.235,3); ln(p,0.098,0.40,3);
+    ln(p,0.175,0.445,1); ln(p,0.175,0.475,1); ln(p,0.115,0.515,1);
+    arc(p,0,0.645,0.145,-72*D,90*D,7); return p; },
+
+  rook(){ const p=baseFlare(0.30);
+    ln(p,0.185,0.20,2); ln(p,0.175,0.60,4);
+    ln(p,0.235,0.665,1); ln(p,0.255,0.70,1); ln(p,0.255,0.90,2);
+    ln(p,0.185,0.90,1); ln(p,0.185,0.74,1); ln(p,0,0.74,1); return p; },
+
+  knight(){ const p=[[0,0]];
+    ln(p,0.305,0.000,2); ln(p,0.305,0.046,1); ln(p,0.280,0.070,1);
+    ln(p,0.218,0.118,2); ln(p,0.202,0.162,1);
+    ln(p,0.232,0.205,1); ln(p,0.264,0.238,1); ln(p,0.275,0.256,1);
+    return p; },   // collar sized to the plate's flared foot — head is in EXTRAS
+
+  bishop(){ const p=baseFlare(0.275);
+    ln(p,0.145,0.24,3); ln(p,0.115,0.50,3);
+    ln(p,0.185,0.545,1); ln(p,0.185,0.575,1); ln(p,0.12,0.615,1);
+    arc(p,0,0.78,0.165,-70*D,62*D,7);
+    ln(p,0.055,0.945,1); arc(p,0,0.985,0.062,-60*D,90*D,4); return p; },
+
+  queen(){ const p=baseFlare(0.315);
+    ln(p,0.20,0.235,3); ln(p,0.135,0.60,4);
+    ln(p,0.215,0.66,1); ln(p,0.215,0.695,1); ln(p,0.155,0.735,1);
+    ln(p,0.255,0.98,4); ln(p,0.255,1.03,1); ln(p,0.205,1.055,1);
+    ln(p,0.075,1.075,1); arc(p,0,1.125,0.072,-60*D,90*D,4); return p; },
+
+  king(){ const p=baseFlare(0.325);
+    ln(p,0.21,0.245,3); ln(p,0.14,0.66,4);
+    ln(p,0.225,0.725,1); ln(p,0.225,0.765,1); ln(p,0.16,0.805,1);
+    ln(p,0.245,1.06,4); ln(p,0.245,1.115,1); ln(p,0.185,1.145,1);
+    ln(p,0.085,1.165,1); ln(p,0.05,1.20,1); return p; }   // cross is in EXTRAS
+};
+
+const PIECES=['pawn','knight','bishop','rook','queen','king'];
+let PROFILES={}; PIECES.forEach(k=>PROFILES[k]=DEFAULTS[k]());
+
+/* ---------- plate primitives (used by the knight) ----------
+   A Staunton knight is not an anatomical horse — it is a flat plate with rounded
+   edges. The silhouette carries all the shape; thickness is added by sweeping a
+   quarter-round bevel from the mid-plane out to each flat face. Ears are part of
+   the outline, not separate appendages. */
+
+// Split any outline edge longer than maxLen. Keeps corners sharp (they stay
+// vertices) while adding density along the long smooth runs.
+function densify(pts, maxLen){
+  const out=[];
+  for(let i=0;i<pts.length;i++){
+    const a=pts[i], b=pts[(i+1)%pts.length];
+    out.push(a.slice());
+    const n=Math.ceil(Math.hypot(b[0]-a[0], b[1]-a[1])/maxLen);
+    for(let k=1;k<n;k++){
+      const t=k/n, row=[];
+      for(let c=0;c<a.length;c++) row.push(a[c]+(b[c]-a[c])*t);
+      out.push(row);
+    }
+  }
+  return out;
+}
+
+// Outward normal at each outline vertex, orientation derived from signed area
+// so the bevel always insets rather than flaring.
+function outlineNormals(pts){
+  const n=pts.length; let area=0;
+  for(let i=0;i<n;i++){ const a=pts[i], b=pts[(i+1)%n]; area += a[0]*b[1]-b[0]*a[1]; }
+  const sgn = area>0 ? 1 : -1;
+  const N=[];
+  for(let i=0;i<n;i++){
+    const p=pts[(i-1+n)%n], c=pts[i], q=pts[(i+1)%n];
+    const e1x=c[0]-p[0], e1y=c[1]-p[1], m1=Math.hypot(e1x,e1y)||1;
+    const e2x=q[0]-c[0], e2y=q[1]-c[1], m2=Math.hypot(e2x,e2y)||1;
+    let vx=(e1y/m1+e2y/m2)*sgn, vy=(-e1x/m1-e2x/m2)*sgn;
+    const m=Math.hypot(vx,vy)||1;
+    N.push([vx/m, vy/m]);
+  }
+  return N;
+}
+
+// outline row: [x, y, halfThickness, bevelRadius]
+// At phi=0 the loop sits on the silhouette; at phi=+-90 it is on the flat face,
+// inset by the bevel radius. Sweeping phi gives the rounded edge.
+function plateLoops(pts, PHI, P){
+  const N=outlineNormals(pts), loops=[];
+  for(const phi of PHI){
+    const si=Math.sin(phi), co=Math.cos(phi), loop=[];
+    for(let i=0;i<pts.length;i++){
+      const c=pts[i], nrm=N[i], inset=c[3]*(1-co);
+      loop.push(P(c[0]-nrm[0]*inset, c[1]-nrm[1]*inset, c[2]*si));
+    }
+    loops.push(loop);
+  }
+  return loops;
+}
+
+function segOK(a,b){
+  const dx=a[0]-b[0], dy=a[1]-b[1], dz=a[2]-b[2];
+  return dx*dx+dy*dy+dz*dz > 1e-7;      // drop hairs where a mesh converges
+}
+function emitLoops(loops, out, seg, closed){
+  for(const L of loops){
+    const n = closed===false ? L.length-1 : L.length;
+    for(let i=0;i<n;i++){ const a=L[i], b=L[(i+1)%L.length]; if(segOK(a,b)) seg(out,...a,...b); }
+  }
+  for(let j=0;j<loops.length-1;j++)
+    for(let i=0;i<loops[j].length;i++){
+      const a=loops[j][i], b=loops[j+1][i]; if(segOK(a,b)) seg(out,...a,...b);
+    }
+}
+
+/* ---------- flat-face mesh ----------
+   The bevel only wraps the rim; without this the two flat sides are empty and
+   the piece reads as a hollow ribbon. These are contour rings marching inward
+   from the rim toward the medial axis, plus the rungs between them — the same
+   ladder pattern as the bevel, continued across the face. */
+
+function ptInPoly(poly,x,y){
+  let c=false;
+  for(let i=0,j=poly.length-1;i<poly.length;j=i++){
+    const yi=poly[i][1], yj=poly[j][1];
+    if((yi>y)!==(yj>y) && x < (poly[j][0]-poly[i][0])*(y-yi)/(yj-yi+1e-12)+poly[i][0]) c=!c;
+  }
+  return c;
+}
+
+// Distance from vertex i, along (nx,ny), to the first edge on the far side.
+function rayWidth(poly,i,nx,ny){
+  const n=poly.length, px=poly[i][0], py=poly[i][1];
+  let best=Infinity;
+  for(let j=0;j<n;j++){
+    const k=(j+1)%n;
+    if(j===i || j===(i-1+n)%n || k===i) continue;
+    const ax=poly[j][0], ay=poly[j][1], ex=poly[k][0]-ax, ey=poly[k][1]-ay;
+    const den=nx*ey-ny*ex; if(Math.abs(den)<1e-12) continue;
+    const t=((ax-px)*ey-(ay-py)*ex)/den;
+    const u=((ax-px)*ny-(ay-py)*nx)/den;
+    if(t>1e-4 && u>=-1e-6 && u<=1+1e-6 && t<best) best=t;
+  }
+  return isFinite(best)?best:0;
+}
+
+function smoothLoop(loop,iters,k){
+  const n=loop.length;
+  for(let it=0;it<iters;it++){
+    const nl=[];
+    for(let i=0;i<n;i++){
+      const a=loop[(i-1+n)%n], b=loop[i], c=loop[(i+1)%n];
+      nl.push([b[0]*(1-k)+(a[0]+c[0])*0.5*k, b[1]*(1-k)+(a[1]+c[1])*0.5*k]);
+    }
+    loop=nl;
+  }
+  return loop;
+}
+
+// Every vertex travels the same FRACTION of its own local half-width, so the
+// rings stay evenly graded and the innermost one settles near the middle
+// instead of overshooting into a tangle. Vertex count is preserved, which is
+// what makes the rungs a straight index pairing.
+function faceRings(outline,count){
+  const N=outlineNormals(outline), n=outline.length;
+  let W=new Array(n);
+  for(let i=0;i<n;i++){
+    const nx=-N[i][0], ny=-N[i][1];
+    // at a reflex vertex the inward normal points into open air; a ray from
+    // there would leap the notch and drag a ring across it.
+    W[i]= ptInPoly(outline, outline[i][0]+nx*1e-3, outline[i][1]+ny*1e-3)
+        ? rayWidth(outline,i,nx,ny)*0.5 : 0;
+  }
+  for(let p=0;p<4;p++){            // smooth the width field, not the points
+    const V=new Array(n);
+    for(let i=0;i<n;i++)
+      V[i]=Math.min(W[(i-1+n)%n],W[i],W[(i+1)%n])*0.34 + W[i]*0.66;
+    W=V;
+  }
+  const rings=[];
+  for(let r=1;r<=count;r++){
+    const f=r/(count+1);
+    const ring=[];
+    for(let i=0;i<n;i++)
+      ring.push([outline[i][0]-N[i][0]*W[i]*f, outline[i][1]-N[i][1]*W[i]*f]);
+    rings.push(smoothLoop(ring,1+r,0.4));
+  }
+  return rings;
+}
+
+/* ---------- non-lathe details ---------- */
+const EXTRAS = {
+  rook(out,seg){ // crenellations: alternating merlons around the rim
+    const n=8, rOut=0.255, rIn=0.185, y0=0.74, y1=0.90;
+    for(let i=0;i<n;i++){
+      const a=(i/n)*Math.PI*2, a2=((i+0.5)/n)*Math.PI*2;
+      if(i%2===0){
+        seg(out, rOut*Math.cos(a),y0,rOut*Math.sin(a), rOut*Math.cos(a),y1,rOut*Math.sin(a));
+        seg(out, rIn*Math.cos(a),y0,rIn*Math.sin(a), rIn*Math.cos(a),y1,rIn*Math.sin(a));
+        seg(out, rOut*Math.cos(a),y1,rOut*Math.sin(a), rIn*Math.cos(a),y1,rIn*Math.sin(a));
+      }
+      seg(out, rOut*Math.cos(a2),y0,rOut*Math.sin(a2), rIn*Math.cos(a2),y0,rIn*Math.sin(a2));
+    }
+  },
+  king(out,seg){ // the cross
+    const y=1.20, h=0.19, w=0.085, t=0.030;
+    const bar=(ax,az)=>{
+      seg(out,-w*ax,y+h*0.58,-w*az,  w*ax,y+h*0.58, w*az);
+      seg(out,-w*ax,y+h*0.58+t,-w*az, w*ax,y+h*0.58+t, w*az);
+      seg(out,-w*ax,y+h*0.58,-w*az, -w*ax,y+h*0.58+t,-w*az);
+      seg(out, w*ax,y+h*0.58, w*az,  w*ax,y+h*0.58+t, w*az);
+    };
+    for(const [ax,az] of [[1,0],[0,1]]){
+      seg(out,-t*ax*0.6,y,-t*az*0.6, -t*ax*0.6,y+h,-t*az*0.6);
+      seg(out, t*ax*0.6,y, t*az*0.6,  t*ax*0.6,y+h, t*az*0.6);
+      seg(out,-t*ax*0.6,y+h,-t*az*0.6, t*ax*0.6,y+h, t*az*0.6);
+      bar(ax,az);
+    }
+  },
+  bishop(out,seg){ // the mitre slit
+    const pts=[];
+    for(let i=0;i<=10;i++){ const t=i/10, a=(-58+116*t)*D;
+      pts.push([Math.cos(a)*0.166*0.62, 0.78+Math.sin(a)*0.166, 0]); }
+    for(let i=1;i<pts.length;i++)
+      seg(out,pts[i-1][0],pts[i-1][1],pts[i-1][2],pts[i][0],pts[i][1],pts[i][2]);
+  },
+  queen(out,seg){ // crown points
+    const n=8, r=0.255, y0=1.03, y1=1.115;
+    for(let i=0;i<n;i++){
+      const a=(i/n)*Math.PI*2;
+      seg(out, r*Math.cos(a),y0,r*Math.sin(a), r*0.62*Math.cos(a),y1,r*0.62*Math.sin(a));
+      const a2=((i+1)/n)*Math.PI*2;
+      seg(out, r*0.62*Math.cos(a),y1,r*0.62*Math.sin(a), r*0.62*Math.cos(a2),y1,r*0.62*Math.sin(a2));
+    }
+  },
+  knight(out,seg,opt){
+    // Silhouette traced off the reference render: long muzzle that drops
+    // forward and down, deep open throat, near-vertical crest, stubby ears.
+    const s=0.720, x0=0.002, y0=0.232;   // x0 centres the FOOT on the axis, not
+                                         // the whole silhouette — otherwise the
+                                         // piece sits off-centre in its collar
+    const P=(x,y,z)=>[x0+x*s, y0+y*s, z*s];
+
+    // [x, y, halfThickness, bevel] — +x is the muzzle direction, y up from the
+    // collar. Wound rear-ear -> crest -> foot -> chest -> throat -> jaw ->
+    // muzzle -> face -> front-ear.
+    const SIL=[
+      [ 0.142, 1.010, 0.026, 0.012], // rear ear, tip
+      [ 0.130, 1.008, 0.026, 0.012],
+      [ 0.110, 0.981, 0.046, 0.020], // rear ear, base
+      [ 0.069, 0.897, 0.086, 0.036], // poll
+      [-0.054, 0.856, 0.112, 0.044],
+      [-0.127, 0.812, 0.126, 0.046], // crest, upper
+      [-0.171, 0.775, 0.134, 0.048],
+      [-0.233, 0.707, 0.142, 0.050], // crest, mid
+      [-0.286, 0.616, 0.148, 0.050],
+      [-0.326, 0.513, 0.152, 0.052], // crest, lower
+      [-0.345, 0.425, 0.155, 0.052],
+      [-0.348, 0.263, 0.157, 0.052], // back
+      [-0.338, 0.163, 0.158, 0.052],
+      [-0.308, 0.028, 0.166, 0.052], // foot, back shoulder
+      [-0.340,-0.045, 0.185, 0.040], // foot, back — flares into the collar
+      [ 0.335,-0.045, 0.185, 0.040], // foot, front
+      [ 0.318,-0.008, 0.172, 0.048],
+      [ 0.296, 0.046, 0.162, 0.050], // foot, front shoulder
+      [ 0.245, 0.124, 0.150, 0.048], // chest, lower
+      [ 0.228, 0.151, 0.146, 0.048],
+      [ 0.147, 0.281, 0.132, 0.046], // chest, mid
+      [ 0.100, 0.388, 0.120, 0.044], // throat
+      [ 0.095, 0.437, 0.112, 0.042], // throat notch
+      [ 0.127, 0.440, 0.108, 0.040],
+      [ 0.157, 0.427, 0.104, 0.040],
+      [ 0.223, 0.418, 0.098, 0.038], // jaw, back
+      [ 0.301, 0.374, 0.088, 0.034], // jaw, mid
+      [ 0.330, 0.312, 0.082, 0.032], // jowl
+      [ 0.377, 0.288, 0.076, 0.030], // chin
+      [ 0.419, 0.293, 0.072, 0.030],
+      [ 0.460, 0.310, 0.068, 0.028], // lip
+      [ 0.482, 0.330, 0.064, 0.026],
+      [ 0.507, 0.391, 0.060, 0.024], // nose, front
+      [ 0.507, 0.423, 0.060, 0.024],
+      [ 0.485, 0.467, 0.064, 0.026], // nose, top corner
+      [ 0.345, 0.667, 0.082, 0.034], // bridge, lower
+      [ 0.335, 0.724, 0.086, 0.036], // bridge, upper
+      [ 0.272, 0.778, 0.092, 0.038], // brow
+      [ 0.235, 0.836, 0.096, 0.038], // forehead
+      [ 0.237, 0.917, 0.056, 0.024], // front ear, leading edge
+      [ 0.225, 0.981, 0.028, 0.012], // front ear, tip
+      [ 0.208, 0.988, 0.026, 0.012],
+      [ 0.191, 0.968, 0.040, 0.018],
+      [ 0.162, 0.968, 0.046, 0.020]  // notch between the ears
+    ];
+
+    // The knight is not a lathe, so wire it to the same sliders by hand:
+    // RING SEGS drives outline density, MERIDIANS drives how many bands wrap
+    // the rim and how many rings cross each flat face.
+    const M  = opt?opt.meridians:TUNE.geo.meridians;
+    const RS = opt?opt.ringSegs :TUNE.geo.ringSegs;
+    const cl=(v,a,b)=>v<a?a:v>b?b:v;
+    const NB = cl(Math.round(M*0.5)+1, 4, 12);   // bevel bands, rim to face
+    const NF = cl(Math.round(M*0.35),  2,  8);   // contour rings per face
+    const OUT=densify(SIL, 1.45/RS);
+
+    const PHI=[]; for(let i=0;i<NB;i++) PHI.push(-Math.PI/2 + i*Math.PI/(NB-1));
+    emitLoops(plateLoops(OUT, PHI, P), out, seg);
+
+    // flat faces: rim outline (the phi=+-90 loop) then rings inward
+    const N=outlineNormals(OUT), flat=[];
+    for(let i=0;i<OUT.length;i++)
+      flat.push([OUT[i][0]-N[i][0]*OUT[i][3], OUT[i][1]-N[i][1]*OUT[i][3]]);
+    const rings=faceRings(flat, NF);
+    for(const sd of [1,-1]){
+      const chain=[flat.map((p,i)=>P(p[0],p[1],sd*OUT[i][2]))];
+      for(const r of rings)
+        chain.push(r.map((p,i)=>P(p[0],p[1],sd*OUT[i][2]*0.985)));
+      emitLoops(chain, out, seg);
+    }
+
+    // the few marks the mesh can't imply. Thickness looked up from the nearest
+    // outline vertex so a line never floats off the surface it belongs to.
+    const wAt=(x,y)=>{ let best=1e9, w=0.1;
+      for(const c of SIL){ const d=(c[0]-x)**2+(c[1]-y)**2; if(d<best){ best=d; w=c[2]; } }
+      return w*0.7; };
+    const fline=(a,b,sd)=>{ const w=Math.min(wAt(a[0],a[1]), wAt(b[0],b[1]))*sd;
+      seg(out,...P(a[0],a[1],w),...P(b[0],b[1],w)); };
+    const fring=(cx,cy,rx,ry,n,sd)=>{ const w=wAt(cx,cy)*sd, p=[];
+      for(let i=0;i<n;i++){ const a=(i/n)*Math.PI*2;
+        p.push(P(cx+Math.cos(a)*rx, cy+Math.sin(a)*ry, w)); }
+      for(let i=0;i<n;i++) seg(out,...p[i],...p[(i+1)%n]);
+    };
+    for(const sd of [1,-1]){
+      fring(0.300,0.700,0.032,0.026,8, sd);     // eye
+      fring(0.470,0.415,0.020,0.024,6, sd);     // nostril
+      fline([0.487,0.360],[0.402,0.330], sd);   // mouth
+      fline([0.272,0.778],[0.223,0.418], sd);   // cheek, back edge
+    }
+  }
+};
+
+/* ============================================================
+   GEOMETRY
+   ============================================================ */
+function pushSeg(a,x0,y0,z0,x1,y1,z1){ a.push(x0,y0,z0,x1,y1,z1); }
+
+function buildPiece(name, opt){
+  const prof=PROFILES[name], out=[];
+  const M=opt.meridians, RS=opt.ringSegs, RE=opt.ringEvery;
+
+  // meridians: the profile itself, repeated around the axis
+  for(let m=0;m<M;m++){
+    const a=(m/M)*Math.PI*2, ca=Math.cos(a), sa=Math.sin(a);
+    for(let i=1;i<prof.length;i++){
+      const [r0,y0]=prof[i-1], [r1,y1]=prof[i];
+      pushSeg(out, r0*ca,y0,r0*sa, r1*ca,y1,r1*sa);
+    }
+  }
+  // latitude rings
+  for(let i=0;i<prof.length;i+=RE){
+    const [r,y]=prof[i]; if(r<0.012) continue;
+    for(let s=0;s<RS;s++){
+      const a0=(s/RS)*Math.PI*2, a1=((s+1)/RS)*Math.PI*2;
+      pushSeg(out, r*Math.cos(a0),y,r*Math.sin(a0), r*Math.cos(a1),y,r*Math.sin(a1));
+    }
+  }
+  if(EXTRAS[name]) EXTRAS[name](out,pushSeg,opt);
+  return out;
+}
+
+let PIECE_GEO={}, PIECE_GEO_LO={}, geoVersion=0;
+// Effective density for one piece: the global default with that piece's
+// override laid over it.
+function geoFor(name){
+  const o=TUNE.geoBy[name];
+  return o ? Object.assign({}, TUNE.geo, o) : TUNE.geo;
+}
+function loFor(name){
+  const g=geoFor(name), d=Math.max(0.12, TUNE.refl.detail);
+  return { meridians : Math.max(4, Math.round(g.meridians*d)),
+           ringSegs  : Math.max(6, Math.round(g.ringSegs *d)),
+           ringEvery : Math.max(1, Math.round(g.ringEvery/d)) };
+}
+// Pass a piece name to rebuild only that one — a slider drag in PIECE mode
+// touches a single mesh instead of all six.
+function rebuildGeo(only){
+  if(!only){ PIECE_GEO={}; PIECE_GEO_LO={}; }
+  for(const k of (only?[only]:PIECES)){
+    PIECE_GEO[k]    = buildPiece(k, geoFor(k));
+    PIECE_GEO_LO[k] = buildPiece(k, loFor(k));
+  }
+  geoVersion++; rebuildScene();
+}
+
+/* ---------- scene assembly ---------- */
+const BACK_RANK=['rook','knight','bishop','queen','king','bishop','knight','rook'];
+let SCENE={ light:[], dark:[], board:[], lightR:[], darkR:[] };
+let segCount=0, reflCount=0;
+
+function addTranslated(dst,src,dx,dz,flipZ){
+  for(let i=0;i<src.length;i+=6){
+    const z0=flipZ?-src[i+2]:src[i+2], z1=flipZ?-src[i+5]:src[i+5];
+    dst.push(src[i]+dx, src[i+1], z0+dz, src[i+3]+dx, src[i+4], z1+dz);
+  }
+}
+
+function buildBoardGeo(){
+  const n=TUNE.board.n, sq=TUNE.board.sq, h=n*sq/2, out=[];
+  for(let i=0;i<=n;i++){
+    const p=-h+i*sq;
+    pushSeg(out,-h,0,p, h,0,p);
+    pushSeg(out, p,0,-h, p,0,h);
+  }
+  return out;
+}
+
+function rebuildScene(){
+  SCENE={ light:[], dark:[], lightR:[], darkR:[], board: TUNE.board.on?buildBoardGeo():[] };
+  const sq=TUNE.board.sq, h=TUNE.board.n*sq/2, o=-h+sq/2;
+  if(MODE==='piece'){
+    addTranslated(SCENE.light,  PIECE_GEO[CURRENT],    0,0,false);
+    addTranslated(SCENE.lightR, PIECE_GEO_LO[CURRENT], 0,0,false);
+  }else{
+    for(let f=0; f<8; f++){
+      const x=o+f*sq;
+      addTranslated(SCENE.light,  PIECE_GEO[BACK_RANK[f]],    x, o,     false);
+      addTranslated(SCENE.light,  PIECE_GEO.pawn,             x, o+sq,  false);
+      addTranslated(SCENE.dark,   PIECE_GEO[BACK_RANK[f]],    x, o+7*sq, true);
+      addTranslated(SCENE.dark,   PIECE_GEO.pawn,             x, o+6*sq, true);
+      addTranslated(SCENE.lightR, PIECE_GEO_LO[BACK_RANK[f]], x, o,     false);
+      addTranslated(SCENE.lightR, PIECE_GEO_LO.pawn,          x, o+sq,  false);
+      addTranslated(SCENE.darkR,  PIECE_GEO_LO[BACK_RANK[f]], x, o+7*sq, true);
+      addTranslated(SCENE.darkR,  PIECE_GEO_LO.pawn,          x, o+6*sq, true);
+    }
+  }
+  segCount=(SCENE.light.length+SCENE.dark.length+SCENE.board.length)/6;
+  reflCount=(SCENE.lightR.length+SCENE.darkR.length)/6;
+}
+
+/* ---------- motes (the bokeh field in the reference) ---------- */
+let MOTES=[];
+function buildMotes(){
+  MOTES=[]; const s=TUNE.motes.spread;
+  for(let i=0;i<TUNE.motes.count;i++)
+    MOTES.push([(Math.random()-0.5)*s, Math.random()*s*0.55+0.4, (Math.random()-0.5)*s,
+                Math.random()*1.6+0.5]);
+}
+
+/* ============================================================
+   RENDER
+   ============================================================ */
+const cv=document.getElementById('view'), ctx=cv.getContext('2d');
+let W=0,H=0,DPR=1;
+const cam={ yaw:TUNE.cam.yaw, pitch:TUNE.cam.pitch, dist:TUNE.cam.dist, ty:TUNE.cam.targetY };
+let MODE='piece', CURRENT='queen';
+
+function resize(){
+  DPR=Math.min(window.devicePixelRatio||1, 2);
+  const r=cv.getBoundingClientRect();
+  W=Math.max(1,Math.round(r.width)); H=Math.max(1,Math.round(r.height));
+  cv.width=W*DPR; cv.height=H*DPR;
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+}
+window.addEventListener('resize',()=>{ resize(); });
+
+let cy=1,sy=0,cp=1,sp=0;
+function camSetup(){ cy=Math.cos(cam.yaw); sy=Math.sin(cam.yaw); cp=Math.cos(cam.pitch); sp=Math.sin(cam.pitch); }
+
+const _c=[0,0,0];
+function toCam(x,y,z,o){
+  const dy=y-cam.ty;
+  const x1=x*cy - z*sy;
+  const z1=x*sy + z*cy;
+  o[0]=x1; o[1]=dy*cp - z1*sp; o[2]=dy*sp + z1*cp + cam.dist;
+}
+
+function depthBand(z){
+  const {bands,near,far}=TUNE.depth;
+  let t=(z-near)/(far-near); t=t<0?0:t>1?1:t;
+  const b=Math.floor(t*bands); return b>=bands?bands-1:b;
+}
+function bandAlpha(b){
+  const t=b/(TUNE.depth.bands-1||1);
+  return 1-(1-TUNE.depth.falloff)*t;
+}
+
+// collected per (bucket, band): array of screen coords
+let paths=[];
+function resetPaths(nBuckets){
+  paths=[];
+  for(let i=0;i<nBuckets;i++){
+    const bands=[]; for(let b=0;b<TUNE.depth.bands;b++) bands.push([]);
+    paths.push(bands);
+  }
+}
+
+const a=[0,0,0], b=[0,0,0];
+function collect(bucket, arr, yScale, alphaScale){
+  const near=TUNE.cam.near;
+  const f0=TUNE.cam.focal*Math.min(W,H);
+  const hw=W/2, hh=H/2;
+  for(let i=0;i<arr.length;i+=6){
+    toCam(arr[i], arr[i+1]*yScale, arr[i+2], a);
+    toCam(arr[i+3], arr[i+4]*yScale, arr[i+5], b);
+    let ax=a[0],ay=a[1],az=a[2], bx=b[0],by=b[1],bz=b[2];
+    if(az<near && bz<near) continue;
+    if(az<near){ const t=(near-az)/(bz-az); ax+=(bx-ax)*t; ay+=(by-ay)*t; az=near; }
+    else if(bz<near){ const t=(near-bz)/(az-bz); bx+=(ax-bx)*t; by+=(ay-by)*t; bz=near; }
+    const fa=f0/az, fb=f0/bz;
+    const band=depthBand((az+bz)*0.5);
+    paths[bucket][band].push(hw+ax*fa, hh-ay*fa, hw+bx*fb, hh-by*fb);
+  }
+}
+
+const CHEAP_PASS=[[1.3,1.0]];
+function strokeBucket(bucket, colour, alphaScale, cheap){
+  const g=TUNE.glow.strength;
+  const passes = cheap ? CHEAP_PASS : TUNE.glow.passes;
+  for(let band=0; band<TUNE.depth.bands; band++){
+    const pts=paths[bucket][band];
+    if(!pts.length) continue;
+    ctx.beginPath();
+    for(let i=0;i<pts.length;i+=4){
+      ctx.moveTo(pts[i],pts[i+1]); ctx.lineTo(pts[i+2],pts[i+3]);
+    }
+    const da=bandAlpha(band)*alphaScale;
+    for(const [w,alpha] of passes){
+      const isCore = w<=1.31;
+      const al = alpha * da * (isCore?1:g);
+      if(al<=0.004) continue;
+      ctx.lineWidth=w; ctx.globalAlpha=al; ctx.strokeStyle=colour; ctx.stroke();
+    }
+  }
+}
+
+function drawMotes(){
+  if(!TUNE.motes.on) return;
+  const f0=TUNE.cam.focal*Math.min(W,H), hw=W/2, hh=H/2;
+  ctx.fillStyle=TUNE.color.mote;
+  for(const m of MOTES){
+    toCam(m[0],m[1],m[2],_c);
+    if(_c[2]<TUNE.cam.near) continue;
+    const f=f0/_c[2], r=Math.max(0.6, m[3]*f*0.006);
+    ctx.globalAlpha=Math.min(0.55, 3.2/_c[2]);
+    ctx.beginPath(); ctx.arc(hw+_c[0]*f, hh-_c[1]*f, r, 0, 6.2832); ctx.fill();
+  }
+}
+
+function drawNodes(){
+  if(!TUNE.board.on || !TUNE.board.nodes) return;
+  const n=TUNE.board.n, sq=TUNE.board.sq, h=n*sq/2;
+  const f0=TUNE.cam.focal*Math.min(W,H), hw=W/2, hh=H/2;
+  ctx.fillStyle='#bfe9ff';
+  for(let i=0;i<=n;i++) for(let j=0;j<=n;j++){
+    toCam(-h+i*sq, 0, -h+j*sq, _c);
+    if(_c[2]<TUNE.cam.near) continue;
+    const f=f0/_c[2];
+    ctx.globalAlpha=Math.min(0.85, 4.0/_c[2]);
+    ctx.beginPath(); ctx.arc(hw+_c[0]*f, hh-_c[1]*f, Math.max(0.7,f*0.0045), 0, 6.2832); ctx.fill();
+  }
+}
+
+let fps=0, frames=0, fpsT=performance.now(), lastSig='';
+function sceneSig(){
+  return [cam.yaw.toFixed(4),cam.pitch.toFixed(4),cam.dist.toFixed(4),cam.ty,
+          geoVersion,segCount,MODE,CURRENT,TUNE.glow.strength,TUNE.depth.falloff,
+          TUNE.refl.on,TUNE.refl.alpha,TUNE.refl.fullGlow,
+          TUNE.motes.on,TUNE.board.nodes,W,H].join('|');
+}
+function renderScene(){
+  camSetup();
+  ctx.globalCompositeOperation='source-over';
+  ctx.globalAlpha=1; ctx.fillStyle='#02040c'; ctx.fillRect(0,0,W,H);
+  ctx.globalCompositeOperation='lighter';
+  ctx.lineCap='round'; ctx.lineJoin='round';
+
+  drawMotes();
+
+  // buckets: 0 light, 1 dark, 2 board, 3 light-refl, 4 dark-refl
+  resetPaths(5);
+  collect(0, SCENE.light, 1, 1);
+  collect(1, SCENE.dark,  1, 1);
+  collect(2, SCENE.board, 1, 1);
+  if(TUNE.refl.on){
+    collect(3, SCENE.lightR, -TUNE.refl.squash, 1);
+    collect(4, SCENE.darkR,  -TUNE.refl.squash, 1);
+  }
+  strokeBucket(2, TUNE.color.board, 0.75, false);
+  if(TUNE.refl.on){
+    const cheap=!TUNE.refl.fullGlow;
+    strokeBucket(3, TUNE.color.light, TUNE.refl.alpha, cheap);
+    strokeBucket(4, TUNE.color.dark,  TUNE.refl.alpha, cheap);
+  }
+  strokeBucket(0, TUNE.color.light, 1, false);
+  strokeBucket(1, TUNE.color.dark,  1, false);
+  drawNodes();
+
+  ctx.globalAlpha=1; ctx.globalCompositeOperation='source-over';
+}
+
+function frame(){
+  // A chess board is a static camera between moves. Nothing changed means nothing
+  // to redraw — the canvas already holds the last frame. Cost only shows while orbiting.
+  const sig=sceneSig();
+  if(sig===lastSig){ requestAnimationFrame(frame); return; }
+  lastSig=sig;
+  const t0=performance.now();
+
+  renderScene();
+
+  frames++;
+  const cost=performance.now()-t0;
+  lastCost=lastCost? lastCost*0.7+cost*0.3 : cost;
+  const now=performance.now();
+  if(now-fpsT>400){ fps=Math.round(frames*1000/(now-fpsT)); frames=0; fpsT=now; }
+  updateReadout();
+  requestAnimationFrame(frame);
+}
+let lastCost=0;
+
+const ro=document.getElementById('readout');
+function updateReadout(){
+  const r = TUNE.refl.on ? ` +R <b>${reflCount.toLocaleString()}</b>` : '';
+  const g = MODE==='piece' ? geoFor(CURRENT) : TUNE.geo;
+  ro.innerHTML=`${MODE==='piece'?CURRENT.toUpperCase():'FULL BOARD'} &nbsp; `
+    +`SEG <b>${segCount.toLocaleString()}</b>${r} &nbsp; JS <b>${lastCost.toFixed(1)}ms</b> &nbsp; `
+    +`MER <b>${g.meridians}</b> RS <b>${g.ringSegs}</b>`;
+}
+
+/* ============================================================
+   INPUT — orbit / zoom, mouse + touch from one path
+   ============================================================ */
+(function(){
+  let drag=false, lx=0, ly=0, pinch=0;
+  const pt=e=>e.touches?e.touches[0]:e;
+  function down(e){ if(e.touches&&e.touches.length===2){ pinch=dist2(e); return; }
+    drag=true; const p=pt(e); lx=p.clientX; ly=p.clientY; }
+  function move(e){
+    if(e.touches&&e.touches.length===2){
+      const d=dist2(e);
+      if(pinch) cam.dist=clamp(cam.dist*(pinch/d), TUNE.cam.minDist, TUNE.cam.maxDist);
+      pinch=d; e.preventDefault(); return;
+    }
+    if(!drag) return;
+    const p=pt(e), dx=p.clientX-lx, dy=p.clientY-ly; lx=p.clientX; ly=p.clientY;
+    cam.yaw   -= dx*0.006;
+    cam.pitch  = clamp(cam.pitch + dy*0.005, TUNE.cam.minPitch, TUNE.cam.maxPitch);
+    e.preventDefault();
+  }
+  function up(){ drag=false; pinch=0; }
+  function dist2(e){ const a=e.touches[0],b=e.touches[1];
+    return Math.hypot(a.clientX-b.clientX, a.clientY-b.clientY); }
+  cv.addEventListener('mousedown',down); window.addEventListener('mousemove',move);
+  window.addEventListener('mouseup',up);
+  cv.addEventListener('touchstart',down,{passive:false});
+  cv.addEventListener('touchmove',move,{passive:false});
+  window.addEventListener('touchend',up);
+  cv.addEventListener('wheel',e=>{ cam.dist=clamp(cam.dist*(1+Math.sign(e.deltaY)*0.09),
+    TUNE.cam.minDist,TUNE.cam.maxDist); e.preventDefault(); },{passive:false});
+})();
+function clamp(v,a,b){ return v<a?a:v>b?b:v; }
+
+/* ============================================================
+   PROFILE EDITOR
+   ============================================================ */
+const pc=document.getElementById('prof'), pctx=pc.getContext('2d');
+let editing='queen', sel=-1;
+let pScale=1, pOx=0, pOy=0;
+
+function profResize(){
+  const r=pc.getBoundingClientRect(), d=Math.min(window.devicePixelRatio||1,2);
+  pc.width=r.width*d; pc.height=r.height*d; pctx.setTransform(d,0,0,d,0,0);
+  drawProfile();
+}
+function profMap(){
+  const w=pc.getBoundingClientRect().width, h=pc.getBoundingClientRect().height;
+  const prof=PROFILES[editing];
+  let maxY=0,maxR=0.1;
+  for(const [r,y] of prof){ if(y>maxY)maxY=y; if(r>maxR)maxR=r; }
+  const sY=(h-26)/(maxY*1.06), sR=(w/2-16)/(maxR*1.25);
+  pScale=Math.min(sY,sR); pOx=w/2; pOy=h-14;
+}
+function toScreen(r,y){ return [pOx+r*pScale, pOy-y*pScale]; }
+
+function drawProfile(){
+  const w=pc.getBoundingClientRect().width, h=pc.getBoundingClientRect().height;
+  profMap();
+  pctx.clearRect(0,0,w,h);
+  pctx.fillStyle='#04070f'; pctx.fillRect(0,0,w,h);
+  // axis of revolution
+  pctx.strokeStyle='#7a5520'; pctx.setLineDash([3,4]); pctx.lineWidth=1;
+  pctx.beginPath(); pctx.moveTo(pOx,8); pctx.lineTo(pOx,h-6); pctx.stroke();
+  pctx.setLineDash([]);
+  // ground
+  pctx.strokeStyle='#1f6fd0'; pctx.beginPath(); pctx.moveTo(8,pOy); pctx.lineTo(w-8,pOy); pctx.stroke();
+
+  const prof=PROFILES[editing];
+  for(const s of [1,-1]){
+    pctx.beginPath();
+    prof.forEach(([r,y],i)=>{ const [x,yy]=toScreen(r*s,y); i?pctx.lineTo(x,yy):pctx.moveTo(x,yy); });
+    pctx.strokeStyle = s===1 ? '#7fdcff' : '#2b5f8a';
+    pctx.lineWidth = s===1 ? 1.6 : 1; pctx.stroke();
+  }
+  prof.forEach(([r,y],i)=>{
+    const [x,yy]=toScreen(r,y);
+    pctx.beginPath(); pctx.arc(x,yy, i===sel?5.5:3.4, 0, 6.2832);
+    pctx.fillStyle = i===sel ? '#ffb545' : '#7fdcff'; pctx.fill();
+  });
+}
+
+(function(){
+  let dragging=false;
+  const local=e=>{ const r=pc.getBoundingClientRect(), p=e.touches?e.touches[0]:e;
+    return [p.clientX-r.left, p.clientY-r.top]; };
+  function pick(e){
+    const [mx,my]=local(e), prof=PROFILES[editing];
+    let best=-1, bd=20*20;
+    prof.forEach(([r,y],i)=>{ const [x,yy]=toScreen(r,y);
+      const d=(x-mx)**2+(yy-my)**2; if(d<bd){ bd=d; best=i; } });
+    sel=best; dragging=best>=0; drawProfile(); if(dragging) e.preventDefault();
+  }
+  function move(e){
+    if(!dragging||sel<0) return;
+    const [mx,my]=local(e);
+    let r=(mx-pOx)/pScale, y=(pOy-my)/pScale;
+    if(r<0) r=0; if(y<0) y=0;
+    PROFILES[editing][sel]=[+r.toFixed(4), +y.toFixed(4)];
+    drawProfile(); rebuildGeo(); e.preventDefault();
+  }
+  const stop=()=>{ dragging=false; };
+  pc.addEventListener('mousedown',pick); window.addEventListener('mousemove',move);
+  window.addEventListener('mouseup',stop);
+  pc.addEventListener('touchstart',pick,{passive:false});
+  pc.addEventListener('touchmove',move,{passive:false});
+  window.addEventListener('touchend',stop);
+})();
+
+document.getElementById('addpt').onclick=()=>{
+  const p=PROFILES[editing]; if(sel<0) sel=p.length-1;
+  const i=Math.min(sel, p.length-2);
+  const mid=[(p[i][0]+p[i+1][0])/2, (p[i][1]+p[i+1][1])/2];
+  p.splice(i+1,0,mid); sel=i+1; drawProfile(); rebuildGeo();
+};
+document.getElementById('delpt').onclick=()=>{
+  const p=PROFILES[editing];
+  if(sel<0||p.length<=3) return;
+  p.splice(sel,1); sel=Math.min(sel,p.length-1); drawProfile(); rebuildGeo();
+};
+document.getElementById('resetpt').onclick=()=>{
+  PROFILES[editing]=DEFAULTS[editing](); sel=-1; drawProfile(); rebuildGeo();
+  DBG.log(`${editing} profile reset`);
+};
+
+/* ============================================================
+   UI WIRING
+   ============================================================ */
+function chipRow(el, items, get, set){
+  el.innerHTML='';
+  items.forEach(k=>{
+    const b=document.createElement('button');
+    b.className='chip'; b.textContent=k.toUpperCase();
+    b.setAttribute('aria-pressed', String(get()===k));
+    b.onclick=()=>{ set(k); [...el.children].forEach(c=>
+      c.setAttribute('aria-pressed', String(c.textContent.toLowerCase()===get()))); };
+    el.appendChild(b);
+  });
+}
+chipRow(document.getElementById('piecechips'), PIECES, ()=>CURRENT, k=>{
+  CURRENT=k; editing=k; MODE='piece';
+  cam.dist=TUNE.piece.dist; cam.ty=TUNE.piece.targetY;
+  syncModeChips(); rebuildScene(); drawProfile(); syncGeoSliders(); updateReadout();
+});
+chipRow(document.getElementById('profchips'), PIECES, ()=>editing, k=>{
+  editing=k; sel=-1; if(MODE==='piece'){ CURRENT=k; rebuildScene(); } drawProfile();
+});
+
+/* ---------- side colours ----------
+   Two independent picks from one swatch list, pieces only. Colours are read
+   fresh every frame, so a swap costs nothing — no geometry rebuild, no scene
+   reassembly. TUNE.color.board / .mote are deliberately untouched. */
+function applySides(){
+  const A=TUNE.swatches[TUNE.sideA], B=TUNE.swatches[TUNE.sideB];
+  if(A) TUNE.color.light=A.hex;
+  if(B) TUNE.color.dark =B.hex;
+}
+function lum(h){ const n=parseInt(h.slice(1),16);
+  return (0.2126*(n>>16&255) + 0.7152*(n>>8&255) + 0.0722*(n&255))/255; }
+
+function buildSwatches(){
+  for(const [elId,side] of [['sw-a','sideA'],['sw-b','sideB']]){
+    const el=document.getElementById(elId); el.innerHTML='';
+    for(const key of Object.keys(TUNE.swatches)){
+      const sw=TUNE.swatches[key];
+      const b=document.createElement('button');
+      b.className='sw'; b.dataset.key=key; b.title=sw.label;
+      b.style.background=sw.hex; b.style.color=sw.hex;
+      b.setAttribute('aria-label', sw.label);
+      b.setAttribute('aria-pressed', String(TUNE[side]===key));
+      b.onclick=()=>{ TUNE[side]=key; applySides(); syncSwatches(); };
+      el.appendChild(b);
+    }
+  }
+}
+function syncSwatches(){
+  for(const [elId,side] of [['sw-a','sideA'],['sw-b','sideB']]){
+    [...document.getElementById(elId).children].forEach(c=>
+      c.setAttribute('aria-pressed', String(c.dataset.key===TUNE[side])));
+  }
+  const A=TUNE.swatches[TUNE.sideA], B=TUNE.swatches[TUNE.sideB];
+  const el=document.getElementById('sidehint');
+  const d=Math.abs(lum(A.hex)-lum(B.hex));
+  // the two armies overlap heavily at board scale; near-equal brightness makes
+  // them very hard to tell apart even when the hues differ
+  el.textContent = TUNE.sideA===TUNE.sideB
+    ? `${A.label} vs ${B.label} \u2014 same colour, the two sides will be indistinguishable`
+    : d<0.18
+      ? `${A.label} vs ${B.label} \u2014 close in brightness, hard to separate on a full board`
+      : `${A.label} vs ${B.label}`;
+  el.style.color = (TUNE.sideA===TUNE.sideB || d<0.18) ? '#c98b3a' : '#4a5a72';
+}
+
+function syncModeChips(){
+  [...document.getElementById('modechips').children].forEach(c=>
+    c.setAttribute('aria-pressed', String(c.dataset.mode===MODE)));
+}
+document.getElementById('modechips').onclick=e=>{
+  const m=e.target.dataset && e.target.dataset.mode; if(!m) return;
+  MODE=m;
+  if(m==='piece'){ cam.dist=TUNE.piece.dist; cam.ty=TUNE.piece.targetY; }
+  else { cam.dist=TUNE.cam.dist; cam.ty=TUNE.cam.targetY; }
+  syncModeChips(); rebuildScene(); syncGeoSliders(); updateReadout();
+};
+
+document.getElementById('tabs').onclick=e=>{
+  const id=e.target.dataset && e.target.dataset.pane; if(!id) return;
+  [...document.querySelectorAll('.tab')].forEach(t=>
+    t.setAttribute('aria-selected', String(t.dataset.pane===id)));
+  document.querySelectorAll('.pane').forEach(p=>p.classList.toggle('on', p.id===id));
+  if(id==='p-prof') setTimeout(profResize,0);
+};
+
+function slider(id,out,get,set,fmt){
+  const s=document.getElementById(id), o=document.getElementById(out);
+  s.value=get(); o.textContent=fmt?fmt(get()):get();
+  s.oninput=()=>{ set(+s.value); o.textContent=fmt?fmt(+s.value):s.value; };
+}
+/* ---------- density scope ----------
+   In PIECE mode the three geo sliders edit that piece's override; in FULL BOARD
+   mode there is no single target, so they edit the global default and any
+   per-piece overrides stay put. The scope row says which is in force. */
+const GEO_SLIDERS=[['s-mer','o-mer','meridians'],
+                   ['s-rseg','o-rseg','ringSegs'],
+                   ['s-rev','o-rev','ringEvery']];
+
+function geoGet(key){ return (MODE==='piece'?geoFor(CURRENT):TUNE.geo)[key]; }
+function geoSet(key,v){
+  if(MODE==='piece'){
+    const t = TUNE.geoBy[CURRENT] || (TUNE.geoBy[CURRENT]={});
+    t[key]=v; rebuildGeo(CURRENT);
+  }else{
+    TUNE.geo[key]=v; rebuildGeo();
+  }
+  syncGeoScope(); updateReadout();
+}
+function syncGeoScope(){
+  const el=document.getElementById('geoscope'), btn=document.getElementById('geoclear');
+  const over = MODE==='piece' && TUNE.geoBy[CURRENT];
+  el.textContent = MODE!=='piece' ? 'ALL PIECES'
+                 : CURRENT.toUpperCase() + (over?' \u00b7 OVERRIDE':' \u00b7 GLOBAL');
+  btn.style.visibility = over ? 'visible' : 'hidden';
+}
+function syncGeoSliders(){
+  for(const [sid,oid,key] of GEO_SLIDERS){
+    const v=geoGet(key);
+    document.getElementById(sid).value=v;
+    document.getElementById(oid).textContent=v;
+  }
+  syncGeoScope();
+}
+document.getElementById('geoclear').onclick=()=>{
+  if(MODE!=='piece') return;
+  delete TUNE.geoBy[CURRENT];
+  rebuildGeo(CURRENT); syncGeoSliders(); updateReadout();
+  DBG.log(`${CURRENT} density override cleared`);
+};
+
+slider('s-mer','o-mer',()=>geoGet('meridians'), v=>geoSet('meridians',v));
+slider('s-rseg','o-rseg',()=>geoGet('ringSegs'), v=>geoSet('ringSegs',v));
+slider('s-rev','o-rev',()=>geoGet('ringEvery'), v=>geoSet('ringEvery',v));
+slider('s-glow','o-glow',()=>Math.round(TUNE.glow.strength*100), v=>{TUNE.glow.strength=v/100;},
+  v=>v+'%');
+slider('s-fall','o-fall',()=>Math.round(TUNE.depth.falloff*100), v=>{TUNE.depth.falloff=v/100;},
+  v=>v+'%');
+slider('s-rd','o-rd',()=>Math.round(TUNE.refl.detail*100),
+  v=>{TUNE.refl.detail=v/100; rebuildGeo(); updateReadout();}, v=>v+'%');
+slider('s-ra','o-ra',()=>Math.round(TUNE.refl.alpha*100),
+  v=>{TUNE.refl.alpha=v/100;}, v=>v+'%');
+
+function toggle(id,get,set){
+  const b=document.getElementById(id);
+  b.setAttribute('aria-pressed',String(get()));
+  b.onclick=()=>{ set(!get()); b.setAttribute('aria-pressed',String(get())); };
+}
+function setRefl(v){
+  TUNE.refl.on=v;
+  document.getElementById('t-refl').setAttribute('aria-pressed',String(v));
+  const b=document.getElementById('ov-refl');
+  b.setAttribute('aria-pressed',String(v)); b.textContent = v?'REFL ON':'REFL OFF';
+  updateReadout();
+}
+toggle('t-refl',()=>TUNE.refl.on, v=>setRefl(v));
+toggle('t-rglow',()=>TUNE.refl.fullGlow, v=>TUNE.refl.fullGlow=v);
+document.getElementById('ov-refl').onclick=()=>setRefl(!TUNE.refl.on);
+
+/* A/B benchmark. Canvas2D defers rasterisation, so timing the draw calls
+   synchronously only measures JS command submission — it can read single-digit ms
+   while the display is crawling. These runs step through real animation frames and
+   use wall-clock deltas, which includes raster. */
+document.getElementById('ov-bench').onclick=()=>{
+  const out=document.getElementById('benchout');
+  out.textContent='measuring...';
+  const prev=TUNE.refl.on, N=14;
+  const run=(on,done)=>{
+    TUNE.refl.on=on;
+    let i=0, t0=0;
+    const step=()=>{
+      renderScene();
+      if(i===0) t0=performance.now();
+      i++;
+      if(i<=N) requestAnimationFrame(step); else done((performance.now()-t0)/N);
+    };
+    requestAnimationFrame(step);
+  };
+  run(false, off => run(true, on => {
+    TUNE.refl.on=prev; lastSig='';
+    const share = on>0 ? Math.round((on-off)/on*100) : 0;
+    out.innerHTML=`OFF <b>${off.toFixed(1)}ms</b> (${(1000/off).toFixed(0)} fps)   `
+      +`ON <b>${on.toFixed(1)}ms</b> (${(1000/on).toFixed(0)} fps)\n`
+      +`REFL COSTS <b>${(on-off).toFixed(1)}ms</b> (${share}% of frame)`;
+    DBG.log(`bench ${MODE} seg=${segCount} refl=${reflCount} `
+      +`detail=${Math.round(TUNE.refl.detail*100)}% fullGlow=${TUNE.refl.fullGlow} `
+      +`| off=${off.toFixed(1)}ms on=${on.toFixed(1)}ms`);
+  }));
+};
+toggle('t-motes',()=>TUNE.motes.on, v=>TUNE.motes.on=v);
+toggle('t-grid',()=>TUNE.board.on, v=>{TUNE.board.on=v; rebuildScene(); updateReadout();});
+toggle('t-nodes',()=>TUNE.board.nodes, v=>TUNE.board.nodes=v);
+
+// Density is part of a piece's definition now, so it rides along with the
+// profiles — otherwise the game build silently falls back to one global number.
+document.getElementById('dump').onclick=()=>{
+  const payload={ profiles:PROFILES, geo:TUNE.geo, geoBy:TUNE.geoBy,
+                  sides:{ a:TUNE.sideA, b:TUNE.sideB } };
+  document.getElementById('out').value=JSON.stringify(payload,(k,v)=>
+    typeof v==='number'? +v.toFixed(4) : v, 1);
+};
+document.getElementById('loadout').onclick=()=>{
+  const t=document.getElementById('out');
+  try{
+    const raw=JSON.parse(t.value);
+    // accept either the new envelope or a bare profiles map from an old dump
+    const o = raw.profiles || raw;
+    let n=0;
+    for(const k of PIECES){
+      if(!Array.isArray(o[k])) continue;
+      const rows=o[k].filter(r=>Array.isArray(r)&&r.length===2&&isFinite(r[0])&&isFinite(r[1]));
+      if(rows.length<3) throw new Error(`${k}: needs at least 3 valid [radius,height] pairs`);
+      PROFILES[k]=rows.map(([r,y])=>[Math.max(0,+r), Math.max(0,+y)]); n++;
+    }
+    if(!n) throw new Error('no recognised piece keys — expected pawn/knight/bishop/rook/queen/king');
+    // density is untrusted here — isFinite(null) is true and a rounded null is
+    // zero, which would build a piece with no meridians at all
+    const RANGE={ meridians:[4,48], ringSegs:[6,48], ringEvery:[1,5] };
+    const num=(v,key)=>{ if(typeof v!=='number'||!isFinite(v)) return null;
+      const [lo,hi]=RANGE[key]; return Math.min(hi, Math.max(lo, Math.round(v))); };
+    const pick=src=>{ const t2={};
+      if(src && typeof src==='object')
+        for(const key in RANGE){ const v=num(src[key],key); if(v!==null) t2[key]=v; }
+      return t2; };
+    Object.assign(TUNE.geo, pick(raw.geo));
+    if(raw.geoBy && typeof raw.geoBy==='object'){
+      TUNE.geoBy={};
+      for(const k of PIECES){
+        const t2=pick(raw.geoBy[k]);
+        if(Object.keys(t2).length) TUNE.geoBy[k]=t2;
+      }
+    }
+    if(raw.sides && typeof raw.sides==='object'){
+      if(TUNE.swatches[raw.sides.a]) TUNE.sideA=raw.sides.a;
+      if(TUNE.swatches[raw.sides.b]) TUNE.sideB=raw.sides.b;
+      applySides(); syncSwatches();
+    }
+    sel=-1; rebuildGeo(); drawProfile(); syncGeoSliders(); updateReadout();
+    DBG.log(`loaded ${n} profile(s)`);
+  }catch(e){
+    DBG.log('load failed: '+e.message); DBG.open();
+  }
+};
+document.getElementById('copyout').onclick=async()=>{
+  const t=document.getElementById('out');
+  if(!t.value) document.getElementById('dump').click();
+  try{ await navigator.clipboard.writeText(t.value); DBG.log('profiles copied'); }
+  catch(_){ t.select(); document.execCommand('copy'); }
+};
+
+/* ---------- boot ---------- */
+resize(); buildMotes(); rebuildGeo(); syncModeChips(); syncGeoSliders();
+buildSwatches(); applySides(); syncSwatches(); setRefl(TUNE.refl.on);
+cam.dist=TUNE.piece.dist; cam.ty=TUNE.piece.targetY;
+setTimeout(profResize,0);
+window.addEventListener('resize',()=>setTimeout(profResize,0));
+updateReadout();
+DBG.log('piece lab ready');
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

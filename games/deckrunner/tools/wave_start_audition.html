@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>DECKRUNNER — wave-start sound audition</title>
+<style>
+:root{--bg:#020408;--brass:#d9a441;--hi:#ffd98a;--dim:#6b5426;--cyan:#6fe3ff;--mono:ui-monospace,Menlo,Consolas,monospace}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:#020408}}
+:root[data-theme="dark"]{--bg:#020408}
+:root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--brass);font-family:var(--mono)}
+main{max-width:720px;margin:0 auto;padding:28px 18px 40px}
+h1{color:var(--hi);letter-spacing:.2em;font-size:22px;margin:0 0 6px}
+.sub{color:var(--cyan);letter-spacing:.2em;font-size:12px;margin-bottom:22px}
+.opt{border:1px solid var(--dim);padding:14px 16px;margin:0 0 12px;display:grid;grid-template-columns:auto 1fr;gap:6px 16px;align-items:center}
+.opt.ref{border-style:dashed;opacity:.8}
+button{font:inherit;letter-spacing:.14em;background:transparent;color:var(--cyan);border:1px solid rgba(111,227,255,.5);padding:12px 16px;cursor:pointer;min-width:92px}
+button:hover{background:rgba(111,227,255,.08)}
+button:focus-visible{outline:2px solid var(--cyan);outline-offset:2px}
+button.on{background:rgba(111,227,255,.15)}
+.name{color:var(--hi);letter-spacing:.12em}
+.desc{grid-column:2;color:#c9ad73;font-size:13px;line-height:1.45}
+.note{color:#9c8350;font-size:12.5px;line-height:1.5;margin-top:18px}
+</style></head><body><main>
+<h1>WAVE START</h1>
+<div class="sub">SOUND AUDITION · SAME MIXER AS THE GAME</div>
+<div id="list"></div>
+<p class="note">Each plays through the game's compressor and reverb, so it should sound the way it will in play. Pick one by letter, or mix parts ("B's drop with E's pings").</p>
+</main>
+<script>
+(() => {
+'use strict';
+/*
+  Sound synthesis core (zzfxBuild) is the buildSamples() generator from
+  ZzFX - Zuper Zmall Zound Zynth v1.3.2 by Frank Force, https://github.com/KilledByAPixel/ZzFX
+
+  ZzFX MIT License
+
+  Copyright (c) 2019 - Frank Force
+
+  Permission is hereby granted, free of charge, to any person obtaining a copy
+  of this software and associated documentation files (the "Software"), to deal
+  in the Software without restriction, including without limitation the rights
+  to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+  copies of the Software, and to permit persons to whom the Software is
+  furnished to do so, subject to the following conditions:
+
+  The above copyright notice and this permission notice shall be included in all
+  copies or substantial portions of the Software.
+
+  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+  SOFTWARE.
+*/
+function zzfxBuild(sampleRate, volume = 1, randomness = .05, frequency = 220, attack = 0, sustain = 0, release = .1, shape = 0, shapeCurve = 1, slide = 0, deltaSlide = 0, pitchJump = 0, pitchJumpTime = 0, repeatTime = 0, noise = 0, modulation = 0, bitCrush = 0, delay = 0, sustainVolume = 1, decay = 0, tremolo = 0, filter = 0) {
+        // init parameters
+        let PI2_unused = 0,
+            PI2 = Math.PI*2, 
+            abs = Math.abs, 
+            sign = v => v<0?-1:1, 
+            startSlide = slide *= 500 * PI2 / sampleRate / sampleRate,
+            startFrequency = frequency *= 
+                (1 + randomness*2*Math.random() - randomness) * PI2 / sampleRate,
+            modOffset = 0, // modulation offset  
+            repeat = 0,    // repeat offset
+            crush = 0,     // bit crush offset
+            jump = 1,      // pitch jump timer
+            length,        // sample length
+            b = [],        // sample buffer
+            t = 0,         // sample time
+            i = 0,         // sample index 
+            s = 0,         // sample value
+        f,             // wave frequency
+
+        // biquad LP/HP filter
+        quality = 2, w = PI2 * abs(filter) * 2 / sampleRate,
+        cos = Math.cos(w), alpha = Math.sin(w) / 2 / quality,
+        a0 = 1 + alpha, a1 = -2*cos / a0, a2 = (1 - alpha) / a0,
+        b0 = (1 + sign(filter) * cos) / 2 / a0, 
+        b1 = -(sign(filter) + cos) / a0, b2 = b0,
+        x2 = 0, x1 = 0, y2 = 0, y1 = 0;
+
+        // scale by sample rate
+        const minAttack = 9; // prevent pop if attack is 0
+        attack = attack * sampleRate || minAttack;
+        decay *= sampleRate;
+        sustain *= sampleRate;
+        release *= sampleRate;
+        delay *= sampleRate;
+        deltaSlide *= 500 * PI2 / sampleRate**3;
+        modulation *= PI2 / sampleRate;
+        pitchJump *= PI2 / sampleRate;
+        pitchJumpTime *= sampleRate;
+        repeatTime = repeatTime * sampleRate | 0;
+
+        // generate waveform
+        for(length = attack + decay + sustain + release + delay | 0;
+            i < length; b[i++] = s * volume)                   // sample
+        {
+            if (!(++crush%(bitCrush*100|0)))                   // bit crush
+            {
+                s = shape? shape>1? shape>2? shape>3? shape>4? // wave shape
+                    (t/PI2%1 < shapeCurve/2? 1 : -1) :         // 5 square duty
+                    Math.sin(t**3) :                           // 4 noise
+                    Math.max(Math.min(Math.tan(t),1),-1):      // 3 tan
+                    1-(2*t/PI2%2+2)%2:                         // 2 saw
+                    1-4*abs(Math.round(t/PI2)-t/PI2):          // 1 triangle
+                    Math.sin(t);                               // 0 sin
+
+                s = (repeatTime ?
+                        1 - tremolo + tremolo*Math.sin(PI2*i/repeatTime) // tremolo
+                        : 1) *
+                    (shape>4?s:sign(s)*abs(s)**shapeCurve) * // shape curve
+                    (i < attack ? i/attack :                 // attack
+                    i < attack + decay ?                     // decay
+                    1-((i-attack)/decay)*(1-sustainVolume) : // decay falloff
+                    i < attack  + decay + sustain ?          // sustain
+                    sustainVolume :                          // sustain volume
+                    i < length - delay ?                     // release
+                    (length - i - delay)/release *           // release falloff
+                    sustainVolume :                          // release volume
+                    0);                                      // post release
+
+                s = delay ? s/2 + (delay > i ? 0 :           // delay
+                    (i<length-delay? 1 : (length-i)/delay) * // release delay 
+                    b[i-delay|0]/2/volume) : s;              // sample delay
+
+                if (filter)                                  // apply filter
+                    s = y1 = b2*x2 + b1*(x2=x1) + b0*(x1=s) - a2*y2 - a1*(y2=y1);
+            }
+
+            f = (frequency += slide += deltaSlide) *// frequency
+                Math.cos(modulation*modOffset++);   // modulation
+            t += f + f*noise*Math.sin(i**5);        // noise
+
+            if (jump && ++jump > pitchJumpTime)     // pitch jump
+            { 
+                frequency += pitchJump;             // apply pitch jump
+                startFrequency += pitchJump;        // also apply to start
+                jump = 0;                           // stop pitch jump time
+            } 
+
+            if (repeatTime && !(++repeat % repeatTime)) // repeat
+            { 
+                frequency = startFrequency;   // reset frequency
+                slide = startSlide;           // reset slide
+                jump ||= 1;                   // reset pitch jump time
+            }
+        }
+
+        return b; // return sample buffer
+}
+
+
+const OPTS = [
+  { id:'A', name:'Ignition arpeggio', desc:'Classic arcade start: four quick square-wave notes climbing an octave, last one rings out.',
+    layers: [
+      { p:[1,0,523,0,.05,.07,5,1,0,0,0,0,0,0,0,0,0,1,0,0,-4000], when:0,   rate:1,    vol:.35, rev:.2 },
+      { p:[1,0,523,0,.05,.07,5,1,0,0,0,0,0,0,0,0,0,1,0,0,-4000], when:.08, rate:1.26, vol:.35, rev:.2 },
+      { p:[1,0,523,0,.05,.07,5,1,0,0,0,0,0,0,0,0,0,1,0,0,-4000], when:.16, rate:1.5,  vol:.35, rev:.2 },
+      { p:[1,0,523,0,.12,.45,5,1,0,0,0,0,0,0,0,0,0,1,0,0,-4000], when:.24, rate:2,    vol:.35, rev:.35 },
+      { p:[1,0,120,0,.05,.6,0,1,-.25,0,0,0,0,0,0,0,0,1,0,0,0],   when:.24, rate:1,    vol:.5,  rev:0 } ] },
+  { id:'B', name:'Hyperspace drop', desc:'Filtered noise falling out of the sky, landing on a sub-bass thump. Feels like arriving.',
+    layers: [
+      { p:[1,0,900,.02,.25,.4,4,1,-1.2,0,0,0,0,1,0,0,0,1,0,0,-2600], when:0,   rate:1, vol:.45, rev:.35 },
+      { p:[1,0,120,0,.05,.6,0,1,-.25,0,0,0,0,0,0,0,0,1,0,0,0],       when:.55, rate:.8, vol:.9, rev:0 },
+      { p:[1,0,95,0,.04,.45,4,1,-.1,0,0,0,0,.8,0,.2,0,.8,.05,0,-2600], when:.55, rate:1, vol:.35, rev:.4 } ] },
+  { id:'C', name:'Battle stations', desc:'Two-tone klaxon, twice. Urgent, military, very readable.',
+    layers: [0,1,2,3].map(i => ({ p:[1,0,466,.01,.12,.05,5,1,0,0,0,0,0,0,0,0,0,1,0,0,-3000], when:i*.2, rate: i%2 ? .8 : 1, vol:.28, rev:.25 })) },
+  { id:'D', name:'Engines up', desc:'Clean turbine spool rising for a second, then a bright ping when you hit full throttle.',
+    layers: [
+      { p:[1,0,90,.35,.3,.35,1,1,2.2,0,0,0,0,0,0,0,0,1,0,0,0],        when:0,   rate:1, vol:.35, rev:.15 },
+      { p:[1,0,45,.35,.3,.35,2,1,1.1,0,0,0,0,0,0,0,0,1,0,0,-900],     when:0,   rate:1, vol:.35, rev:.1 },
+      { p:[1,0,1320,0,.02,.35,0,1,0,0,0,0,0,0,0,0,0,1,0,0,0],         when:.95, rate:1, vol:.3,  rev:.45 } ] },
+  { id:'E', name:'Radar lock', desc:'Three sonar pings, a higher lock tone, then a low boom. Target acquired.',
+    layers: [
+      { p:[1,0,1320,0,.02,.18,0,1,0,0,0,0,0,0,0,0,0,1,0,0,0], when:0,   rate:1,    vol:.3, rev:.5 },
+      { p:[1,0,1320,0,.02,.18,0,1,0,0,0,0,0,0,0,0,0,1,0,0,0], when:.22, rate:1,    vol:.3, rev:.5 },
+      { p:[1,0,1320,0,.02,.18,0,1,0,0,0,0,0,0,0,0,0,1,0,0,0], when:.44, rate:1,    vol:.3, rev:.5 },
+      { p:[1,0,1320,0,.12,.3,0,1,0,0,0,0,0,0,0,0,0,1,0,0,0],  when:.66, rate:1.335,vol:.3, rev:.5 },
+      { p:[1,0,120,0,.05,.6,0,1,-.25,0,0,0,0,0,0,0,0,1,0,0,0], when:.8, rate:.8,   vol:.8, rev:0 } ] },
+  { id:'F', name:'Vector sweep', desc:'Triangle-wave glide falling two octaves with an echo. Very Tempest / Star Wars cabinet.',
+    layers: [
+      { p:[1,0,1760,0,.5,.3,1,1,-2.9,0,0,0,0,0,0,0,.1,1,0,0,0], when:0, rate:1, vol:.3, rev:.3 } ] },
+  { id:'—', name:'Current (for reference)', desc:'The one that sounds almost human: a noisy rising saw whirr plus the chime.', ref:true,
+    layers: [
+      { p:[1,0,140,.08,.15,.2,2,1,1.5,0,0,0,0,.3,0,.1,0,1,0,0,-1800], when:0,   rate:1, vol:.48, rev:.25 },
+      { p:[1,0,660,.005,.08,.35,1,1,0,0,330,.09,0,0,0,0,.08,1,0,0,0], when:.25, rate:1, vol:.34, rev:.4 } ] },
+];
+let AC = null, bus = null, rev = null;
+function impulse(sec, decay) {
+  const n = Math.floor(AC.sampleRate*sec), b = AC.createBuffer(2, n, AC.sampleRate);
+  for (let c = 0; c < 2; c++) { const d = b.getChannelData(c); for (let i = 0; i < n; i++) d[i] = (Math.random()*2-1)*Math.pow(1-i/n, decay); }
+  return b;
+}
+function init() {
+  if (AC) return;
+  AC = new (window.AudioContext || window.webkitAudioContext)();
+  const comp = AC.createDynamicsCompressor();
+  comp.threshold.value = -20; comp.knee.value = 12; comp.ratio.value = 4; comp.attack.value = .003; comp.release.value = .25;
+  const m = AC.createGain(); m.gain.value = .9; comp.connect(m); m.connect(AC.destination);
+  bus = AC.createGain(); bus.connect(comp);
+  const cv = AC.createConvolver(); cv.buffer = impulse(1.9, 2.6);
+  rev = AC.createGain(); const ro = AC.createGain(); ro.gain.value = .55;
+  rev.connect(cv); cv.connect(ro); ro.connect(comp);
+  for (const o of OPTS) for (const l of o.layers) {
+    const s = zzfxBuild(AC.sampleRate, ...l.p);
+    l.buf = AC.createBuffer(1, Math.max(1, s.length), AC.sampleRate); l.buf.getChannelData(0).set(s);
+  }
+}
+function play(o) {
+  init(); if (AC.state === 'suspended') AC.resume();
+  const t0 = AC.currentTime + .03;
+  for (const l of o.layers) {
+    const src = AC.createBufferSource(); src.buffer = l.buf; src.playbackRate.value = l.rate;
+    const g = AC.createGain(); g.gain.value = l.vol;
+    src.connect(g); g.connect(bus);
+    if (l.rev) { const s = AC.createGain(); s.gain.value = l.rev; g.connect(s); s.connect(rev); }
+    src.start(t0 + l.when);
+  }
+}
+const list = document.getElementById('list');
+for (const o of OPTS) {
+  const d = document.createElement('div'); d.className = 'opt' + (o.ref ? ' ref' : '');
+  const b = document.createElement('button'); b.type = 'button'; b.textContent = '▶ ' + o.id;
+  b.addEventListener('click', () => { play(o); b.classList.add('on'); setTimeout(() => b.classList.remove('on'), 600); });
+  const n = document.createElement('div'); n.className = 'name'; n.textContent = o.name;
+  const ds = document.createElement('div'); ds.className = 'desc'; ds.textContent = o.desc;
+  d.append(b, n, ds); list.appendChild(d);
+}
+})();
+</script></body></html>

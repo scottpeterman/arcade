@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Vector Arcade</title>
+<meta name="description" content="Wireframe and vector browser games by Scott Peterman.">
+<meta property="og:title" content="Vector Arcade">
+<meta property="og:description" content="Wireframe and vector browser games. No installs, no accounts.">
+<meta property="og:image" content="games/deckrunner/thumb.webp">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600;800&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#05070b; --panel:#0b1018; --line:#1c2a3a; --ink:#cfe8ff; --dim:#6f8296;
+    --glow:#36d6ff; --amber:#ffb020;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--ink)}
+  body{font:15px/1.5 "Share Tech Mono",ui-monospace,Menlo,Consolas,monospace;min-height:100vh;
+    background-image:linear-gradient(rgba(54,214,255,.035) 1px,transparent 1px),
+                     linear-gradient(90deg,rgba(54,214,255,.035) 1px,transparent 1px);
+    background-size:32px 32px}
+  a{color:inherit}
+  header{max-width:1200px;margin:0 auto;padding:48px 16px 12px}
+  h1{font-family:Orbitron,sans-serif;font-weight:800;letter-spacing:.12em;margin:0;
+     font-size:clamp(28px,6vw,52px);color:var(--glow);text-shadow:0 0 18px rgba(54,214,255,.45)}
+  header p{color:var(--dim);margin:8px 0 0}
+  nav{max-width:1200px;margin:0 auto;padding:16px 16px 0;display:flex;flex-wrap:wrap;gap:8px}
+  nav button{font:inherit;color:var(--dim);background:transparent;border:1px solid var(--line);
+     padding:4px 12px;cursor:pointer}
+  nav button[aria-pressed="true"]{color:var(--bg);background:var(--glow);border-color:var(--glow)}
+  main{max-width:1200px;margin:0 auto;padding:8px 16px 64px}
+  h2{font-family:Orbitron,sans-serif;font-weight:600;font-size:14px;letter-spacing:.2em;
+     color:var(--amber);margin:32px 0 12px;text-transform:uppercase}
+  .grid{display:grid;gap:16px;grid-template-columns:repeat(auto-fill,minmax(260px,1fr))}
+  .card{display:flex;flex-direction:column;background:var(--panel);border:1px solid var(--line);
+     text-decoration:none;transition:border-color .15s,transform .15s}
+  .card:hover,.card:focus-visible{border-color:var(--glow);transform:translateY(-2px);outline:none}
+  .thumb{aspect-ratio:16/9;background:#000;overflow:hidden;position:relative}
+  .thumb img{width:100%;height:100%;object-fit:cover;display:block}
+  .thumb .fallback{position:absolute;inset:0;display:grid;place-items:center;
+     font-family:Orbitron,sans-serif;font-weight:800;letter-spacing:.15em;font-size:22px;
+     color:var(--glow);text-shadow:0 0 14px rgba(54,214,255,.6);text-transform:uppercase;
+     background:radial-gradient(circle at 50% 60%,rgba(54,214,255,.12),transparent 60%)}
+  .body{padding:12px 14px 14px;display:flex;flex-direction:column;gap:6px;flex:1}
+  .title{font-family:Orbitron,sans-serif;font-weight:600;letter-spacing:.06em;font-size:16px}
+  .tag{color:var(--dim);font-size:13px;flex:1}
+  .meta{display:flex;flex-wrap:wrap;gap:6px;font-size:11px;color:var(--dim)}
+  .meta span{border:1px solid var(--line);padding:1px 6px}
+  .lab .card{opacity:.85}
+  footer{max-width:1200px;margin:0 auto;padding:0 16px 32px;color:var(--dim);font-size:13px}
+</style>
+</head>
+<body>
+<header>
+  <h1 id="title">VECTOR ARCADE</h1>
+  <p id="subtitle"></p>
+</header>
+<nav id="filters" aria-label="Filter by tag"></nav>
+<main id="shelves"></main>
+<footer id="footer"></footer>
+
+<script>
+const SHELVES = [
+  { id: "featured", label: "Games" },
+  { id: "lab",      label: "Lab &amp; tools" }
+];
+
+let manifest = null;
+let activeTag = null;
+
+function el(tag, attrs = {}, html = "") {
+  const n = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v);
+  if (html) n.innerHTML = html;
+  return n;
+}
+
+function esc(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+function card(g) {
+  const a = el("a", { class: "card", href: g.path });
+  const thumb = el("div", { class: "thumb" });
+  const fb = el("div", { class: "fallback" }, esc(g.title));
+  if (g.thumb) {
+    const img = el("img", { src: g.thumb, alt: "", loading: "lazy" });
+    img.onerror = () => { img.remove(); thumb.appendChild(fb); };
+    thumb.appendChild(img);
+  } else {
+    thumb.appendChild(fb);
+  }
+  const meta = [];
+  if (g.players) meta.push(`${esc(g.players)}P`);
+  for (const i of g.input || []) meta.push(esc(i));
+  const body = el("div", { class: "body" },
+    `<div class="title">${esc(g.title)}</div>` +
+    `<div class="tag">${esc(g.tagline || "")}</div>` +
+    `<div class="meta">${meta.map(m => `<span>${m}</span>`).join("")}</div>`);
+  a.append(thumb, body);
+  return a;
+}
+
+function render() {
+  const root = document.getElementById("shelves");
+  root.innerHTML = "";
+  for (const shelf of SHELVES) {
+    const games = manifest.games.filter(g =>
+      (g.shelf || "featured") === shelf.id && (!activeTag || (g.tags || []).includes(activeTag)));
+    if (!games.length) continue;
+    const sec = el("section", { class: shelf.id });
+    sec.append(el("h2", {}, shelf.label));
+    const grid = el("div", { class: "grid" });
+    games.forEach(g => grid.append(card(g)));
+    sec.append(grid);
+    root.append(sec);
+  }
+}
+
+function renderFilters() {
+  const nav = document.getElementById("filters");
+  const tags = [...new Set(manifest.games.flatMap(g => g.tags || []))].sort();
+  const mk = (label, tag) => {
+    const b = el("button", { type: "button", "aria-pressed": String(activeTag === tag) }, esc(label));
+    b.onclick = () => { activeTag = tag; renderFilters(); render(); };
+    return b;
+  };
+  nav.innerHTML = "";
+  nav.append(mk("all", null));
+  tags.forEach(t => nav.append(mk(t, t)));
+}
+
+fetch("games.json", { cache: "no-cache" })
+  .then(r => r.json())
+  .then(m => {
+    manifest = m;
+    document.getElementById("title").textContent = (m.title || "Vector Arcade").toUpperCase();
+    document.getElementById("subtitle").textContent = m.subtitle || "";
+    document.getElementById("footer").innerHTML =
+      `${esc(m.author || "")} &middot; <a href="${esc(m.repo || "#")}">source</a>`;
+    renderFilters();
+    render();
+  })
+  .catch(e => {
+    document.getElementById("shelves").innerHTML =
+      `<p>Could not load games.json (${esc(e.message)}). Serve this folder over HTTP: <code>python3 -m http.server</code></p>`;
+  });
+</script>
+</body>
+</html>

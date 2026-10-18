@@ -1,0 +1,664 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>Ringworld</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Saira+Semi+Condensed:wght@400;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: full-bleed WebGL view; spec card top-left, status chip top-right, view switcher docked bottom-center */
+:root{
+  --void:#020306;
+  --panel:rgba(8,12,20,.66);
+  --line:rgba(170,200,255,.18);
+  --sky:#9cc6ff;
+  --sun:#ffd58a;
+  --text:#dfe6f2;
+  --dim:#8592a8;
+  --display:"Saira Semi Condensed","Arial Narrow",system-ui,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+  color-scheme:dark;
+}
+[hidden]{display:none!important}
+html,body{height:100%;overflow:hidden}
+body{background:var(--void);color:var(--text);font-family:var(--display);touch-action:none;user-select:none;-webkit-user-select:none}
+canvas#gl{position:fixed;inset:0;width:100%;height:100%;display:block}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:3px;backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px)}
+#spec{position:fixed;top:calc(12px + env(safe-area-inset-top,0px));left:calc(12px + env(safe-area-inset-left,0px));width:240px;padding:12px 14px;z-index:5}
+.eyebrow{color:var(--sun);font-size:10px;letter-spacing:.22em;text-transform:uppercase}
+h1{margin:2px 0 8px;font-weight:600;font-size:28px;letter-spacing:.2em;text-transform:uppercase;color:#fff}
+dl{display:grid;grid-template-columns:auto 1fr;gap:4px 10px;margin:0;font-size:12px}
+dt{color:var(--dim);letter-spacing:.06em}
+dd{margin:0;text-align:right;font-family:var(--mono);font-size:11.5px;font-variant-numeric:tabular-nums}
+.note{margin-top:9px;color:var(--dim);font-size:11px;line-height:1.45}
+#toggleSpec{display:none}
+#status{position:fixed;top:calc(12px + env(safe-area-inset-top,0px));right:calc(12px + env(safe-area-inset-right,0px));padding:8px 12px;z-index:5;text-align:right;min-width:150px}
+#status .lbl{color:var(--dim);font-size:10px;letter-spacing:.18em;text-transform:uppercase}
+#status .val{font-family:var(--mono);font-size:13px;margin-top:2px}
+#daydot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;vertical-align:1px}
+#dock{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(16px + env(safe-area-inset-bottom,0px));display:flex;gap:4px;padding:6px;z-index:6;flex-wrap:wrap;justify-content:center;max-width:calc(100% - 24px)}
+#dock button{font-family:var(--display);font-weight:600;font-size:13px;letter-spacing:.12em;text-transform:uppercase;color:var(--text);background:transparent;border:1px solid transparent;border-radius:2px;padding:8px 12px;cursor:pointer;white-space:nowrap}
+#dock button[aria-pressed="true"]{background:rgba(156,198,255,.16);border-color:rgba(156,198,255,.5);color:#fff}
+#dock button:focus-visible{outline:2px solid var(--sky);outline-offset:2px}
+#dock .sep{width:1px;background:var(--line);margin:4px 2px}
+#hint{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(70px + env(safe-area-inset-bottom,0px));color:var(--dim);font-size:11px;letter-spacing:.12em;text-transform:uppercase;z-index:5;pointer-events:none;white-space:nowrap}
+#caption{position:fixed;left:50%;bottom:calc(92px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);max-width:min(560px,calc(100% - 32px));text-align:center;font-size:14px;line-height:1.5;color:var(--text);text-shadow:0 1px 8px rgba(0,0,0,.9);z-index:5;pointer-events:none;transition:opacity .6s}
+@media (max-width:760px){
+  #spec{width:auto;right:calc(12px + env(safe-area-inset-right,0px));padding:10px 12px}
+  #spec dl,#spec .note{display:none}
+  #spec.open dl{display:grid}#spec.open .note{display:block}
+  #toggleSpec{display:inline-block;margin-top:2px;font-family:var(--mono);font-size:11px;color:var(--sky);background:none;border:0;padding:0;cursor:pointer}
+  h1{font-size:22px;margin-bottom:2px}
+  #status{top:auto;bottom:calc(118px + env(safe-area-inset-bottom,0px));right:calc(12px + env(safe-area-inset-right,0px))}
+  #caption{bottom:calc(176px + env(safe-area-inset-bottom,0px));font-size:13px}
+  #hint{display:none}
+  #dock button{padding:8px 9px;font-size:12px}
+}
+@media (prefers-reduced-motion:reduce){#caption{transition:none}}
+</style>
+
+<canvas id="gl"></canvas>
+
+<div id="spec" class="panel">
+  <div class="eyebrow">Concept · after Larry Niven</div>
+  <h1>Ringworld</h1>
+  <button id="toggleSpec" type="button" aria-expanded="false">Specs ▾</button>
+  <dl>
+    <dt>Radius</dt><dd>≈ 93,000,000 mi</dd>
+    <dt>Width</dt><dd>≈ 1,000,000 mi</dd>
+    <dt>Rim walls</dt><dd>≈ 1,000 mi high</dd>
+    <dt>Fist-of-God</dt><dd>≈ 1,000 mi high</dd>
+    <dt>Spin</dt><dd>≈ 770 mi/s</dd>
+    <dt>Gravity</dt><dd>≈ 0.99 g</dd>
+    <dt>Shadow squares</dt><dd>20</dd>
+  </dl>
+  <div class="note">Ring, sun, shadow squares and Fist-of-God are drawn to one scale. Rim walls are drawn 30× taller and terrain relief more than 100× taller so they read at all. Slopes are lit by a raked light; the real sun is always overhead. Day length is compressed.</div>
+</div>
+
+<div id="status" class="panel">
+  <div class="lbl" id="statusLbl">Local sky</div>
+  <div class="val"><span id="daydot"></span><span id="statusVal">—</span></div>
+</div>
+
+<div id="caption"></div>
+<div id="hint">Drag to orbit · scroll to zoom</div>
+
+<div id="dock" class="panel" role="toolbar" aria-label="Views">
+  <button type="button" data-mode="system" aria-pressed="true">System</button>
+  <button type="button" data-mode="rim" aria-pressed="false">Rim wall</button>
+  <button type="button" data-mode="arch" aria-pressed="false">The Arch</button>
+  <button type="button" data-mode="fly" aria-pressed="false">Flyover</button>
+  <button type="button" data-mode="fist" aria-pressed="false">Fist-of-God</button>
+  <span class="sep"></span>
+  <button type="button" id="speed" aria-pressed="false">Time ×1</button>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/controls/OrbitControls.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/shaders/CopyShader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/shaders/LuminosityHighPassShader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/postprocessing/EffectComposer.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/postprocessing/RenderPass.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/postprocessing/ShaderPass.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/postprocessing/MaskPass.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
+<script>
+(function(){
+"use strict";
+const $=id=>document.getElementById(id);
+
+/* Scene units: 1 unit ≈ 93,000 mi, so the ring radius (≈1 AU) is 1000. */
+const R=1000, W=10.75, WALL=0.0107*30, NSQ=20, DUTY=0.42, RS=420;
+const HALF=Math.PI/NSQ*DUTY;                 // half angular width of one shadow square
+const HS_SQ=W*RS/R*1.7;                      // square height: enough to shade the full ring width
+const SUN_R=4.65;
+const TAU=Math.PI*2;
+const DAY_SECONDS=48;
+const OMEGA=TAU/NSQ/DAY_SECONDS;
+const TOUCH=matchMedia('(pointer:coarse)').matches;
+
+/* terrain relief and the landmark */
+const HS=0.0055;                             // ≈ 510 mi per unit of noise height (~100× real relief)
+const FIST_S=3.0, FIST_Y=1.2, FIST_H=0.0107; // Fist-of-God: ≈1,000 mi, true scale
+const FLY_ALT=0.009, FIST_ALT=0.0042;
+const PATCH_L=30, KS=5.0, CS=PATCH_L/(Math.exp(5.0)-1), KY=3.7, CY=W/(Math.exp(3.7)-1);
+const NS=TOUCH?448:640, NY=TOUCH?224:320, SNAP=0.0015;
+const DISC_R=0.02;
+const f=x=>x.toFixed(6);
+
+/* ---------- GLSL ---------- */
+const NOISE=`
+vec3 mod289(vec3 x){return x-floor(x*(1.0/289.0))*289.0;}
+vec4 mod289(vec4 x){return x-floor(x*(1.0/289.0))*289.0;}
+vec4 permute(vec4 x){return mod289(((x*34.0)+1.0)*x);}
+vec4 taylorInvSqrt(vec4 r){return 1.79284291400159-0.85373472095314*r;}
+float snoise(vec3 v){
+  const vec2 C=vec2(1.0/6.0,1.0/3.0); const vec4 D=vec4(0.0,0.5,1.0,2.0);
+  vec3 i=floor(v+dot(v,C.yyy)); vec3 x0=v-i+dot(i,C.xxx);
+  vec3 g=step(x0.yzx,x0.xyz); vec3 l=1.0-g; vec3 i1=min(g.xyz,l.zxy); vec3 i2=max(g.xyz,l.zxy);
+  vec3 x1=x0-i1+C.xxx; vec3 x2=x0-i2+C.yyy; vec3 x3=x0-D.yyy;
+  i=mod289(i);
+  vec4 p=permute(permute(permute(i.z+vec4(0.0,i1.z,i2.z,1.0))+i.y+vec4(0.0,i1.y,i2.y,1.0))+i.x+vec4(0.0,i1.x,i2.x,1.0));
+  float n_=0.142857142857; vec3 ns=n_*D.wyz-D.xzx;
+  vec4 j=p-49.0*floor(p*ns.z*ns.z); vec4 x_=floor(j*ns.z); vec4 y_=floor(j-7.0*x_);
+  vec4 x=x_*ns.x+ns.yyyy; vec4 y=y_*ns.x+ns.yyyy; vec4 h=1.0-abs(x)-abs(y);
+  vec4 b0=vec4(x.xy,y.xy); vec4 b1=vec4(x.zw,y.zw);
+  vec4 s0=floor(b0)*2.0+1.0; vec4 s1=floor(b1)*2.0+1.0; vec4 sh=-step(h,vec4(0.0));
+  vec4 a0=b0.xzyw+s0.xzyw*sh.xxyy; vec4 a1=b1.xzyw+s1.xzyw*sh.zzww;
+  vec3 p0=vec3(a0.xy,h.x); vec3 p1=vec3(a0.zw,h.y); vec3 p2=vec3(a1.xy,h.z); vec3 p3=vec3(a1.zw,h.w);
+  vec4 norm=taylorInvSqrt(vec4(dot(p0,p0),dot(p1,p1),dot(p2,p2),dot(p3,p3)));
+  p0*=norm.x; p1*=norm.y; p2*=norm.z; p3*=norm.w;
+  vec4 m=max(0.6-vec4(dot(x0,x0),dot(x1,x1),dot(x2,x2),dot(x3,x3)),0.0); m=m*m;
+  return 42.0*dot(m*m,vec4(dot(p0,x0),dot(p1,x1),dot(p2,x2),dot(p3,x3)));
+}
+float fbm(vec3 p){float a=0.5,s=0.0;for(int i=0;i<4;i++){s+=a*snoise(p);p=p*2.03+vec3(1.7,9.2,3.1);a*=0.5;}return s;}
+`;
+/* one terrain definition shared by the far ring (colour only) and the near patch (displaced) */
+const TERRAIN=`
+const float R=${R.toFixed(1)};const float W=${W.toFixed(3)};
+const float NSQ=${NSQ.toFixed(1)};const float HALF=${f(HALF)};
+const float FIST_TH=${f(FIST_S/R)};const float FIST_Y=${FIST_Y.toFixed(3)};
+float terrain(vec3 p,float d1,float d2,float d3){
+  float th=atan(p.z,p.x);
+  float v=abs(p.y)/(W*0.5);
+  vec3 q=p*0.35;
+  float h=fbm(q)+0.45*fbm(q*4.6)*d1+0.16*snoise(p*6.0)*d2;
+  float r1=1.0-abs(snoise(p*30.0)), r2=1.0-abs(snoise(p*115.0));
+  h+=(0.24*r1*r1+0.08*r2*r2-0.10)*d3*smoothstep(-0.10,0.22,h);
+  h+=1.0*smoothstep(0.82,1.0,v);
+  h-=1.3*exp(-pow((th-1.30)/0.0045,2.0))*(1.0-smoothstep(0.7,0.9,v));
+  h-=1.3*exp(-pow((th+1.84)/0.0045,2.0))*(1.0-smoothstep(0.7,0.9,v));
+  float fth=th-FIST_TH;fth-=6.2831853*floor((fth+3.14159265)/6.2831853);
+  float fd=length(vec2(fth*R,p.y-FIST_Y));
+  h=mix(0.14,h,smoothstep(0.016,0.065,fd));
+  return h-0.06;
+}
+vec3 landColor(float h,float m){
+  if(h<0.0) return mix(vec3(0.015,0.06,0.18),vec3(0.05,0.25,0.40),smoothstep(-0.45,0.0,h));
+  vec3 grass=vec3(0.16,0.33,0.11),forest=vec3(0.06,0.19,0.07),desert=vec3(0.55,0.44,0.27),rock=vec3(0.36,0.33,0.30),snow=vec3(0.88,0.90,0.94);
+  vec3 col=mix(desert,mix(grass,forest,smoothstep(0.1,0.5,m)),smoothstep(-0.25,0.12,m));
+  col=mix(col,vec3(0.62,0.56,0.42),1.0-smoothstep(0.0,0.025,h));
+  col=mix(col,rock,smoothstep(0.42,0.7,h));
+  return mix(col,snow,smoothstep(0.85,1.05,h));
+}
+float fistH(vec2 q){
+  float d=length(q);float a=atan(q.y,q.x);
+  float lobes=1.0+0.22*sin(a*4.0+1.3)*smoothstep(0.0,0.006,d)+0.07*sin(a*9.0+0.4);
+  float body=exp(-pow(d/(0.0072*lobes),1.7));
+  float knuck=0.14*exp(-pow((d-0.0036)/0.0011,2.0))*max(0.0,sin(a*4.0+1.3));
+  float crater=0.24*exp(-pow(d/0.0017,2.0));
+  return ${FIST_H.toFixed(5)}*(body+knuck-crater);
+}
+vec3 fistColor(vec3 col,vec2 q,float e){
+  float d=length(q);
+  float strata=0.85+0.3*snoise(vec3(q*900.0,e*400.0));
+  col=mix(col,vec3(0.33,0.30,0.28)*strata,smoothstep(0.0125,0.0055,d));
+  col=mix(col,vec3(0.72,0.71,0.69),smoothstep(0.0045,0.0078,e));   // bare rock above the air
+  return mix(col,vec3(0.19,0.21,0.25),smoothstep(0.0021,0.0011,d)); // crater floor
+}
+float dayFactor(float th,float phi,float e){
+  float a=(th-phi)*NSQ/6.2831853;float fr=fract(a);
+  float dd=min(fr,1.0-fr)*6.2831853/NSQ;
+  return smoothstep(HALF-e,HALF+e,dd);
+}
+`;
+const VSTD=`#include <common>
+#include <logdepthbuf_pars_vertex>
+varying vec3 vP;varying vec2 vUv;
+void main(){vUv=uv;vec4 wp=modelMatrix*vec4(position,1.0);vP=wp.xyz;gl_Position=projectionMatrix*viewMatrix*wp;
+#include <logdepthbuf_vertex>
+}`;
+const FHEAD=`#include <logdepthbuf_pars_fragment>
+`;
+
+/* ---------- renderer ---------- */
+const canvas=$('gl');
+const renderer=new THREE.WebGLRenderer({canvas,antialias:true,logarithmicDepthBuffer:true,powerPreference:'high-performance'});
+const PR=Math.min(window.devicePixelRatio||1,TOUCH?1.5:2);
+renderer.setPixelRatio(PR);
+renderer.setClearColor(0x010205,1);
+const scene=new THREE.Scene();
+const camera=new THREE.PerspectiveCamera(55,1,0.00005,2e5);
+
+const U={time:{value:0},phi:{value:0},haze:{value:new THREE.Vector3()},hazeD:{value:2.5},day:{value:1},starDim:{value:1},
+  skyUp:{value:new THREE.Vector3(-1,0,0)},patchL:{value:0},patchTh:{value:0}};
+
+/* ---------- starfield ---------- */
+{
+  const N=3000,pos=new Float32Array(N*3),col=new Float32Array(N*3),sz=new Float32Array(N);
+  for(let i=0;i<N;i++){
+    const u=Math.random()*2-1,th=Math.random()*TAU,s=Math.sqrt(1-u*u),D=60000;
+    pos.set([D*s*Math.cos(th),D*u,D*s*Math.sin(th)],i*3);
+    const warm=Math.random()<0.5,k=0.35+Math.random()*0.6;
+    col.set(warm?[1.0*k,0.82*k,0.62*k]:[0.68*k,0.78*k,1.0*k],i*3);
+    sz[i]=Math.random()<0.03?4.5:1.2+Math.random()*1.8;
+  }
+  const g=new THREE.BufferGeometry();
+  g.setAttribute('position',new THREE.BufferAttribute(pos,3));
+  g.setAttribute('aColor',new THREE.BufferAttribute(col,3));
+  g.setAttribute('aSize',new THREE.BufferAttribute(sz,1));
+  const m=new THREE.ShaderMaterial({
+    uniforms:{uPR:{value:PR},uDim:U.starDim},
+    vertexShader:`#include <common>
+#include <logdepthbuf_pars_vertex>
+attribute vec3 aColor;attribute float aSize;uniform float uPR;varying vec3 vC;
+void main(){vC=aColor;gl_PointSize=aSize*uPR;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);
+#include <logdepthbuf_vertex>
+}`,
+    fragmentShader:FHEAD+`uniform float uDim;varying vec3 vC;void main(){
+#include <logdepthbuf_fragment>
+float d=length(gl_PointCoord-0.5);gl_FragColor=vec4(vC*smoothstep(0.5,0.05,d)*uDim,1.0);}`,
+    transparent:true,depthWrite:false,blending:THREE.AdditiveBlending});
+  const pts=new THREE.Points(g,m);pts.frustumCulled=false;pts.renderOrder=-5;scene.add(pts);
+}
+
+/* ---------- sky dome (on the surface only) ---------- */
+const sky=new THREE.Mesh(new THREE.SphereGeometry(1,48,24),new THREE.ShaderMaterial({
+  uniforms:{uUp:U.skyUp,uDay:U.day},
+  vertexShader:`#include <common>
+#include <logdepthbuf_pars_vertex>
+varying vec3 vDir;
+void main(){vDir=position;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);
+#include <logdepthbuf_vertex>
+}`,
+  fragmentShader:FHEAD+`uniform vec3 uUp;uniform float uDay;varying vec3 vDir;
+  void main(){
+#include <logdepthbuf_fragment>
+    vec3 d=normalize(vDir);float k=dot(d,uUp);
+    vec3 zen=vec3(0.10,0.24,0.62),hor=vec3(0.50,0.66,0.92);
+    gl_FragColor=vec4(mix(hor,zen,smoothstep(0.0,0.7,k))*uDay,1.0);}`,
+  side:THREE.BackSide,depthWrite:false,depthTest:false}));
+sky.renderOrder=-10;sky.frustumCulled=false;sky.visible=false;scene.add(sky);
+
+/* ---------- sun ---------- */
+const sun=new THREE.Mesh(new THREE.SphereGeometry(SUN_R,64,40),new THREE.ShaderMaterial({
+  uniforms:{uTime:U.time},
+  vertexShader:VSTD,
+  fragmentShader:FHEAD+NOISE+`uniform float uTime;varying vec3 vP;
+  void main(){
+#include <logdepthbuf_fragment>
+    vec3 p=normalize(vP);
+    float g=fbm(p*7.0+uTime*0.05)*0.5+0.5;
+    float c=1.0-abs(snoise(p*20.0+uTime*0.08));
+    float mu=clamp(dot(normalize(cameraPosition-vP),p),0.0,1.0);
+    vec3 col=mix(vec3(1.6,1.05,0.45),vec3(2.6,2.1,1.4),g*0.7+c*c*0.3)*(0.55+0.45*pow(mu,0.6));
+    gl_FragColor=vec4(col,1.0);}`}));
+scene.add(sun);
+const glow=new THREE.Mesh(new THREE.PlaneGeometry(2,2),new THREE.ShaderMaterial({
+  vertexShader:VSTD,
+  fragmentShader:FHEAD+`varying vec2 vUv;void main(){
+#include <logdepthbuf_fragment>
+    float d=length(vUv-0.5)*2.0;
+    float g=(exp(-d*7.0)*0.9+exp(-d*2.2)*0.25)*smoothstep(1.0,0.6,d);
+    gl_FragColor=vec4(vec3(1.0,0.78,0.45)*g,1.0);}`,
+  transparent:true,depthWrite:false,blending:THREE.AdditiveBlending}));
+glow.renderOrder=2;scene.add(glow);
+scene.add(new THREE.PointLight(0xfff0d8,1.6,0,0));
+scene.add(new THREE.AmbientLight(0x404a60,0.35));
+
+/* ---------- the ring (far field: flat, coloured by the shared terrain) ---------- */
+const ringMat=new THREE.ShaderMaterial({
+  uniforms:{uTime:U.time,uPhi:U.phi,uHaze:U.haze,uHazeD:U.hazeD,uPatchL:U.patchL,uPatchTh:U.patchTh},
+  vertexShader:VSTD,
+  fragmentShader:FHEAD+NOISE+TERRAIN+`
+  uniform float uTime,uPhi,uHazeD,uPatchL,uPatchTh;uniform vec3 uHaze;varying vec3 vP;
+  void main(){
+#include <logdepthbuf_fragment>
+    vec3 p=vP;
+    float th=atan(p.z,p.x);
+    if(gl_FrontFacing){
+      float seg=abs(fract(th*900.0/6.2831853)-0.5);
+      float edge=smoothstep(0.92,1.0,abs(p.y)/(W*0.5));
+      gl_FragColor=vec4(vec3(0.045,0.05,0.06)+0.025*smoothstep(0.46,0.5,seg)+0.05*edge,1.0);return;
+    }
+    if(uPatchL>0.0){
+      float dt=th-uPatchTh;dt-=6.2831853*floor((dt+3.14159265)/6.2831853);
+      if(abs(dt*R)<uPatchL*0.999) discard;      // the displaced near patch covers this stretch
+    }
+    float px=length(fwidth(p));
+    float d1=1.0-smoothstep(0.35,1.4,px*1.6);
+    float d2=1.0-smoothstep(0.35,1.4,px*6.0);
+    float d3=1.0-smoothstep(0.35,1.4,px*30.0);
+    float h=terrain(p,d1,d2,d3);
+    float m=fbm(p*0.12+vec3(11.0,3.0,7.0));
+    vec3 col=landColor(h,m);
+    float dfs=th-${f(FIST_S/R)};dfs-=6.2831853*floor((dfs+3.14159265)/6.2831853);
+    vec2 fq=vec2(dfs*R,p.y-${FIST_Y.toFixed(3)});
+    col=fistColor(col,fq,fistH(fq));
+    col=mix(col,vec3(0.30,0.40,0.36),smoothstep(0.8,4.0,px*1.4)*0.85);
+    float cl=smoothstep(0.12,0.65,fbm(p*0.5+vec3(uTime*0.015,0.0,0.0))+0.35*fbm(p*2.2)*d1);
+    col=mix(col,vec3(0.92,0.94,0.97),cl*0.72);
+    float day=dayFactor(th,uPhi,max(0.0025,fwidth(th)*NSQ*0.4));
+    vec3 lit=col*(0.025+0.975*day);
+    float dist=length(p-cameraPosition);
+    lit+=uHaze*(1.0-exp(-dist/uHazeD));
+    gl_FragColor=vec4(lit,1.0);
+  }`,
+  side:THREE.DoubleSide
+});
+ringMat.extensions.derivatives=true;
+const ring=new THREE.Mesh(new THREE.CylinderGeometry(R,R,W,4096,1,true),ringMat);
+ring.frustumCulled=false;scene.add(ring);
+
+/* ---------- the near patch: a camera-centred grid displaced by the same terrain ---------- */
+const P={thA:{value:0},yA:{value:0},dFs:{value:0},anchorP:{value:new THREE.Vector3()},camL:{value:new THREE.Vector3()},
+  rake:{value:new THREE.Vector3()},rakeUp:{value:0.5}};
+function terrainMaterial(disc){
+  const m=new THREE.ShaderMaterial({
+    defines:disc?{FIST_DISC:1}:{},
+    uniforms:{uThA:P.thA,uYA:P.yA,uDFs:P.dFs,uAnchorP:P.anchorP,uCamL:P.camL,uRake:P.rake,uRakeUp:P.rakeUp,
+      uHaze:U.haze,uHazeD:U.hazeD,uPhi:U.phi,uTime:U.time},
+    vertexShader:`#include <common>
+#include <logdepthbuf_pars_vertex>
+`+NOISE+TERRAIN+`
+uniform float uThA,uYA,uDFs;uniform vec3 uAnchorP;
+varying vec3 vLocal;varying float vH,vM,vE,vTh;varying vec2 vF;varying vec3 vN;
+vec3 baseLocal(float sOff,float y){
+  float dth=sOff/R;float c=cos(uThA),s=sin(uThA);
+  float sh=sin(dth*0.5);float cm1=-2.0*sh*sh;float sn=sin(dth);
+  return vec3(R*(c*cm1-s*sn),y-uYA,R*(s*cm1+c*sn));
+}
+float elev(float sOff,float y,out float h){
+  vec3 p=uAnchorP+baseLocal(sOff,y);
+  h=terrain(p,1.0,1.0,1.0);
+  float E=${f(HS)}*max(h,0.0);
+#ifdef FIST_DISC
+  vec2 q=vec2(uDFs+sOff,y-FIST_Y);
+  float fm=smoothstep(0.0125,0.004,length(q));
+  float r1=1.0-abs(snoise(vec3(q*700.0,1.7)));float r2=snoise(vec3(q*2200.0,3.3));
+  E+=fistH(q)+${(FIST_H).toFixed(5)}*fm*(0.07*r1*r1+0.025*r2)+0.00002;
+#endif
+  return E;
+}
+void main(){
+#ifdef FIST_DISC
+  float sOff=position.x,yOff=position.y;
+#else
+  float u=position.x,w=position.y;
+  float sOff=sign(u)*${f(CS)}*(exp(${KS.toFixed(2)}*abs(u))-1.0);
+  float yOff=sign(w)*${f(CY)}*(exp(${KY.toFixed(2)}*abs(w))-1.0);
+#endif
+  float y=clamp(uYA+yOff,-W*0.5,W*0.5);
+  vec3 local=baseLocal(sOff,y);
+  vec3 p=uAnchorP+local;
+  float h,hs,hy;
+  float E=elev(sOff,y,h);
+#ifdef FIST_DISC
+  const float e=0.00012;
+#else
+  const float e=0.0006;
+#endif
+  float Es=elev(sOff+e,y,hs),Ey=elev(sOff,y+e,hy);
+  vec2 fq=vec2(uDFs+sOff,y-FIST_Y);
+  float th=uThA+sOff/R;
+  vec3 Uv=-vec3(cos(th),0.0,sin(th)),Tv=vec3(-sin(th),0.0,cos(th));
+  vN=normalize(Uv-Tv*(Es-E)/e-vec3(0.0,1.0,0.0)*(Ey-E)/e);
+  local+=Uv*E;
+  vLocal=local;vH=h;vE=E;vTh=th;vF=fq;
+  vM=fbm(p*0.12+vec3(11.0,3.0,7.0));
+  gl_Position=projectionMatrix*modelViewMatrix*vec4(local,1.0);
+#include <logdepthbuf_vertex>
+}`,
+    fragmentShader:FHEAD+NOISE+TERRAIN+`
+uniform vec3 uCamL,uRake,uHaze,uAnchorP;uniform float uRakeUp,uHazeD,uPhi,uTime;
+varying vec3 vLocal;varying float vH,vM,vE,vTh;varying vec2 vF;varying vec3 vN;
+void main(){
+#include <logdepthbuf_fragment>
+#ifndef FIST_DISC
+  if(length(vF)<${f(DISC_R*0.94)}) discard;
+#endif
+  vec3 up=-vec3(cos(vTh),0.0,sin(vTh));
+  vec3 n=normalize(vN);
+  vec3 col=landColor(vH,vM);
+  float slope=1.0-dot(n,up);
+  if(vH>0.0) col=mix(col,vec3(0.33,0.30,0.27),smoothstep(0.3,0.65,slope));
+  col=fistColor(col,vF,vE);
+  float light=(0.30*max(dot(n,up),0.0)+0.85*max(dot(n,uRake),0.0)+0.06)/(0.36+0.85*uRakeUp);
+  float dist=length(vLocal-uCamL);
+  vec3 p=uAnchorP+vLocal;
+  float cl=smoothstep(0.12,0.65,fbm(p*0.5+vec3(uTime*0.015,0.0,0.0))+0.35*fbm(p*2.2));
+  col=mix(col*light,vec3(0.92,0.94,0.97),cl*0.72*smoothstep(1.5,6.0,dist));
+  vec3 lit=col*(0.025+0.975*dayFactor(vTh,uPhi,0.0025));
+  float above=smoothstep(0.004,0.009,vE);
+  lit+=uHaze*(1.0-exp(-dist/uHazeD))*(1.0-0.8*above);
+  gl_FragColor=vec4(lit,1.0);
+}`,
+    side:THREE.DoubleSide});
+  m.extensions.derivatives=true;
+  return m;
+}
+const patch=new THREE.Mesh(new THREE.PlaneGeometry(2,2,NS-1,NY-1),terrainMaterial(false));
+patch.frustumCulled=false;patch.visible=false;scene.add(patch);
+const disc=(function(){
+  const NR=TOUCH?110:170,NA=TOUCH?192:300,pos=[],idx=[];
+  for(let i=0;i<=NR;i++){const r=DISC_R*Math.pow(i/NR,1.25);
+    for(let j=0;j<=NA;j++){const a=j/NA*TAU;pos.push(r*Math.cos(a),r*Math.sin(a),0);}}
+  for(let i=0;i<NR;i++)for(let j=0;j<NA;j++){const a=i*(NA+1)+j,b=a+NA+1;idx.push(a,b,a+1,a+1,b,b+1);}
+  const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));g.setIndex(idx);
+  const m=new THREE.Mesh(g,terrainMaterial(true));
+  // the disc keeps its own anchor at the mountain, so it gets its own uniform copies
+  const own={thA:{value:FIST_S/R},yA:{value:FIST_Y},dFs:{value:0},anchorP:{value:new THREE.Vector3(R*Math.cos(FIST_S/R),FIST_Y,R*Math.sin(FIST_S/R))},camL:{value:new THREE.Vector3()}};
+  Object.assign(m.material.uniforms,{uThA:own.thA,uYA:own.yA,uDFs:own.dFs,uAnchorP:own.anchorP,uCamL:own.camL});
+  m.position.copy(own.anchorP.value);m.userData.own=own;
+  m.frustumCulled=false;m.visible=false;scene.add(m);return m;
+})();
+
+/* ---------- rim walls and jets ---------- */
+const wallMat=new THREE.ShaderMaterial({uniforms:{uHaze:U.haze,uHazeD:U.hazeD},vertexShader:VSTD,
+  fragmentShader:FHEAD+`uniform vec3 uHaze;uniform float uHazeD;varying vec3 vP;void main(){
+#include <logdepthbuf_fragment>
+    float r=length(vP.xz);float t=clamp((${R.toFixed(1)}-r)/${WALL.toFixed(4)},0.0,1.0);
+    vec3 c=mix(vec3(0.30,0.31,0.34),vec3(0.42,0.44,0.48),t);
+    float dist=length(vP-cameraPosition);
+    gl_FragColor=vec4(c+uHaze*(1.0-exp(-dist/uHazeD)),1.0);}`,side:THREE.DoubleSide});
+for(const s of [-1,1]){
+  const w=new THREE.Mesh(new THREE.RingGeometry(R-WALL,R,2048,1).rotateX(-Math.PI/2),wallMat);
+  w.position.y=s*W*0.5;w.frustumCulled=false;scene.add(w);
+}
+{
+  const N=240,pos=new Float32Array(N*3);
+  for(let i=0;i<N;i++){const a=i/(N/2)*TAU,s=i%2?1:-1;pos.set([Math.cos(a)*(R-WALL),s*W*0.5,Math.sin(a)*(R-WALL)],i*3);}
+  const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.BufferAttribute(pos,3));
+  const jets=new THREE.Points(g,new THREE.PointsMaterial({color:new THREE.Color(0.6,0.9,1.6),size:2.2*PR,sizeAttenuation:false,transparent:true,blending:THREE.AdditiveBlending,depthWrite:false}));
+  jets.frustumCulled=false;scene.add(jets);
+}
+
+/* ---------- shadow squares ---------- */
+const squares=new THREE.Group();
+{
+  const chord=2*RS*Math.sin(HALF);
+  const m=new THREE.MeshStandardMaterial({color:0x15171c,metalness:0.7,roughness:0.5});
+  const geo=new THREE.BoxGeometry(chord,HS_SQ,0.4);
+  for(let k=0;k<NSQ;k++){
+    const a=TAU*k/NSQ,q=new THREE.Mesh(geo,m);
+    q.position.set(Math.cos(a)*RS,0,Math.sin(a)*RS);q.rotation.y=-(a+Math.PI/2);squares.add(q);
+  }
+  const pts=[];for(let i=0;i<=360;i++){const a=i/360*TAU;pts.push(new THREE.Vector3(Math.cos(a)*RS,0,Math.sin(a)*RS));}
+  squares.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts),new THREE.LineBasicMaterial({color:0x3a4252,transparent:true,opacity:0.6})));
+}
+scene.add(squares);
+
+/* ---------- post ---------- */
+const composer=new THREE.EffectComposer(renderer);
+composer.addPass(new THREE.RenderPass(scene,camera));
+composer.addPass(new THREE.UnrealBloomPass(new THREE.Vector2(256,256),0.85,0.6,0.92));
+function resize(){
+  const w=innerWidth,h=innerHeight;
+  renderer.setSize(w,h,false);composer.setPixelRatio(PR);composer.setSize(w,h);
+  camera.aspect=w/h;camera.updateProjectionMatrix();
+}
+addEventListener('resize',resize);resize();
+
+/* ---------- surface frames and camera poses ---------- */
+function basis(th){return{T:new THREE.Vector3(-Math.sin(th),0,Math.cos(th)),S:new THREE.Vector3(0,1,0),U:new THREE.Vector3(-Math.cos(th),0,-Math.sin(th))};}
+function lookDir(th,yaw,pitch){const b=basis(th);return b.T.multiplyScalar(Math.cos(yaw)).addScaledVector(b.S,Math.sin(yaw)).multiplyScalar(Math.cos(pitch)).addScaledVector(b.U,Math.sin(pitch));}
+function surfPoint(s,y,alt){const th=s/R,r=R-alt;return new THREE.Vector3(r*Math.cos(th),y,r*Math.sin(th));}
+function angWrap(a){return a-TAU*Math.floor((a+Math.PI)/TAU);}
+function smooth(e0,e1,x){const t=Math.min(1,Math.max(0,(x-e0)/(e1-e0)));return t*t*(3-2*t);}
+
+const look={yaw:0,pitch:0};
+const fly={s:0,start:FIST_S-1.1};
+const fist={a:2.4};
+function flyY(s){const d=s-FIST_S;return FIST_Y+0.028+0.3*Math.sin(d*0.8)*(1-Math.exp(-(d/0.5)*(d/0.5)));}
+function surfacePose(m){
+  if(m==='arch'){const s=0,th=0;return{pos:surfPoint(s,0,0.035),dir:lookDir(th,look.yaw,0.32+look.pitch),up:basis(th).U};}
+  if(m==='fly'){
+    const s=fly.s,y=flyY(s),th=s/R,ds=FIST_S-s,dy=FIST_Y-y;
+    const w=Math.exp(-(ds/0.12)*(ds/0.12));
+    const yaw=look.yaw+w*Math.atan2(dy,ds), pitch=-0.1+look.pitch+w*0.22;
+    return{pos:surfPoint(s,y,FLY_ALT),dir:lookDir(th,yaw,pitch),up:basis(th).U};
+  }
+  // fist: slow orbit around the mountain
+  const s=FIST_S+0.042*Math.cos(fist.a),y=FIST_Y+0.042*Math.sin(fist.a),th=s/R;
+  const yaw=Math.atan2(FIST_Y-y,FIST_S-s)+look.yaw;
+  return{pos:surfPoint(s,y,FIST_ALT),dir:lookDir(th,yaw,0.16+look.pitch),up:basis(th).U};
+}
+const CAPTIONS={
+  system:'A ribbon a million miles wide around its star. The twenty shadow squares on the inner ring throw night onto the land below.',
+  rim:'Rim walls a thousand miles high hold in the air. Spill mountains pile up against them; the jets along the top keep the ring centred.',
+  arch:'From the surface the far side of the ring climbs out of the horizon and crosses the sky. The sun stands overhead all day; shadow squares bring the night.',
+  fly:'Gliding a few hundred miles up toward Fist-of-God. The rim walls stand on the horizon to either side.',
+  fist:'A meteor struck the ring from below and pushed the floor up into a mountain a thousand miles high. Its peak stands above the air.'
+};
+const ORBIT={system:{pos:new THREE.Vector3(180,330,1650),target:new THREE.Vector3(0,0,0),up:new THREE.Vector3(0,1,0)},
+  rim:{pos:new THREE.Vector3(R-1.6,W*0.5+0.9,-7),target:new THREE.Vector3(R-0.25,W*0.5-1.2,16),up:new THREE.Vector3(-1,0,0)}};
+const SURFACE=m=>m==='arch'||m==='fly'||m==='fist';
+
+let mode='system',controls=null,flight=null;
+camera.position.copy(ORBIT.system.pos);camera.up.copy(ORBIT.system.up);camera.lookAt(0,0,0);
+function makeControls(target){
+  if(controls){controls.dispose();controls=null;}
+  controls=new THREE.OrbitControls(camera,canvas);
+  controls.target.copy(target);controls.enableDamping=true;controls.dampingFactor=0.08;
+  if(mode==='system'){controls.minDistance=30;controls.maxDistance=7000;}
+  else{controls.minDistance=0.3;controls.maxDistance=60;controls.zoomSpeed=0.6;}
+  controls.update();
+}
+makeControls(ORBIT.system.target);
+
+function alt(p){return Math.abs(Math.hypot(p.x,p.z)-R)+Math.abs(p.y)*0.0002;}
+function goto(m){
+  if(m===mode&&!flight)return;
+  mode=m;
+  document.querySelectorAll('#dock [data-mode]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.mode===m)));
+  if(controls){controls.dispose();controls=null;}
+  look.yaw=0;look.pitch=0;
+  if(m==='fly')fly.s=fly.start;
+  let p1,t1,u1;
+  if(SURFACE(m)){const ps=surfacePose(m);p1=ps.pos;t1=ps.pos.clone().addScaledVector(ps.dir,0.05);u1=ps.up;}
+  else{p1=ORBIT[m].pos.clone();t1=ORBIT[m].target.clone();u1=ORBIT[m].up.clone();}
+  const dir=new THREE.Vector3();camera.getWorldDirection(dir);
+  const span=camera.position.distanceTo(p1);
+  flight={t:0,p0:camera.position.clone(),t0:camera.position.clone().addScaledVector(dir,Math.max(0.05,span*0.2)),
+    u0:camera.up.clone(),p1,t1,u1,zoomIn:alt(p1)<alt(camera.position),dur:span<0.5?2.0:3.4};
+  setCaption(CAPTIONS[m]);
+  $('hint').textContent=SURFACE(m)?'Drag to look around':'Drag to orbit · scroll to zoom';
+}
+let capTimer=0;
+function setCaption(t){const c=$('caption');c.textContent=t;c.style.opacity=1;capTimer=9;}
+setCaption(CAPTIONS.system);
+function ease(t){return t*t*(3-2*t);}
+function logLerp(a,b,e,zoomIn,out){
+  if(!zoomIn){return out.copy(a).addScaledVector(b.clone().sub(a),(Math.pow(1e5,e)-1)/(1e5-1));}
+  return out.copy(b).addScaledVector(a.clone().sub(b),Math.pow(1e-5,e)*(1-e));
+}
+
+document.querySelectorAll('#dock [data-mode]').forEach(b=>b.addEventListener('click',()=>goto(b.dataset.mode)));
+const SPEEDS=[1,8,40];let speedIdx=0;
+$('speed').addEventListener('click',()=>{speedIdx=(speedIdx+1)%SPEEDS.length;$('speed').textContent='Time ×'+SPEEDS[speedIdx];$('speed').setAttribute('aria-pressed',String(speedIdx>0));});
+$('toggleSpec').addEventListener('click',()=>{const s=$('spec');const o=s.classList.toggle('open');$('toggleSpec').setAttribute('aria-expanded',String(o));$('toggleSpec').textContent=o?'Specs ▴':'Specs ▾';});
+
+let drag=null;
+canvas.addEventListener('pointerdown',e=>{if(!SURFACE(mode)||flight)return;drag={x:e.clientX,y:e.clientY};canvas.setPointerCapture(e.pointerId);});
+canvas.addEventListener('pointermove',e=>{if(!drag)return;
+  const k=2.2/Math.max(innerHeight,1);
+  look.yaw-=(e.clientX-drag.x)*k;look.pitch=Math.max(-1.2,Math.min(1.3,look.pitch+(e.clientY-drag.y)*k));
+  drag={x:e.clientX,y:e.clientY};});
+const endDrag=()=>{drag=null;};
+canvas.addEventListener('pointerup',endDrag);canvas.addEventListener('pointercancel',endDrag);
+
+/* ---------- day/night (mirrors the shader) ---------- */
+function dayAt(theta,phi){
+  const a=(theta-phi)*NSQ/TAU,fr=a-Math.floor(a),d=Math.min(fr,1-fr)*TAU/NSQ;
+  return smooth(HALF-0.0025,HALF+0.0025,d);
+}
+function timeToChange(theta,phi,isDay){
+  for(let s=0.1;s<DAY_SECONDS*2;s+=0.1){if((dayAt(theta,phi+OMEGA*s)>0.5)!==isDay)return s;}
+  return 0;
+}
+
+/* ---------- loop ---------- */
+const clock=new THREE.Clock();
+let simT=0,phi=0.06,frame=0;
+const tmp=new THREE.Vector3();
+function loop(){
+  const dt=Math.min(clock.getDelta(),0.05);
+  if(document.hidden){requestAnimationFrame(loop);return;}
+  const sp=SPEEDS[speedIdx];
+  simT+=dt;phi+=OMEGA*dt*sp;
+  U.time.value=simT;U.phi.value=phi;
+  squares.rotation.y=-phi;
+
+  if(flight){
+    flight.t=Math.min(1,flight.t+dt/flight.dur);
+    const e=ease(flight.t);
+    logLerp(flight.p0,flight.p1,e,flight.zoomIn,camera.position);
+    logLerp(flight.t0,flight.t1,e,flight.zoomIn,tmp);
+    camera.up.copy(flight.u0).lerp(flight.u1,ease(Math.min(1,flight.t*1.4))).normalize();
+    camera.lookAt(tmp);
+    if(flight.t>=1){flight=null;if(!SURFACE(mode))makeControls(ORBIT[mode].target);}
+  }else if(SURFACE(mode)){
+    if(mode==='fly'){const d=Math.abs(fly.s-FIST_S);fly.s+=0.035*(0.2+0.8*smooth(0.02,0.35,d))*dt;}
+    if(mode==='fist')fist.a+=0.03*dt;
+    const ps=surfacePose(mode);
+    camera.position.copy(ps.pos);camera.up.copy(ps.up);camera.lookAt(tmp.copy(ps.pos).add(ps.dir));
+  }else if(controls){controls.update();}
+
+  // the displaced patch follows the camera, snapped so vertices stay on fixed ground points
+  const camTheta=Math.atan2(camera.position.z,camera.position.x);
+  const showPatch=(mode==='fly'||mode==='fist')&&(!flight||flight.t>0.55);
+  patch.visible=disc.visible=showPatch;
+  U.patchL.value=showPatch?PATCH_L:0;
+  if(showPatch){
+    const sA=Math.round(camTheta*R/SNAP)*SNAP,thA=sA/R;
+    const yA=Math.max(-W/2,Math.min(W/2,Math.round(camera.position.y/SNAP)*SNAP));
+    const A=new THREE.Vector3(R*Math.cos(thA),yA,R*Math.sin(thA));
+    patch.position.copy(A);
+    P.thA.value=thA;P.yA.value=yA;P.dFs.value=sA-FIST_S;P.anchorP.value.copy(A);
+    P.camL.value.copy(camera.position).sub(A);
+    disc.userData.own.camL.value.copy(camera.position).sub(disc.position);
+    U.patchTh.value=thA;
+    const b=basis(thA);
+    P.rake.value.copy(b.U).multiplyScalar(0.55).addScaledVector(b.T,-0.6).addScaledVector(b.S,0.55).normalize();
+    P.rakeUp.value=P.rake.value.dot(b.U);
+  }
+
+  const localDay=dayAt(camTheta,phi);
+  const onSurface=SURFACE(mode)&&(!flight||flight.t>0.85);
+  sky.visible=onSurface;sky.position.copy(camera.position);sky.scale.setScalar(0.001);
+  U.day.value=localDay;
+  U.skyUp.value.set(-camera.position.x,0,-camera.position.z).normalize();
+  U.haze.value.set(0.26,0.42,0.80).multiplyScalar(onSurface?0.55*localDay:0);
+  U.hazeD.value=mode==='arch'?2.5:0.9;
+  U.starDim.value=onSurface?Math.max(0.04,1-localDay):1;
+
+  glow.quaternion.copy(camera.quaternion);
+  glow.scale.setScalar(Math.max(60,camera.position.length()*0.09));
+
+  if(capTimer>0){capTimer-=dt;if(capTimer<=0)$('caption').style.opacity=0;}
+  if((frame++&7)===0){
+    const isDay=localDay>0.5;
+    $('daydot').style.background=isDay?'var(--sun)':'#4b5a78';
+    $('daydot').style.boxShadow=isDay?'0 0 8px var(--sun)':'none';
+    const tc=timeToChange(camTheta,phi,isDay)/sp;
+    $('statusLbl').textContent=SURFACE(mode)?'Local sky':'Below the camera';
+    $('statusVal').textContent=(isDay?'Day · shadow in ':'Night · dawn in ')+tc.toFixed(0)+' s';
+  }
+  composer.render();
+  requestAnimationFrame(loop);
+}
+window.__qa={day:()=>{phi=Math.atan2(camera.position.z,camera.position.x)-Math.PI/NSQ;},go:goto,skip:()=>{if(flight)flight.t=0.999;},fly:s=>{fly.s=s;},rendererInfo:()=>({programs:renderer.info.programs.length,calls:renderer.info.render.calls})};
+window.__ready=true;
+loop();
+})();
+</script>
+
+</body></html>

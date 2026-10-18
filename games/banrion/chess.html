@@ -1,0 +1,768 @@
+<!-- banrion/chess.html
+     Banrion — 3D wireframe chess.  Copyright (C) 2026 Scott Peterman
+     Licensed under the GNU General Public License v3 or later; see LICENSE.
+     Distributed WITHOUT ANY WARRANTY.  Vendored components keep their own
+     licences — see THIRD-PARTY-NOTICES.md. -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>BANRION &mdash; 3D Wireframe Chess</title>
+<!-- mqtt.js v5.15.2 (MIT), vendored so the page has no CDN dependency -->
+<script src="js/mqtt.min.js"></script>
+<style>
+  :root{
+    --bg:#02040c; --cyan:#5fd0ff; --amber:#ffb545; --amber-dim:#7a5520;
+    --panel:#060a16; --line:#16233d; --txt:#c8d6e8;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--txt);
+    font:12px/1.4 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;overflow:hidden}
+  /* Same grid shape as the piece lab -- a minmax(0,1fr) track cannot refuse to
+     shrink, which is what squeezed the lab's panel to a sliver under flex. */
+  #app{position:fixed;inset:0;display:grid;grid-template-rows:minmax(0,1fr) auto}
+  #stage{display:flex;align-items:center;justify-content:center;min-width:0;min-height:0;padding:10px}
+  /* The canvas simply fills the stage; Board2D letterboxes a square board
+     inside it. Trying to force a square CSS box here is what skewed the
+     hit-test -- width:100% and max-height:100% are both definite, so
+     aspect-ratio was ignored and the backing store got stretched. */
+  #board,#view3d{width:100%;height:100%;touch-action:none;display:block}
+  #board[hidden],#view3d[hidden]{display:none}
+  #panel{background:var(--panel);border-top:1px solid var(--line);max-height:48vh;
+    min-width:0;overflow:auto;padding:10px 12px 14px}
+  @media(min-width:900px){
+    #app{grid-template-rows:none;grid-template-columns:minmax(0,1fr) 340px}
+    #panel{max-height:none;border-top:0;border-left:1px solid var(--line)}
+  }
+
+  h2{font-size:10px;letter-spacing:.14em;color:var(--amber-dim);margin:12px 0 6px;font-weight:400}
+  h2:first-child{margin-top:0}
+  .btn{padding:8px 12px;border:1px solid var(--line);background:#080d1a;color:var(--txt);
+    font-family:inherit;font-size:11px;letter-spacing:.1em;cursor:pointer;border-radius:2px}
+  .btn:hover:not(:disabled){border-color:var(--cyan);color:var(--cyan)}
+  .btn:disabled{opacity:.4;cursor:default}
+  .btn.amber{border-color:var(--amber-dim);color:var(--amber)}
+  .row{display:flex;gap:6px;align-items:center;margin:6px 0;flex-wrap:wrap}
+  input[type=text]{flex:1;min-width:0;background:#04070f;color:var(--cyan);border:1px solid var(--line);
+    font:12px/1.3 ui-monospace,monospace;padding:8px;letter-spacing:.14em;text-transform:uppercase}
+  #status{color:var(--amber);letter-spacing:.08em;font-size:11px;margin-bottom:8px;
+    text-shadow:0 0 8px #ffb54544}
+  #code{font-size:15px;letter-spacing:.18em;color:var(--cyan);background:#04070f;
+    border:1px dashed var(--line);padding:9px;text-align:center;cursor:pointer;margin:6px 0}
+  #moves{height:150px;overflow:auto;background:#04070f;border:1px solid var(--line);padding:6px;
+    font-size:11px;column-count:2;column-gap:10px}
+  #moves .mv{color:var(--txt)}
+  #moves .no{color:#4a5a72}
+  #log{height:88px;overflow:auto;background:#04070f;border:1px solid var(--line);padding:6px;
+    font-size:10px;color:#7a90ad}
+  .hint{color:#4a5a72;font-size:10px;margin-top:4px}
+  #promo{position:fixed;inset:0;background:#02040ccc;display:none;align-items:center;
+    justify-content:center;z-index:20}
+  #promo.on{display:flex}
+  #promo .box{background:var(--panel);border:1px solid var(--cyan);padding:14px;text-align:center}
+  #promo .pieces{display:flex;gap:8px;margin-top:10px}
+  #promo button{font-size:34px;line-height:1;background:#080d1a;border:1px solid var(--line);
+    color:#dff4ff;cursor:pointer;padding:6px 12px}
+  #promo button:hover{border-color:var(--cyan)}
+  #toast{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);background:#0b1220;
+    border:1px solid var(--line);color:var(--cyan);padding:8px 14px;font-size:11px;
+    letter-spacing:.08em;opacity:0;transition:opacity .2s;pointer-events:none;z-index:30}
+  #toast.show{opacity:1}
+  /* visuals panel ------------------------------------------------------- */
+  .btn.tiny{padding:3px 7px;font-size:9px;margin-left:8px;vertical-align:middle}
+  .vrow{display:flex;gap:8px;align-items:center;margin:6px 0}
+  .vrow label{width:74px;flex:none;font-size:9px;letter-spacing:.1em;color:var(--amber-dim)}
+  .vrow input[type=range]{flex:1;min-width:0;accent-color:var(--cyan);background:transparent}
+  .vrow output{width:34px;flex:none;text-align:right;font-size:10px;color:var(--cyan)}
+  .sws{display:flex;flex-wrap:wrap;gap:4px;flex:1;min-width:0}
+  .sw{width:20px;height:20px;padding:0;border:1px solid var(--line);background:#04070f;
+    cursor:pointer;border-radius:2px;position:relative}
+  .sw i{position:absolute;inset:3px;border-radius:1px;display:block}
+  .sw[aria-pressed=true]{border-color:var(--cyan);box-shadow:0 0 6px #5fd0ff66}
+  /* splash ------------------------------------------------------------- */
+  #splash{position:fixed;inset:0;z-index:60;background:var(--bg);display:flex;
+    flex-direction:column;align-items:center;justify-content:center;gap:10px;
+    cursor:pointer;transition:opacity .45s ease}
+  #splash.gone{opacity:0;pointer-events:none}
+  #splash img{max-width:min(92vw,560px);max-height:76vh;object-fit:contain;
+    display:block}
+  #splash .by{color:#5a6b85;font-size:10px;letter-spacing:.16em}
+  #splash .tap{color:#3d4c63;font-size:9px;letter-spacing:.18em}
+  .lobby-only{display:block}
+  body.playing .lobby-only{display:none}
+  .play-only{display:none}
+  body.playing .play-only{display:block}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="stage">
+    <canvas id="view3d"></canvas>
+    <canvas id="board" hidden></canvas>
+  </div>
+  <div id="panel">
+    <div id="status">&#9679; LOBBY</div>
+
+    <div class="lobby-only">
+      <h2>PLAY</h2>
+      <div class="row"><button class="btn" id="btn-local" onclick="goLocal()">HOT-SEAT (THIS DEVICE)</button></div>
+      <h2>HOST ONLINE</h2>
+      <div class="row">
+        <button class="btn amber" id="btn-host" onclick="hostGame()">HOST NEW GAME</button>
+        <button class="btn" id="btn-swap" onclick="swapHostColour()">HOST PLAYS: WHITE</button>
+      </div>
+      <div id="host-id-area" style="display:none">
+        <div id="code" onclick="copyGameId()">&mdash;</div>
+        <div class="hint">Click to copy. Send it to your opponent &mdash; it is also the
+          encryption key, so treat it like a password.</div>
+      </div>
+      <h2>PLAY THE COMPUTER</h2>
+      <div class="row">
+        <button class="btn" id="btn-cpu" onclick="goCpu()">NEW GAME VS COMPUTER</button>
+        <button class="btn" id="btn-cpu-side" onclick="swapCpuColour()">YOU PLAY: WHITE</button>
+      </div>
+      <div class="row" id="cpu-levels"></div>
+      <div class="hint" id="cpu-hint">&mdash;</div>
+
+      <h2>JOIN ONLINE</h2>
+      <div class="row"><input type="text" id="join-code" placeholder="WFC-XXXXXXXXXXXXX" maxlength="17"></div>
+      <div class="row"><button class="btn" id="btn-join" onclick="joinGame()">JOIN GAME</button></div>
+    </div>
+
+    <div class="play-only">
+      <h2>MOVES</h2>
+      <div id="moves"></div>
+      <div class="row" style="margin-top:8px">
+        <button class="btn" id="btn-view" onclick="toggleView()">VIEW: 3D</button>
+        <button class="btn" onclick="flipBoard()">FLIP BOARD</button>
+        <button class="btn" onclick="Render3D.resetView()">RESET VIEW</button>
+        <button class="btn" onclick="saveView()">SAVE VIEW</button>
+        <button class="btn amber" onclick="doResign()">RESIGN</button>
+      </div>
+      <div class="hint">Drag to orbit &middot; wheel or pinch to zoom &middot; tap a piece,
+        then a highlighted square.</div>
+
+      <h2>RENDERER</h2>
+      <div class="row">
+        <button class="btn" id="btn-gpu" onclick="toggleBackend()">RENDER: &mdash;</button>
+        <button class="btn" id="btn-bench" onclick="runBench()">MEASURE 3s</button>
+      </div>
+      <div id="rstat" class="hint">&mdash;</div>
+    </div>
+
+    <!-- Not inside .play-only: the point of these is to set the table up
+         before a game starts, and they have nothing to do with a game being
+         in progress. Same mistake the RENDERER row made. -->
+    <h2>VISUALS <button class="btn tiny" id="btn-vis" onclick="toggleVisuals()">SHOW</button></h2>
+    <div id="visuals" hidden>
+      <div class="row">
+        <button class="btn" id="btn-saveview" onclick="saveView()">SAVE THIS VIEW</button>
+        <button class="btn" onclick="clearView()">CLEAR</button>
+      </div>
+      <div class="hint" id="view-hint">&mdash;</div>
+      <div class="vrow"><label>WHITE</label><span class="sws" id="sw-w"></span></div>
+      <div class="vrow"><label>BLACK</label><span class="sws" id="sw-b"></span></div>
+      <div class="hint" id="sidehint"></div>
+      <div class="vrow"><label>GLOW</label>
+        <input type="range" id="s-glow" min="0" max="150" step="1"><output id="o-glow"></output></div>
+      <div class="vrow"><label>FALLOFF</label>
+        <input type="range" id="s-fall" min="0" max="100" step="1"><output id="o-fall"></output></div>
+      <div class="vrow"><label>REFL</label>
+        <input type="range" id="s-ra" min="0" max="70" step="1"><output id="o-ra"></output></div>
+      <div class="vrow"><label>MERIDIANS</label>
+        <input type="range" id="s-mer" min="6" max="36" step="1"><output id="o-mer"></output></div>
+      <div class="vrow"><label>RING SEGS</label>
+        <input type="range" id="s-rseg" min="8" max="40" step="2"><output id="o-rseg"></output></div>
+      <div class="vrow"><label>KNIGHT</label>
+        <input type="range" id="s-kyaw" min="0" max="90" step="5"><output id="o-kyaw"></output></div>
+      <div class="row">
+        <button class="btn" id="t-refl" onclick="toggleRefl()">REFLECTIONS</button>
+        <button class="btn" id="t-motes" onclick="toggleMotes()">MOTES</button>
+        <button class="btn" onclick="resetVisuals()">RESET</button>
+      </div>
+      <div class="hint" id="denshint">&mdash;</div>
+    </div>
+
+    <h2>LOG</h2>
+    <div id="log"></div>
+  </div>
+</div>
+
+<div id="splash">
+  <!--SPLASH-IMG--><img id="splash-img" src="banrion.webp" alt="BANRION">
+  <div class="by">AUTHOR: SCOTT PETERMAN</div>
+  <div class="tap">TAP TO BEGIN</div>
+</div>
+
+<div id="promo"><div class="box">
+  <div style="letter-spacing:.12em;font-size:11px;color:var(--amber-dim)">PROMOTE TO</div>
+  <div class="pieces" id="promo-pieces"></div>
+</div></div>
+<div id="toast"></div>
+
+<!--ENGINE-SRC-->
+<script src="js/chess.js"></script>
+<script src="js/transport.js"></script>
+<script src="js/game.js"></script>
+<script src="js/net.js"></script>
+<script src="js/board2d.js"></script>
+<script src="js/engine.js"></script>
+<script src="js/pieces.js"></script>
+<script src="js/glrender.js"></script>
+<script src="js/render3d.js"></script>
+
+<script>
+// ---------------------------------------------------------------- UI glue
+function setStatus(t){
+  const el=document.getElementById('status');
+  el.textContent='\u25cf '+t;
+  el.style.color = t==='CONNECTED'||t==='LOCAL GAME' ? 'var(--cyan)' : 'var(--amber)';
+}
+function addLog(msg){
+  const log=document.getElementById('log'), d=document.createElement('div');
+  const t=new Date().toTimeString().slice(0,8);
+  d.textContent='['+t+'] '+msg;
+  log.appendChild(d); log.scrollTop=log.scrollHeight;
+}
+function showToast(msg){
+  const t=document.getElementById('toast');
+  t.textContent=msg; t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'),2500);
+}
+function copyGameId(){
+  const id=document.getElementById('code').textContent;
+  if(id && id!=='\u2014') navigator.clipboard.writeText(id).then(()=>showToast('Code copied'));
+}
+function swapHostColour(){
+  hostPlaysWhite=!hostPlaysWhite;
+  document.getElementById('btn-swap').textContent =
+    'HOST PLAYS: ' + (hostPlaysWhite?'WHITE':'BLACK');
+}
+let VIEW = '3d';                 // '3d' | '2d'
+
+function toggleView(){
+  VIEW = VIEW==='3d' ? '2d' : '3d';
+  document.getElementById('view3d').hidden = VIEW!=='3d';
+  document.getElementById('board').hidden  = VIEW!=='2d';
+  document.getElementById('btn-view').textContent = 'VIEW: '+VIEW.toUpperCase();
+  if(VIEW==='3d') Render3D.resize(); else Board2D.resize();
+  onGameChanged();
+}
+
+// ---------------------------------------------------------------- renderer
+// The point of this toggle is measurement on the machine that matters, not
+// preference: the two backends draw the same scene through the same camera, so
+// MEASURE on each is a like-for-like number.
+function syncBackendUI(){
+  const b=document.getElementById('btn-gpu');
+  b.textContent = 'RENDER: ' + (Render3D.mode==='gl' ? 'WEBGL' : 'CANVAS2D');
+  b.disabled = !window.GLRender && Render3D.mode!=='gl';
+  const s=document.getElementById('rstat');
+  s.textContent = Render3D.segCount + ' segs \u00b7 ' +
+    (Render3D.gpu ? Render3D.gpu.rendererName : 'CPU raster');
+}
+function toggleBackend(){
+  const want = Render3D.mode==='gl' ? '2d' : 'gl';
+  const got  = Render3D.setBackend(want);
+  Render3D.onPick = pickSquare;                 // the canvas element was replaced
+  if(got!==want) addLog('WebGL not available - stayed on Canvas2D.');
+  syncBackendUI();
+  onGameChanged();
+}
+function runBench(){
+  const b=document.getElementById('btn-bench');
+  b.disabled=true; b.textContent='MEASURING...';
+  Render3D.measure(3000, r=>{
+    b.disabled=false; b.textContent='MEASURE 3s';
+    addLog(r.mode.toUpperCase()+': '+r.fps.toFixed(1)+' fps over '+r.frames+
+           ' frames, '+r.segs+' segs');
+    document.getElementById('rstat').textContent =
+      r.mode.toUpperCase()+' \u00b7 '+r.fps.toFixed(1)+' fps \u00b7 '+r.segs+' segs';
+  });
+}
+
+// ---------------------------------------------------------------- visuals
+// The piece lab's RENDER tab, minus the geometry editing: the lab stays the
+// place where profiles are drawn, this is the place where a player sets the
+// table. Everything here is local -- colours and density are how YOU see the
+// board, not part of the game state, so nothing is published to the opponent.
+const VIS_KEY = 'wfchess.visuals';
+let SAVED_VIEW = null;      // {turn, pitch, dist, targetY} or null for shipped
+
+// Orbit to an angle you like, then keep it. What gets stored is the offset
+// from YOUR OWN army rather than an absolute yaw, so the same saved view puts
+// you behind your pieces whether you are White or Black.
+function saveView(){
+  SAVED_VIEW = Render3D.captureView();
+  Render3D.applyView(SAVED_VIEW);
+  syncViewHint(); visSave();
+  showToast('View saved as your default');
+  // Printed so it can be pasted into TUNE.cam in js/render3d.js. Saving is a
+  // preference for THIS browser; baking these four numbers in is how the view
+  // changes for everyone who opens the published copy.
+  const v = SAVED_VIEW;
+  addLog('View saved. To ship it for everyone, set TUNE.cam: turn:' +
+         v.turn.toFixed(3) + ', pitch:' + v.pitch.toFixed(3) +
+         ', dist:' + v.dist.toFixed(1) + ', targetY:' + v.targetY.toFixed(2));
+}
+function clearView(){
+  SAVED_VIEW = null;
+  Render3D.clearView();
+  syncViewHint(); visSave();
+}
+function syncViewHint(){
+  const h=document.getElementById('view-hint');
+  if(!SAVED_VIEW){ h.textContent='Using the shipped view.'; return; }
+  const deg=Math.round(SAVED_VIEW.turn*180/Math.PI);
+  h.textContent='Your view: turned '+deg+'\u00b0, pitch '+
+    SAVED_VIEW.pitch.toFixed(2)+', distance '+SAVED_VIEW.dist.toFixed(1)+'.';
+}
+
+// file: URLs are opaque origins, so touching localStorage can throw outright
+// rather than returning null. Persistence is a nicety; never let it break boot.
+function visLoad(){
+  try { return JSON.parse(localStorage.getItem(VIS_KEY) || '{}') || {}; }
+  catch(_){ return {}; }
+}
+function visSave(){
+  const T = Render3D.TUNE;
+  try {
+    localStorage.setItem(VIS_KEY, JSON.stringify({
+      sides:{ w:T.sides.w, b:T.sides.b },
+      glow:T.glow.strength, falloff:T.depth.falloff,
+      reflOn:T.refl.on, reflAlpha:T.refl.alpha, motes:T.motes.on,
+      meridians:Pieces.DENSITY.meridians, ringSegs:Pieces.DENSITY.ringSegs,
+      knightYaw:Pieces.knightYaw, view:SAVED_VIEW
+    }));
+  } catch(_){ /* opaque origin or storage disabled -- session-only, fine */ }
+}
+
+function toggleVisuals(){
+  const box=document.getElementById('visuals');
+  box.hidden = !box.hidden;
+  document.getElementById('btn-vis').textContent = box.hidden ? 'SHOW' : 'HIDE';
+}
+
+function buildSwatches(){
+  const T = Render3D.TUNE;
+  for(const side of ['w','b']){
+    const wrap = document.getElementById('sw-'+side);
+    wrap.innerHTML='';
+    for(const key of Object.keys(T.swatches)){
+      const sw=T.swatches[key], b=document.createElement('button');
+      b.className='sw'; b.title=sw.label; b.setAttribute('aria-label',sw.label);
+      b.innerHTML='<i style="background:'+sw.hex+'"></i>';
+      b.onclick=()=>{ Render3D.setSide(side,key); syncSwatches(); Board2D.draw(); visSave(); };
+      wrap.appendChild(b);
+    }
+  }
+  syncSwatches();
+}
+// Two armies overlap heavily at board scale, so "can you tell these apart"
+// needs both axes: wireframes at 30px read mostly by hue, but two colours of
+// the same hue separate only by brightness. Warn when NEITHER gives you much
+// -- close in luminance AND close in hue. Luminance alone false-alarms on
+// green vs violet, which nobody would confuse.
+function rgb(hex){ const n=parseInt(hex.slice(1),16);
+  return [(n>>16)&255, (n>>8)&255, n&255]; }
+function lum(hex){ const [r,g,b]=rgb(hex);
+  return (0.2126*r + 0.7152*g + 0.0722*b)/255; }
+function hue(hex){
+  const [r,g,b]=rgb(hex).map(v=>v/255);
+  const mx=Math.max(r,g,b), mn=Math.min(r,g,b), d=mx-mn;
+  if(d<1e-6) return null;                       // grey: no hue to compare
+  let h = mx===r ? ((g-b)/d)%6 : mx===g ? (b-r)/d+2 : (r-g)/d+4;
+  h*=60; return h<0 ? h+360 : h;
+}
+function hueGap(a,b){
+  const ha=hue(a), hb=hue(b);
+  if(ha===null || hb===null) return 0;          // treat grey as "no separation"
+  const d=Math.abs(ha-hb); return d>180 ? 360-d : d;
+}
+function syncSwatches(){
+  const T=Render3D.TUNE;
+  for(const side of ['w','b']){
+    const wrap=document.getElementById('sw-'+side), keys=Object.keys(T.swatches);
+    [...wrap.children].forEach((b,i)=>
+      b.setAttribute('aria-pressed', String(T.sides[side]===keys[i])));
+  }
+  const a=T.swatches[T.sides.w], b=T.swatches[T.sides.b];
+  const clash = T.sides.w===T.sides.b ||
+    (Math.abs(lum(a.hex)-lum(b.hex))<0.18 && hueGap(a.hex,b.hex)<45);
+  document.getElementById('sidehint').textContent =
+    clash ? 'Those two read alike on a crowded board.' : a.label+' vs '+b.label;
+}
+
+function syncVisuals(){
+  const T=Render3D.TUNE, D=Pieces.DENSITY;
+  const set=(id,v)=>{ document.getElementById(id).value=v; };
+  const out=(id,v)=>{ document.getElementById(id).textContent=v; };
+  set('s-glow', Math.round(T.glow.strength*100));   out('o-glow', Math.round(T.glow.strength*100));
+  set('s-fall', Math.round(T.depth.falloff*100));   out('o-fall', Math.round(T.depth.falloff*100));
+  set('s-ra',   Math.round(T.refl.alpha*100));      out('o-ra',   Math.round(T.refl.alpha*100));
+  set('s-mer',  D.meridians);                       out('o-mer',  D.meridians);
+  set('s-rseg', D.ringSegs);                        out('o-rseg', D.ringSegs);
+  set('s-kyaw', Pieces.knightYaw);                  out('o-kyaw', Pieces.knightYaw+'\u00b0');
+  document.getElementById('t-refl').setAttribute('aria-pressed', String(T.refl.on));
+  document.getElementById('t-refl').style.opacity = T.refl.on ? '1' : '.45';
+  document.getElementById('t-motes').setAttribute('aria-pressed', String(T.motes.on));
+  document.getElementById('t-motes').style.opacity = T.motes.on ? '1' : '.45';
+  syncViewHint();
+  document.getElementById('denshint').textContent =
+    Pieces.segCount().toLocaleString()+' segs per set \u00b7 '+
+    Render3D.segCount.toLocaleString()+' on the board';
+  syncSwatches();
+}
+
+function toggleRefl(){ Render3D.TUNE.refl.on=!Render3D.TUNE.refl.on;
+  Render3D._dirty=true; syncVisuals(); visSave(); }
+function toggleMotes(){ Render3D.TUNE.motes.on=!Render3D.TUNE.motes.on;
+  Render3D._dirty=true; syncVisuals(); visSave(); }
+
+function bindVisuals(){
+  const T=Render3D.TUNE;
+  // Cheap parameters track the drag; density waits for release, because each
+  // change rebuilds six meshes and (on GL) re-uploads them.
+  const live=(id,fn)=>{
+    const el=document.getElementById(id);
+    el.addEventListener('input',()=>{ fn(+el.value); Render3D._dirty=true; syncVisuals(); });
+    el.addEventListener('change',visSave);
+  };
+  live('s-glow', v=>T.glow.strength=v/100);
+  live('s-fall', v=>T.depth.falloff=v/100);
+  live('s-ra',   v=>T.refl.alpha=v/100);
+
+  // Mesh rebuilds: show the number while dragging, do the work on release.
+  const rebuild=(id,outId,fmt,apply)=>{
+    const el=document.getElementById(id);
+    el.addEventListener('input',()=>{
+      document.getElementById(outId).textContent=fmt(el.value);
+    });
+    el.addEventListener('change',()=>{
+      apply(+el.value); syncVisuals(); syncBackendUI(); visSave();
+    });
+  };
+  rebuild('s-mer','o-mer', v=>v, v=>Render3D.setDensity({meridians:v}));
+  rebuild('s-rseg','o-rseg', v=>v, v=>Render3D.setDensity({ringSegs:v}));
+  rebuild('s-kyaw','o-kyaw', v=>v+'\u00b0', v=>Render3D.setKnightYaw(v));
+}
+
+function resetVisuals(){
+  const T=Render3D.TUNE;
+  T.glow.strength=0.85; T.depth.falloff=0.55;
+  T.refl.on=true; T.refl.alpha=0.24; T.motes.on=true;
+  Render3D.setSide('w','ice'); Render3D.setSide('b','amber');
+  SAVED_VIEW = null;
+  Render3D.clearView();
+  Pieces.setKnightYaw(Pieces.BASE_YAW);
+  Render3D.setDensity({ meridians:Pieces.BASE.meridians, ringSegs:Pieces.BASE.ringSegs });
+  Board2D.draw(); syncVisuals(); syncBackendUI(); visSave();
+}
+
+function applyStoredVisuals(){
+  const s=visLoad(), T=Render3D.TUNE;
+  if(s.sides){ Render3D.setSide('w', s.sides.w); Render3D.setSide('b', s.sides.b); }
+  // Clamp everything: a hand-edited or half-written store must not be able to
+  // build a piece with no meridians. isFinite(null) is true and Math.round(null)
+  // is 0, so "looks like a number" is not the check -- the range is.
+  const num=(v,lo,hi,dflt)=> (typeof v==='number' && isFinite(v))
+    ? Math.min(hi, Math.max(lo, v)) : dflt;
+  T.glow.strength  = num(s.glow, 0, 1.5, T.glow.strength);
+  T.depth.falloff  = num(s.falloff, 0, 1, T.depth.falloff);
+  T.refl.alpha     = num(s.reflAlpha, 0, 0.7, T.refl.alpha);
+  if(typeof s.reflOn==='boolean') T.refl.on=s.reflOn;
+  if(typeof s.motes==='boolean')  T.motes.on=s.motes;
+  if(s.view && typeof s.view === 'object'){
+    SAVED_VIEW = s.view;
+    Render3D.applyView(SAVED_VIEW);
+  }
+  const ky=num(s.knightYaw,0,90,null);
+  if(ky!==null) Pieces.setKnightYaw(Math.round(ky));
+  const mer=num(s.meridians,6,36,null), rs=num(s.ringSegs,8,40,null);
+  const patch={};
+  if(mer!==null) patch.meridians=Math.round(mer);
+  if(rs!==null)  patch.ringSegs=Math.round(rs);
+  // One rebuild for the lot, even when only the knight moved.
+  if(ky!==null || mer!==null || rs!==null) Render3D.setDensity(patch);
+}
+
+// ---------------------------------------------------------------- computer
+// A CPU game is an online game with no peer: Game.mode 'cpu' gates input by
+// colour exactly like 'online', so nothing about selection, the renderers or
+// the move list changes. The only new rule is "when it is not your turn, ask
+// the engine".
+let youPlayWhite = true;
+
+function swapCpuColour(){
+  youPlayWhite = !youPlayWhite;
+  document.getElementById('btn-cpu-side').textContent =
+    'YOU PLAY: ' + (youPlayWhite ? 'WHITE' : 'BLACK');
+}
+
+function buildLevels(){
+  const row=document.getElementById('cpu-levels');
+  row.innerHTML='';
+  for(const key of Object.keys(Engine.LEVELS)){
+    const b=document.createElement('button');
+    b.className='btn'; b.textContent=Engine.LEVELS[key].label;
+    b.onclick=()=>{ Engine.setLevel(key); syncLevels(); };
+    row.appendChild(b);
+  }
+  syncLevels();
+}
+function syncLevels(){
+  const keys=Object.keys(Engine.LEVELS);
+  [...document.getElementById('cpu-levels').children].forEach((b,i)=>{
+    const on = keys[i]===Engine.level;
+    b.style.borderColor = on ? 'var(--cyan)' : 'var(--line)';
+    b.style.color       = on ? 'var(--cyan)' : 'var(--txt)';
+  });
+}
+
+function goCpu(){
+  if(!Engine.available()){
+    showToast('Engine unavailable in this build');
+    addLog('No engine: opened from disk without an inlined copy. Use chess_single.html.');
+    return;
+  }
+  const btn=document.getElementById('btn-cpu');
+  btn.disabled=true; btn.textContent='STARTING ENGINE...';
+  Engine.start({ log:addLog }).then(ok=>{
+    btn.disabled=false; btn.textContent='NEW GAME VS COMPUTER';
+    if(!ok){ showToast('Engine failed to start'); return; }
+    Engine.newGame().then(()=>{
+      Game.reset();
+      Game.mode='cpu';
+      Game.myColor = youPlayWhite ? 'w' : 'b';
+      revealBoard();
+      setStatus('YOUR MOVE');
+      addLog('Computer game - '+Engine.LEVELS[Engine.level].label+
+             ', you are '+(youPlayWhite?'White':'Black')+'.');
+      maybeEngineMove();
+    });
+  });
+}
+
+// Called after every change while in cpu mode. Idempotent: if it is the
+// human's turn, or a search is already running, it does nothing.
+function maybeEngineMove(){
+  if(Game.mode!=='cpu' || Game.isOver()) return;
+  if(Game.turn()===Game.myColor || Engine.thinking) return;
+  setStatus('THINKING');
+  Engine.think(Game.fen(), Game.candidates(), uci=>{
+    // The game may have been reset or resigned while it searched.
+    if(Game.mode!=='cpu' || Game.isOver()) return;
+    if(!uci){ addLog('Engine returned no move.'); setStatus(Game.statusText()); return; }
+    const m=Game.engineMove(uci);
+    if(!m){ addLog('Engine offered an illegal move: '+uci); setStatus(Game.statusText()); return; }
+    const trail={ from:m.from, to:m.to };
+    Board2D.lastMove=trail; Render3D.lastMove=trail;
+    clearSelection();
+    Render3D.animate(m.from, m.to, m.piece, m.color, onGameChanged);
+    onGameChanged();
+  });
+}
+
+function flipBoard(){
+  if(VIEW==='2d'){ Board2D.flipped=!Board2D.flipped; Board2D.draw(); }
+  else { Render3D.cam.yaw += Math.PI; Render3D._dirty=true; }
+}
+
+function revealBoard(){
+  document.body.classList.add('playing');
+  // Each player sits behind their own army.
+  const side = Game.mode==='local' ? 'w' : Game.myColor;
+  Board2D.flipped = (side==='b');
+  Render3D.faceSide(side);
+  Render3D.resize(); Board2D.resize();
+  onGameChanged();
+}
+
+// ---------------------------------------------------------------- selection
+// Both renderers call this with a square. The rules and the selection state
+// live here, so the 3D view and the flat board can never disagree about what
+// is selected or what is legal.
+function pickSquare(sq){
+  // A click during a slide snaps it and then applies -- never swallowed.
+  if(Render3D.anim) Render3D.finishAnim();
+  if(!Game.canMove()) return;
+
+  if(SEL && SEL.targets.some(t=>t.to===sq)){
+    if(Game.needsPromotion(SEL.from, sq)){
+      PENDING = { from:SEL.from, to:sq };
+      clearSelection();
+      showPromotion(Game.turn());
+      return;
+    }
+    commitMove(SEL.from, sq, 'q');
+    return;
+  }
+  const moves = Game.movesFrom(sq);
+  if(moves.length) SEL = { from:sq, targets:moves };
+  else SEL = null;
+  syncSelection();
+}
+
+let SEL = null, PENDING = null;
+
+function clearSelection(){ SEL = null; syncSelection(); }
+
+function syncSelection(){
+  Board2D.selected = SEL ? SEL.from : null;
+  Board2D.targets  = SEL ? SEL.targets : [];
+  Render3D.selected = SEL ? SEL.from : null;
+  Render3D.targets  = SEL ? SEL.targets : [];
+  Render3D._dirty = true;
+  Board2D.draw();
+}
+
+function commitMove(from, to, promo){
+  const m = Game.move(from, to, promo);
+  SEL = null;
+  if(!m){ syncSelection(); return; }
+  const trail = { from:m.from, to:m.to };
+  Board2D.lastMove = trail; Render3D.lastMove = trail;
+  syncSelection();
+  Render3D.animate(m.from, m.to, m.piece, m.color, onGameChanged);
+  onGameChanged();
+}
+
+function finishPromotion(piece){
+  const p = PENDING; PENDING = null;
+  if(p) commitMove(p.from, p.to, piece);
+}
+function doResign(){
+  if(Game.isOver()) return;
+  if(Game.mode==='cpu') Engine.cancel();
+  const who = Game.mode==='local' ? Game.turn() : Game.myColor;
+  if(Game.resign(who)) onGameChanged();
+}
+
+// Single place that reacts to the game changing, however it changed: local
+// move, adopted snapshot, or resignation.
+function onGameChanged(){
+  Render3D.setPosition(Game.board());
+  Board2D.draw();
+  renderMoves();
+  setStatus(Game.statusText());
+  if(Game.mode==='online') pushGame();
+  if(Game.mode==='cpu') maybeEngineMove();
+}
+
+function renderMoves(){
+  const h=Game.history(), el=document.getElementById('moves');
+  let out='';
+  for(let i=0;i<h.length;i+=2){
+    out += '<div><span class="no">'+(i/2+1)+'.</span> '
+        +  '<span class="mv">'+h[i]+(h[i+1]?' '+h[i+1]:'')+'</span></div>';
+  }
+  el.innerHTML=out || '<div class="no">no moves yet</div>';
+  el.scrollTop=el.scrollHeight;
+}
+
+// ---------------------------------------------------------------- promotion
+const PROMO_GLYPH={ w:{q:'\u2655',r:'\u2656',b:'\u2657',n:'\u2658'},
+                    b:{q:'\u265B',r:'\u265C',b:'\u265D',n:'\u265E'} };
+function showPromotion(colour){
+  const wrap=document.getElementById('promo-pieces');
+  wrap.innerHTML='';
+  for(const p of ['q','r','b','n']){
+    const b=document.createElement('button');
+    b.textContent=PROMO_GLYPH[colour][p];
+    b.style.color = colour==='w' ? '#dff4ff' : '#ffb545';
+    b.onclick=()=>{ document.getElementById('promo').classList.remove('on');
+                    finishPromotion(p); };
+    wrap.appendChild(b);
+  }
+  document.getElementById('promo').classList.add('on');
+}
+
+// A mobile tab is FROZEN in the background, not just idle -- its timers stop,
+// so mqtt.js is not even retrying. Coming back, nudge the link immediately
+// rather than waiting for the OS to thaw the reconnect loop. This is the whole
+// "switched apps to read the game code out of my email" case.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'visible') return;
+  if (Game.mode !== 'online' || !Transport.client) return;
+  if (Transport.wake()) { pushGame(); }
+});
+
+// ---------------------------------------------------------------- splash
+// Shown once per page load, over everything. Dismissed by any input or by a
+// timer, whichever comes first -- a splash that can only be waited out is an
+// obstacle, and one that can only be clicked strands anyone who taps early.
+// Replaced by bundle.py. 'dev' means you are looking at the modular tree, not
+// a built artifact -- which is the answer to "am I actually running the new
+// file?", a question that should never cost more than one glance.
+const BUILD_STAMP = '__BUILD__';
+
+const SPLASH_MS = 4000;      // how long the splash holds on its own
+const SPLASH_MIN_MS = 600;   // input is ignored for this long after it appears
+
+(function () {
+  const el = document.getElementById('splash');
+  if (!el) return;
+  let done = false, shownAt = 0;
+  const dismiss = force => {
+    if (done) return;
+    // A tap that lands while the page is still coming up should not count --
+    // otherwise a splash can be gone before it is ever really seen.
+    if (force !== true && shownAt && Date.now() - shownAt < SPLASH_MIN_MS) return;
+    done = true;
+    el.classList.add('gone');
+    setTimeout(() => el.remove(), 500);   // out of the DOM, not just invisible
+  };
+
+  // Start counting from when the art is actually ON SCREEN, not from when this
+  // script ran. Parsing a 1.4MB file and bringing up WebGL happens first, and
+  // timing from script-parse quietly spends most of the splash on a blank page.
+  const start = () => {
+    if (shownAt) return;
+    shownAt = Date.now();
+    setTimeout(dismiss, SPLASH_MS);
+  };
+  const img = document.getElementById('splash-img');
+  if (img && img.complete) requestAnimationFrame(start);
+  else if (img) img.addEventListener('load', () => requestAnimationFrame(start));
+  else start();
+  setTimeout(start, 2000);                // art failed to decode: do not hang
+
+  el.addEventListener('pointerdown', () => dismiss());
+  window.addEventListener('keydown', () => dismiss());
+  window.dismissSplash = () => dismiss(true);   // so a test can skip it
+})();
+
+// ---------------------------------------------------------------- boot
+Game.onChange(()=>{});
+Board2D.init(document.getElementById('board'));
+Board2D.onPick = pickSquare;
+// backend:'auto' tries WebGL and falls back to Canvas2D, logging which it got
+// and -- if the driver will tell us -- what is actually doing the rasterising.
+Render3D.init(document.getElementById('view3d'), { backend:'auto', log:addLog });
+Render3D.onPick = pickSquare;
+Render3D.setPosition(Game.board());
+applyStoredVisuals();
+buildSwatches(); bindVisuals(); syncVisuals();
+buildLevels();
+if(!Engine.available()){
+  document.getElementById('btn-cpu').disabled=true;
+  document.getElementById('cpu-hint').textContent=
+    'Not available in the modular build opened from disk - use chess_single.html.';
+} else {
+  document.getElementById('cpu-hint').textContent=
+    'The engine loads on the first computer game.';
+}
+syncBackendUI();
+addLog('Banrion - 3D wireframe chess. Author: Scott Peterman.');
+addLog('Build ' + BUILD_STAMP + ' \u00b7 saveView ' +
+       (typeof saveView === 'function' ? 'available' : 'MISSING'));
+if(!window.mqtt){
+  // Online needs the MQTT client from the CDN. Hot-seat does not, so degrade
+  // to it rather than presenting buttons that cannot work.
+  for(const id of ['btn-host','btn-join']) document.getElementById(id).disabled=true;
+  addLog('MQTT client unavailable - online play disabled, hot-seat still works.');
+}
+</script>
+</body>
+</html>
