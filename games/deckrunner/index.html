@@ -205,7 +205,7 @@ button:focus-visible{outline:2px solid var(--cyan);outline-offset:2px}
       <b>− / = · 0</b><span>game speed slower / faster · reset to full speed</span>
       <b>WASD / arrows</b><span>keyboard aim</span>
       <b>P · M · G</b><span>pause · sound · glow</span>
-      <b>V · R</b><span>solid / vector hull · chunky / fine pixels</span>
+      <b>V · R · B</b><span>solid / vector hull · chunky / fine pixels · world backdrop</span>
       <b>Touch</b><span>drag to aim, hold to fire</span>
     </div>
     <p style="font-size:13px;color:#9c8350">Below 22 altitude you score double. Linked quad hits hardest when the target sits at your convergence range.</p>
@@ -329,6 +329,8 @@ const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
 
 // ---------------------------------------------------------------- constants
 const SEG = 50, CW = 20, FAR = 1500, HULL_BOT = -60, NEAR = 2;
+// lower hull: deck edge drops CHINE to a chine line, then slopes in to a keel KW either side of centre
+const KEEL = -58, KW = 24, CHINE = 10, SPON_Y = -24;
 let COLS = 12, HW = 120;   // set per ship by genShip()
 const COLORS = { brass:'#d9a441', brassHi:'#ffd98a', cyan:'#6fe3ff', red:'#ff4a3a',
                  green:'#7dffa8', mag:'#ff6ad5', white:'#fff1d6', orange:'#ff9a3a',
@@ -536,11 +538,11 @@ const LADDER = [
     tip:'Two generators and catwalks across the trench. Go under the high ones, over the low ones.' },
   { cls:'DESTROYER',      cols:10, segs:42, trench:12, gens:2, hangars:1, fcap:2, heavy:0.1,  turDiv:4,   towDiv:7, catGap:3, speed:180, fireMul:0.85, boltSpd:225, spawn:4,
     tip:'First launch bay. Fighters keep coming until you put enough fire into the hangar mouth.' },
-  { cls:'HEAVY CRUISER',  cols:12, segs:50, trench:14, gens:3, hangars:1, fcap:3, heavy:0.2,  turDiv:3.5, towDiv:6, catGap:3, speed:190, fireMul:1,    boltSpd:240, spawn:3.5,
+  { cls:'HEAVY CRUISER',  cols:12, spon:2, sponGap:6, segs:50, trench:14, gens:3, hangars:1, fcap:3, heavy:0.2,  turDiv:3.5, towDiv:6, catGap:3, speed:190, fireMul:1,    boltSpd:240, spawn:3.5,
     tip:'Full-beam hull and ring-wing heavies. Linked quad at convergence range brings them down fastest.' },
-  { cls:'BATTLE CARRIER', cols:12, segs:58, trench:14, gens:3, hangars:2, fcap:4, heavy:0.3,  turDiv:3,   towDiv:6, catGap:2, speed:200, fireMul:1.1,  boltSpd:255, spawn:3,
+  { cls:'BATTLE CARRIER', cols:12, spon:2, sponGap:5, segs:58, trench:14, gens:3, hangars:2, fcap:4, heavy:0.3,  turDiv:3,   towDiv:6, catGap:2, speed:200, fireMul:1.1,  boltSpd:255, spawn:3,
     tip:'Two hangars, one on each side. Leaving either one alive means a crowded trench run.' },
-  { cls:'DREADNOUGHT',    cols:12, segs:66, trench:16, gens:4, hangars:2, fcap:5, heavy:0.4,  turDiv:2.7, towDiv:5, catGap:2, speed:210, fireMul:1.2,  boltSpd:270, spawn:2.6,
+  { cls:'DREADNOUGHT',    cols:12, spon:2, sponGap:4, segs:66, trench:16, gens:4, hangars:2, fcap:5, heavy:0.4,  turDiv:2.7, towDiv:5, catGap:2, speed:210, fireMul:1.2,  boltSpd:270, spawn:2.6,
     tip:'Line of battle. Everything the smaller ships had, more of it, and faster.' },
   { cls:'STARBASE', kind:'disc', gens:6, hangars:3, fcap:6, heavy:0.5, speed:220, fireMul:1.25, boltSpd:280, spawn:2.4,
     tip:'The last one. Each pass lines you up on a different spoke trench, with two generators flanking it. The station turns under you, so the trench drifts as you run it. Three ports feed one core. Break the core and the war is over.' },
@@ -720,9 +722,29 @@ function genShip(wave) {
   }
   gens.forEach(g => objs.push(g));
 
+  // sponsons: a lower gun deck either side, wider than the main hull. Padding is symmetric,
+  // so every x placed above stays valid.
+  const spon = cfg.spon || 0;
+  if (spon) {
+    const pad = new Array(spon).fill(SPON_Y);
+    for (let s = 0; s < segs; s++) h[s] = pad.concat(h[s], pad);
+    COLS += 2 * spon; HW = COLS * CW / 2;
+  }
+
   const occupied = (x, z) => objs.some(o => Math.abs(o.x - x) < 17 && Math.abs(o.z - z) < 17);
-  // deck turrets
   const turrets = [];
+  // sponson batteries on the outer column, staggered side to side
+  if (spon) {
+    const gap = cfg.sponGap || 4;
+    for (const side of [-1, 1]) {
+      for (let s = 3 + (side > 0 ? gap >> 1 : 0); s < segs - 3; s += gap) {
+        const x = side * (HW - CW / 2), z = s * SEG + 25;
+        const t = { type:'tur', x, by: SPON_Y, y: SPON_Y + 4, z, r: 8, hp: 3, max: 3, alive: true, pts: 100, fireT: rand(0.5, 3) };
+        turrets.push(t); objs.push(t);
+      }
+    }
+  }
+  // deck turrets
   const nTur = Math.floor(segs / cfg.turDiv);
   let tries = 0;
   while (turrets.length < nTur && tries < 800) {
@@ -766,8 +788,23 @@ function genShip(wave) {
     const hi = Math.random() < 0.5;
     catwalks.push({ z: s * SEG + 25, y0: hi ? -14 : -40, y1: hi ? -1 : -27 });
   }
+  // lower hull profile: chine line yc on both sides, keel at KEEL between ±KW, bow and stern
+  // raked back by rb / rs. yc drops as far as needed to keep the slope under every hollow floor.
+  let yc = 1e9, firstNeg = segs, lastNeg = -1;
+  for (let s = 0; s < segs; s++) { yc = Math.min(yc, h[s][0] - CHINE, h[s][COLS - 1] - CHINE); }
+  const keel = Math.min(KEEL, yc - 0.45 * (HW - KW));                 // wider ships get a deeper keel
+  for (let s = 0; s < segs; s++) for (let c = spon; c < COLS - spon; c++) {
+    const v = h[s][c];
+    if (v >= 0) continue;
+    firstNeg = Math.min(firstNeg, s); lastNeg = Math.max(lastNeg, s);
+    const xo = Math.max(Math.abs(-HW + c*CW), Math.abs(-HW + (c + 1)*CW));
+    if (xo > KW) yc = Math.min(yc, keel + (v - 4 - keel) * (HW - KW) / (xo - KW));
+  }
+  const hull = { yc, keel, kw: KW,
+                 rb: Math.max(0, Math.min(4 * SEG, firstNeg * SEG - 10)),
+                 rs: Math.max(0, Math.min(80, (segs - 1 - lastNeg) * SEG - 10)) };
   return {
-    kind: 'line', farSpawnZ: tStart * SEG - 300,
+    kind: 'line', farSpawnZ: tStart * SEG - 300, spon, hull,
     cfg, segs, h, objs, catwalks, tStart, tEnd, zw, len: segs * SEG, hangars, reactor, gens, turrets, towers,
     gensAlive: gens.length, dying: false, dieT: 0, chainT: 0,
     cls: cfg.cls, name: NAMES[ri(NAMES.length)]
@@ -1782,39 +1819,61 @@ function drawProfile(h, z, br) {
   }
 }
 function drawHull() {
-  const hb = game.flicker;
+  const hb = game.flicker, Hl = ship.hull, yc = Hl.yc, kl = Hl.keel, kw = Hl.kw, L = ship.len;
+  const kz0 = Hl.rb, kz1 = L - Hl.rs;
+  // x and y of the lower-hull chine-to-keel edge (bow or stern rake) at depth z, else null
+  const rake = (z, zA, zB) => zB > zA ? (z - zA) / (zB - zA) : 1;
   const s0 = Math.max(0, Math.floor((cam.z - 10) / SEG)), s1 = Math.min(ship.segs - 1, Math.floor((cam.z + FAR) / SEG));
   for (let s = s0; s <= s1; s++) {
     const z0 = s*SEG, z1 = z0 + SEG, h = ship.h[s], hp = s > 0 ? ship.h[s - 1] : null;
     for (let b = 0; b <= COLS; b++) {
       const x = -HW + b*CW;
-      const L = b > 0 ? h[b - 1] : null, R = b < COLS ? h[b] : null;
-      if (L !== null && R !== null) {
-        if (L === R) { if (b % 3 === 0) L3(x, L, z0, x, L, z1, 'brass', 0.4*hb); }
-        else { L3(x, L, z0, x, L, z1, 'brass', hb); L3(x, R, z0, x, R, z1, 'brass', hb); }
+      const Lh = b > 0 ? h[b - 1] : null, R = b < COLS ? h[b] : null;
+      if (Lh !== null && R !== null) {
+        if (Lh === R) { if (b % 3 === 0) L3(x, Lh, z0, x, Lh, z1, 'brass', 0.4*hb); }
+        else { L3(x, Lh, z0, x, Lh, z1, 'brass', hb); L3(x, R, z0, x, R, z1, 'brass', hb); }
       } else {
-        const v = L !== null ? L : R;
+        const v = Lh !== null ? Lh : R;
         L3(x, v, z0, x, v, z1, 'brass', hb);
-        L3(x, HULL_BOT, z0, x, HULL_BOT, z1, 'brass', 0.45*hb);
+        L3(x, yc, z0, x, yc, z1, 'brass', 0.6*hb);                    // chine
+      }
+    }
+    // keel lines, and the bow / stern rake edges where this segment crosses them
+    const za = Math.max(z0, kz0), zb = Math.min(z1, kz1);
+    if (zb > za) { L3(-kw, kl, za, -kw, kl, zb, 'brass', 0.35*hb); L3(kw, kl, za, kw, kl, zb, 'brass', 0.35*hb); }
+    for (const [zA, zB, toKeel] of [[0, kz0, true], [kz1, L, false]]) {
+      const ra = Math.max(z0, zA), rb = Math.min(z1, zB);
+      if (rb <= ra) continue;
+      const ta = toKeel ? rake(ra, zA, zB) : 1 - rake(ra, zA, zB), tb = toKeel ? rake(rb, zA, zB) : 1 - rake(rb, zA, zB);
+      for (const sx of [-1, 1]) {
+        const xa = sx*(HW + (kw - HW)*ta), ya = yc + (kl - yc)*ta, xb = sx*(HW + (kw - HW)*tb), yb = yc + (kl - yc)*tb;
+        L3(xa, ya, ra, xb, yb, rb, 'brass', 0.5*hb);
       }
     }
     const changed = !hp || !sameRow(hp, h);
     if (changed || s % 4 === 0) drawProfile(h, z0, (changed ? 1 : 0.3)*hb);
     if (hp && changed) drawProfile(hp, z0, hb);
     if (!hp) {
-      L3(-HW, h[0], z0, -HW, HULL_BOT, z0, 'brass', hb);
-      L3(HW, h[COLS - 1], z0, HW, HULL_BOT, z0, 'brass', hb);
-      L3(-HW, HULL_BOT, z0, HW, HULL_BOT, z0, 'brass', hb);
+      L3(-HW, h[0], z0, -HW, yc, z0, 'brass', hb);
+      L3(HW, h[COLS - 1], z0, HW, yc, z0, 'brass', hb);
+      L3(-HW, yc, z0, HW, yc, z0, 'brass', hb);
     } else if (s % 4 === 0) {
-      L3(-HW, h[0], z0, -HW, HULL_BOT, z0, 'brass', 0.35*hb);
-      L3(HW, h[COLS - 1], z0, HW, HULL_BOT, z0, 'brass', 0.35*hb);
+      L3(-HW, h[0], z0, -HW, yc, z0, 'brass', 0.35*hb);
+      L3(HW, h[COLS - 1], z0, HW, yc, z0, 'brass', 0.35*hb);
+      if (z0 > kz0 && z0 < kz1) {                                       // V-hull rib
+        L3(-HW, yc, z0, -kw, kl, z0, 'brass', 0.3*hb);
+        L3(HW, yc, z0, kw, kl, z0, 'brass', 0.3*hb);
+        L3(-kw, kl, z0, kw, kl, z0, 'brass', 0.2*hb);
+      }
     }
     if (s === ship.segs - 1) {
       drawProfile(h, z1, hb);
-      L3(-HW, h[0], z1, -HW, HULL_BOT, z1, 'brass', hb);
-      L3(HW, h[COLS - 1], z1, HW, HULL_BOT, z1, 'brass', hb);
-      L3(-HW, HULL_BOT, z1, HW, HULL_BOT, z1, 'brass', hb);
+      L3(-HW, h[0], z1, -HW, yc, z1, 'brass', hb);
+      L3(HW, h[COLS - 1], z1, HW, yc, z1, 'brass', hb);
+      L3(-HW, yc, z1, HW, yc, z1, 'brass', hb);
     }
+    if (s === 0 || (z0 < kz0 && z1 >= kz0)) L3(-kw, kl, kz0, kw, kl, kz0, 'brass', 0.5*hb);
+    if (z0 <= kz1 && z1 > kz1) L3(-kw, kl, kz1, kw, kl, kz1, 'brass', 0.5*hb);
   }
 }
 function drawObjs() {
@@ -2061,6 +2120,187 @@ const TD = 2.56;                                                     // texels p
 const FOGN = 1024, FOGK = FOGN / (FAR * 1.02), FOG = new Float32Array(FOGN + 2);
 for (let i = 0; i <= FOGN + 1; i++) { const d = Math.max(0, 1 - i / FOGK / FAR); FOG[i] = Math.min(1, 1.3 * Math.pow(d, 1.15)); }
 
+// ---------------------------------------------------------------- world backdrop (WebGL)
+// A planet, its rings and moons and a faint nebula, drawn by one full-screen fragment shader on
+// an offscreen WebGL canvas and composited over the starfield. Everything sits at infinity, so
+// only the camera basis moves it. Lit by the same sun as the hull. Solid mode only; B toggles.
+// No WebGL means no backdrop and the plain starfield.
+const WORLDS = {
+  ice:   { kind: 0, yaw: 0, el: -64, rad: 58, axis: [1, 0.35, 0.25], spin: 0.004, seed: 3.1,
+           c1: [0.10, 0.20, 0.22], c2: [0.30, 0.46, 0.42], c3: [0.62, 0.68, 0.60], c4: [0.80, 0.84, 0.78],
+           scl: 3.2, sea: 0.50, cloud: 0.45, ice: 0.30, atm: [0.55, 0.85, 0.80], atmW: 0.035, neb: [0.30, 0.45, 0.55], nebA: 0.20 },
+  earth: { kind: 0, yaw: 8, el: -62, rad: 56, axis: [1, 0.3, -0.35], spin: 0.005, seed: 7.7,
+           c1: [0.03, 0.08, 0.20], c2: [0.06, 0.20, 0.36], c3: [0.16, 0.24, 0.10], c4: [0.42, 0.36, 0.24],
+           scl: 3.6, sea: 0.53, cloud: 0.70, ice: 0.10, atm: [0.40, 0.65, 1.00], atmW: 0.03, neb: [0.45, 0.30, 0.55], nebA: 0.18 },
+  giant: { kind: 1, yaw: -24, el: 14, rad: 16, axis: [0.32, 1, -0.30], spin: 0.010, seed: 1.9,
+           c1: [0.10, 0.26, 0.30], c2: [0.22, 0.42, 0.46], c3: [0.42, 0.60, 0.60], c4: [0.06, 0.15, 0.20],
+           atm: [0.45, 0.80, 0.80], atmW: 0.05, ring: [1.3, 2.35],
+           moons: [[-8, 31, 1.6], [-44, 4, 2.6]], neb: [0.55, 0.45, 0.30], nebA: 0.22 },
+};
+const WORLD_FOR_TIER = ['ice', 'ice', 'earth', 'earth', 'giant', 'giant', 'giant'];
+let worldOn = true, worldForce = null;
+try {
+  const q = new URLSearchParams(location.search).get('world');
+  if (q === 'off' || q === '0') worldOn = false; else if (q && WORLDS[q]) worldForce = q;
+  if (localStorage.getItem('deckrunner_world') === '0') worldOn = false;
+} catch (e) {}
+const BD = (() => {
+  const c = document.createElement('canvas');
+  const gl = c.getContext('webgl', { premultipliedAlpha: true, alpha: true, antialias: false, preserveDrawingBuffer: true });
+  if (!gl) return null;
+  const vs = 'attribute vec2 p;void main(){gl_Position=vec4(p,0.0,1.0);}';
+  const fs = `precision highp float;
+uniform vec2 uRes; uniform float uF, uT, uKind, uSea, uCloud, uIce, uSeed, uSpin, uAtmW, uNebA, uRing;
+uniform vec3 uR, uU, uFw, uL, uPC, uAxis, uC1, uC2, uC3, uC4, uAtm, uNeb, uRingN;
+uniform float uPR, uScl; uniform vec2 uRingR; uniform vec4 uM1, uM2;
+float hash(vec3 p){ p = fract(p*0.3183099 + 0.1); p *= 17.0; return fract(p.x*p.y*p.z*(p.x+p.y+p.z)); }
+float noise(vec3 x){ vec3 i = floor(x), f = fract(x); f = f*f*(3.0-2.0*f);
+  return mix(mix(mix(hash(i), hash(i+vec3(1,0,0)), f.x), mix(hash(i+vec3(0,1,0)), hash(i+vec3(1,1,0)), f.x), f.y),
+             mix(mix(hash(i+vec3(0,0,1)), hash(i+vec3(1,0,1)), f.x), mix(hash(i+vec3(0,1,1)), hash(i+vec3(1,1,1)), f.x), f.y), f.z); }
+float fbm(vec3 p){ float v = 0.0, a = 0.5; for (int i = 0; i < 5; i++) { v += a*noise(p); p = p*2.03 + 17.1; a *= 0.5; } return v; }
+vec3 rot(vec3 v, vec3 k, float a){ float c = cos(a), s = sin(a); return v*c + cross(k, v)*s + k*dot(k, v)*(1.0-c); }
+float sph(vec3 d, vec3 c, float r){ float b = dot(d, c), h = b*b - dot(c, c) + r*r; return h > 0.0 ? b - sqrt(h) : -1.0; }
+vec3 planetCol(vec3 n, vec3 d){
+  float lat = dot(n, uAxis);
+  vec3 p = rot(n, uAxis, -uT*uSpin) + uSeed;
+  vec3 col; float spec = 0.0;
+  if (uKind < 0.5) {
+    p *= uScl;
+    float h = fbm(p*2.3) + 0.18*(fbm(p*9.0) - 0.5);
+    if (h < uSea) { col = mix(uC1, uC2, smoothstep(uSea - 0.18, uSea, h)); spec = 1.0; }
+    else col = mix(uC3, uC4, smoothstep(0.3, 0.7, fbm(p*7.0)))*(0.8 + 0.4*fbm(p*22.0));
+    float ic = smoothstep(1.0 - uIce, 1.06 - uIce, abs(lat) + 0.10*(fbm(p*5.0) - 0.5));
+    col = mix(col, vec3(0.86, 0.90, 0.92), ic); spec *= 1.0 - ic;
+    vec3 q = p*2.0 + vec3(fbm(p*1.3 + uT*0.006), fbm(p*1.3 + 4.0), fbm(p*1.3 + 9.0))*2.4;
+    float th = 0.66 - 0.16*uCloud, cl = smoothstep(th, th + 0.10, fbm(q) + 0.12*(fbm(q*4.0) - 0.5));
+    col = mix(col, vec3(0.93, 0.95, 0.97), cl*0.92); spec *= 1.0 - cl;
+  } else {
+    float w = fbm(p*vec3(2.0, 0.6, 2.0))*1.6 + fbm(p*5.0)*0.35;
+    float b = lat*9.0 + w;
+    float t1 = 0.5 + 0.5*sin(b*2.4), t2 = 0.5 + 0.5*sin(b*5.1 + 1.3);
+    col = mix(uC1, uC2, t1); col = mix(col, uC3, t2*t2*0.6);
+    col = mix(col, uC4, smoothstep(0.75, 0.95, abs(lat))*0.7);
+  }
+  float nl = dot(n, uL);
+  float lit = smoothstep(-0.06, 0.55, nl);
+  vec3 c = col*(0.015 + 0.95*lit);
+  vec3 hv = normalize(uL - d);
+  c += spec*pow(max(dot(n, hv), 0.0), 40.0)*0.5*lit*vec3(1.0, 0.9, 0.75);
+  float fr = pow(1.0 - max(dot(n, -d), 0.0), 3.0);
+  c += uAtm*fr*smoothstep(-0.25, 0.4, nl)*0.9;
+  return c;
+}
+vec3 moonCol(vec3 n, float s){
+  float v = fbm(n*4.0 + s)*0.7 + fbm(n*13.0 + s)*0.3;
+  vec3 col = mix(vec3(0.35, 0.36, 0.34), vec3(0.72, 0.72, 0.66), v);
+  return col*(0.02 + 1.1*smoothstep(-0.05, 0.6, dot(n, uL)));
+}
+void main(){
+  vec2 px = gl_FragCoord.xy - 0.5*uRes;
+  vec3 d = normalize(uR*px.x/uF + uU*px.y/uF + uFw);
+  // nebula
+  float nb = fbm(d*2.2 + uSeed*3.0);
+  float nebA = smoothstep(0.42, 0.85, nb)*uNebA;
+  vec3 col = uNeb*nebA; float a = nebA*0.6;
+  // opaque bodies: planet and moons, nearest wins
+  float t0 = 1e9;
+  float tp = sph(d, uPC, uPR);
+  if (tp > 0.0) { vec3 n = normalize(d*tp - uPC); col = planetCol(n, d); a = 1.0; t0 = tp;
+    if (uRing > 0.5) {                                            // ring shadow on the planet
+      vec3 P = d*tp; float den = dot(uL, uRingN);
+      if (abs(den) > 1e-3) { float s = dot(uPC - P, uRingN)/den;
+        if (s > 0.0) { float rr = length(P + uL*s - uPC); if (rr > uRingR.x && rr < uRingR.y) col *= 0.45; } }
+    }
+  }
+  for (int k = 0; k < 2; k++) {
+    vec4 M = k == 0 ? uM1 : uM2;
+    if (M.w <= 0.0) continue;
+    float tm = sph(d, M.xyz, M.w);
+    if (tm > 0.0 && tm < t0) { col = moonCol(normalize(d*tm - M.xyz), float(k)*5.0); a = 1.0; t0 = tm; }
+  }
+  // atmosphere halo outside the limb
+  if (tp < 0.0) {
+    float b = dot(d, uPC); vec3 cp = d*b - uPC; float dd = length(cp);
+    if (b > 0.0 && dd > uPR) {
+      float g = exp(-(dd - uPR)/(uPR*uAtmW))*smoothstep(-0.35, 0.5, dot(cp/dd, uL));
+      if (t0 > 1e8) { col += uAtm*g*0.8; a = max(a, g*0.8); }
+    }
+  }
+  // rings
+  if (uRing > 0.5) {
+    float den = dot(d, uRingN);
+    if (abs(den) > 1e-4) {
+      float tr = dot(uPC, uRingN)/den;
+      if (tr > 0.0 && tr < t0) {
+        vec3 P = d*tr; float rr = length(P - uPC);
+        float x = (rr - uRingR.x)/(uRingR.y - uRingR.x);
+        if (x > 0.0 && x < 1.0) {
+          float dens = (0.55 + 0.45*sin(x*71.0))*(0.6 + 0.4*sin(x*23.0 + 1.7))*(0.7 + 0.3*noise(vec3(x*140.0, 0.0, uSeed)));
+          dens *= smoothstep(0.0, 0.04, x)*smoothstep(1.0, 0.92, x)*(1.0 - 0.85*smoothstep(0.60, 0.62, x)*smoothstep(0.68, 0.66, x));
+          vec3 oc = P - uPC; float bb = dot(oc, uL), cc = dot(oc, oc) - uPR*uPR;
+          float sh = (bb < 0.0 && bb*bb - cc > 0.0) ? 0.12 : 1.0;   // planet shadow on the ring
+          vec3 rc = mix(uC3, vec3(0.86, 0.88, 0.80), 0.5)*(0.30 + 0.85*abs(dot(uRingN, uL)))*sh;
+          float ra = clamp(dens*0.62, 0.0, 1.0);
+          col = rc*ra + col*(1.0 - ra); a = ra + a*(1.0 - ra);
+        }
+      }
+    }
+  }
+  gl_FragColor = vec4(min(col, vec3(1.0))*1.0, a);
+}`;
+  const sh = (t, s) => { const o = gl.createShader(t); gl.shaderSource(o, s); gl.compileShader(o);
+    if (!gl.getShaderParameter(o, gl.COMPILE_STATUS)) { console.warn('backdrop shader:', gl.getShaderInfoLog(o)); return null; } return o; };
+  const v = sh(gl.VERTEX_SHADER, vs), f = sh(gl.FRAGMENT_SHADER, fs);
+  if (!v || !f) return null;
+  const pr = gl.createProgram(); gl.attachShader(pr, v); gl.attachShader(pr, f); gl.linkProgram(pr);
+  if (!gl.getProgramParameter(pr, gl.LINK_STATUS)) return null;
+  gl.useProgram(pr);
+  const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+  const loc = gl.getAttribLocation(pr, 'p'); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+  const U = {};
+  for (const n of ['uRes','uF','uT','uKind','uSea','uCloud','uIce','uSeed','uSpin','uAtmW','uNebA','uRing','uR','uU','uFw','uL',
+                   'uScl','uPC','uAxis','uC1','uC2','uC3','uC4','uAtm','uNeb','uRingN','uPR','uRingR','uM1','uM2']) U[n] = gl.getUniformLocation(pr, n);
+  gl.uniform3fv(U.uL, SUNL);
+  return { c, gl, U, world: null };
+})();
+const skyDir = (yaw, el) => { const y = yaw*Math.PI/180, e = el*Math.PI/180; return [Math.sin(y)*Math.cos(e), Math.sin(e), Math.cos(y)*Math.cos(e)]; };
+const norm3 = v => { const l = Math.hypot(v[0], v[1], v[2]) || 1; return [v[0]/l, v[1]/l, v[2]/l]; };
+function setWorld(key) {
+  const B = BD, gl = B.gl, U = B.U, w = WORLDS[key];
+  B.world = key;
+  const D = 100, R = D*Math.sin(w.rad*Math.PI/180), pc = skyDir(w.yaw, w.el).map(x => x*D);
+  gl.uniform3fv(U.uPC, pc); gl.uniform1f(U.uPR, R);
+  gl.uniform3fv(U.uAxis, norm3(w.axis)); gl.uniform1f(U.uSpin, w.spin); gl.uniform1f(U.uScl, w.scl || 1); gl.uniform1f(U.uSeed, w.seed); gl.uniform1f(U.uKind, w.kind);
+  gl.uniform3fv(U.uC1, w.c1); gl.uniform3fv(U.uC2, w.c2); gl.uniform3fv(U.uC3, w.c3); gl.uniform3fv(U.uC4, w.c4);
+  gl.uniform1f(U.uSea, w.sea || 0); gl.uniform1f(U.uCloud, w.cloud || 0); gl.uniform1f(U.uIce, w.ice || 0);
+  gl.uniform3fv(U.uAtm, w.atm); gl.uniform1f(U.uAtmW, w.atmW); gl.uniform3fv(U.uNeb, w.neb); gl.uniform1f(U.uNebA, w.nebA);
+  gl.uniform1f(U.uRing, w.ring ? 1 : 0);
+  if (w.ring) {
+    gl.uniform3fv(U.uRingN, norm3(w.axis));                           // rings lie in the equator
+    gl.uniform2f(U.uRingR, w.ring[0]*R, w.ring[1]*R);
+  }
+  const moons = w.moons || [];
+  for (let k = 0; k < 2; k++) {
+    const m = moons[k];
+    if (m) { const p = skyDir(m[0], m[1]).map(x => x*D*1.1); gl.uniform4f(k ? U.uM2 : U.uM1, p[0], p[1], p[2], D*1.1*Math.sin(m[2]*Math.PI/180)); }
+    else gl.uniform4f(k ? U.uM2 : U.uM1, 0, 0, 0, 0);
+  }
+}
+function drawBackdrop() {
+  if (!BD || !worldOn || !ship) return;
+  const key = worldForce || WORLD_FOR_TIER[Math.min(WORLD_FOR_TIER.length, ship.cfg.tier || 1) - 1];
+  if (BD.world !== key) setWorld(key);
+  const gl = BD.gl, U = BD.U, sc = 0.5;
+  const w = Math.max(64, Math.round(W*sc)), h = Math.max(36, Math.round(H*sc));
+  if (BD.c.width !== w || BD.c.height !== h) { BD.c.width = w; BD.c.height = h; gl.viewport(0, 0, w, h); }
+  gl.uniform2f(U.uRes, w, h); gl.uniform1f(U.uF, F*w/W); gl.uniform1f(U.uT, game.time);
+  gl.uniform3fv(U.uR, cam.r); gl.uniform3fv(U.uU, cam.u); gl.uniform3fv(U.uFw, cam.f);
+  gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  ctx.drawImage(BD.c, 0, 0, W, H);
+}
+
 // ---- geometry
 // A polygon stores its vertices with everything the rasterizer interpolates:
 // [gx, gy, gz, u, v, mx, mz, y] per vertex. u, v are texels; mx, mz are shadow-map cells.
@@ -2173,9 +2413,12 @@ function buildLineSolid(S) {
   const hz = S.hangars.map(o => [Math.round(o.z / SEG), Math.round((o.x + hw) / CW - 1.5)]);
   const inHangar = (s, c) => hz.some(([hs, hc]) => s >= hs && s < hs + 4 && c >= hc && c < hc + 3);
   const isTrench = (s, c) => s >= S.tStart && s < S.tEnd && (c === mid - 1 || c === mid);
+  const sp = S.spon || 0, isSpon = c => sp > 0 && (c < sp || c >= cols - sp);
+  const OUT = S.hull.yc;
   // top textures: patches of deck plating, block roofs, grating in the trench
   const topTex = (s, c) => {
     const v = h[s][c];
+    if (isSpon(c)) return pickW(['flat3', 'floor0_6', 'flat3', 'floor0_7'], hash2(s >> 1, c < sp ? 0 : 1, seed + 7));
     if (v === -40) return 'fcgrate2';
     if (v < 0) return 'floor4_8';
     if (inHangar(s, c)) return 'flat20';
@@ -2203,7 +2446,7 @@ function buildLineSolid(S) {
   }
   // walls along z at column boundaries, merged over runs of segments
   const wallTex = (lo, hi, s, side) => {
-    if (lo === HULL_BOT) return pickW(['STARGR1', 'GRAY4', 'STARGR1', 'SILVER2'], hash2(s >> 2, side, seed));
+    if (lo === OUT || (sp && lo === SPON_Y && (side === sp || side === cols - sp))) return pickW(['STARGR1', 'GRAY4', 'STARGR1', 'SILVER2'], hash2(s >> 2, side, seed));
     if (lo === -40 && s >= S.tStart) return pickW(['TEKWALL2', 'TEKWALL5', 'TEKWALL2'], hash2(s >> 1, side, seed));
     if (lo < 0) return 'TEKWALL5';
     return pickW(['STARGR1', 'GRAY4', 'STARTAN3', 'STARGR1'], hash2(s >> 2, side, seed + hi));
@@ -2218,7 +2461,7 @@ function buildLineSolid(S) {
       run = null;
     };
     for (let s = 0; s < segs; s++) {
-      const L = b > 0 ? h[s][b - 1] : HULL_BOT, R = b < cols ? h[s][b] : HULL_BOT;
+      const L = b > 0 ? h[s][b - 1] : OUT, R = b < cols ? h[s][b] : OUT;
       if (L === R) { close(); continue; }
       const face = L > R ? 1 : -1, lo = Math.min(L, R), hi = Math.max(L, R), tex = wallTex(lo, hi, s, b);
       if (run && run.face === face && run.lo === lo && run.hi === hi && run.tex === tex) { run.s1 = s + 1; continue; }
@@ -2241,11 +2484,11 @@ function buildLineSolid(S) {
     };
     for (let c = 0; c < cols; c++) {
       if (hangarFront.has(s + ':' + c) || hangarFront.has(s + ':' + (c - 1)) || hangarFront.has(s + ':' + (c - 2))) { close(); continue; }
-      const A0 = s > 0 ? h[s - 1][c] : HULL_BOT, B0 = s < segs ? h[s][c] : HULL_BOT;
+      const A0 = s > 0 ? h[s - 1][c] : OUT, B0 = s < segs ? h[s][c] : OUT;
       if (A0 === B0) { close(); continue; }
       const face = B0 > A0 ? -1 : 1, lo = Math.min(A0, B0), hi = Math.max(A0, B0);
       let tex;
-      if (lo === HULL_BOT) tex = 'GRAY4';
+      if (lo === OUT) tex = 'GRAY4';
       else if (s === S.tEnd && (c === mid - 1 || c === mid)) tex = 'BIGDOOR2';
       else if (lo === -40) tex = 'TEKWALL5';
       else if (lo < 0) tex = 'TEKWALL5';
@@ -2255,6 +2498,37 @@ function buildLineSolid(S) {
       run = { face, lo, hi, tex, c0: c, c1: c + 1 };
     }
     close();
+  }
+  // lower hull: V sides from the chine to the keel, raked bow and stern, flat keel strip.
+  // It sits under the deck, so the shadow map would black it out; it gets fixed fill instead.
+  {
+    const Hl = S.hull, yc = Hl.yc, kl = Hl.keel, kw = Hl.kw, L = S.len, zb0 = Hl.rb, zb1 = L - Hl.rs;
+    const a = hw - kw, b = yc - kl, n = Math.hypot(a, b);
+    const nb = Math.hypot(zb0, b) || 1, ns = Math.hypot(Hl.rs, b) || 1;
+    // Each side is one plane: chine line above, and below it the bow rake, keel line, stern rake.
+    // Cut into 4-segment strips so the texture varies and each poly culls on its own.
+    const lowX = zq => zq < zb0 ? hw + (kw - hw) * (zq / zb0) : zq > zb1 ? hw + (kw - hw) * ((L - zq) / Hl.rs) : kw;
+    const lowY = zq => zq < zb0 ? yc + (kl - yc) * (zq / zb0) : zq > zb1 ? yc + (kl - yc) * ((L - zq) / Hl.rs) : kl;
+    const step = 4 * SEG;
+    for (let z = 0, k = 0; z < L - 0.01; z += step, k++) {
+      const zz = Math.min(L, z + step);
+      const zs = [zz];
+      for (const br of [zb1, zb0]) if (br > z && br < zz) zs.push(br);
+      zs.push(z);                                                      // zz down to z, breakpoints between
+      const pts = [[hw, yc, z], [hw, yc, zz]];
+      for (const zq of zs) {
+        const p = [lowX(zq), lowY(zq), zq], q = pts[pts.length - 1];
+        if (Math.abs(p[0] - q[0]) + Math.abs(p[1] - q[1]) + Math.abs(p[2] - q[2]) > 0.01) pts.push(p);
+      }
+      const f = pts[0], e = pts[pts.length - 1];
+      if (Math.abs(f[0] - e[0]) + Math.abs(f[1] - e[1]) + Math.abs(f[2] - e[2]) < 0.01) pts.pop();
+      if (pts.length < 3) continue;
+      polys.push(mkPoly(pts, pickW(['STARGR1', 'GRAY4', 'SILVER2'], hash2(k, 3, seed)), [b / n, -a / n, 0], uvAlong(0, 1, 0), G, { noSun: true, amb: 1.55 }));
+      polys.push(mkPoly(pts.map(p => [-p[0], p[1], p[2]]).reverse(), pickW(['STARGR1', 'GRAY4', 'SILVER2'], hash2(k, 5, seed)), [-b / n, -a / n, 0], uvAlong(0, 1, 0), G, { noSun: true, amb: 1.15 }));
+    }
+    if (zb0 > 0) quad(polys, [hw, yc, 0], [-hw, yc, 0], [-kw, kl, zb0], [kw, kl, zb0], 'GRAY4', [0, -zb0 / nb, -b / nb], uvWallX, G, { noSun: true, amb: 1.35 });
+    if (Hl.rs > 0) quad(polys, [-hw, yc, L], [hw, yc, L], [kw, kl, zb1], [-kw, kl, zb1], 'GRAY4', [0, -Hl.rs / ns, b / ns], uvWallX, G, { noSun: true, amb: 1.1 });
+    if (zb1 > zb0) hrect(polys, -kw, zb0, kw, zb1, kl, 'SUPPORT2', G, true, { noSun: true, amb: 0.8 });
   }
   // hangar bay mouths: a frame around the opening and a recessed, unlit tunnel
   for (const o of S.hangars) {
@@ -2662,6 +2936,7 @@ function render() {
   ctx.fillStyle = '#020408';
   ctx.fillRect(0, 0, W, H);
   drawStars();
+  if (solid) drawBackdrop();
   zTest = false;
   if (ship && solid && TEXREADY) { rasterShip(); zTest = true; }
   if (ship) { if (!zTest) { if (ship.kind === 'disc') drawDisc(); else drawHull(); } drawObjs(); }
@@ -2812,6 +3087,7 @@ window.addEventListener('keydown', e => {
   if (e.code === 'KeyE' && game.state === 'play') fireBurst();
   if (e.code === 'KeyM') toggleSnd();
   if (e.code === 'KeyG') glow = !glow;
+  if (e.code === 'KeyB') { worldOn = !worldOn; try { localStorage.setItem('deckrunner_world', worldOn ? '1' : '0'); } catch (err) {} showMsg2(worldOn ? 'WORLD ON' : 'WORLD OFF', 'cyan', 1.2); }
   if (e.code === 'KeyV') { solid = !solid; try { localStorage.setItem('deckrunner_solid', solid ? '1' : '0'); } catch (err) {} showMsg2(solid ? 'SOLID HULL' : 'VECTOR HULL', 'cyan', 1.2); }
   if (e.code === 'KeyR') { fine = !fine; showMsg2(fine ? 'FINE PIXELS' : 'CHUNKY PIXELS', 'cyan', 1.2); }
   if ((e.code === 'KeyP' || e.code === 'Escape') && (game.state === 'play' || game.state === 'paused')) togglePause();
