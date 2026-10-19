@@ -13,7 +13,7 @@ Prototype for a space fighter game set inside a nebula around a young, violently
 | H | Hide the controls card |
 | F | Trigger an eruption now |
 | 1 / 2 / 3 | Volume quality: low, medium, high |
-| W / S | Thrust / brake |
+| W / S | Throttle up / down. The ship always flies forward; the throttle sets cruise speed (34–95) |
 | Arrows | Pitch and yaw |
 | Mouse | Click to capture, then steer |
 | Q / E | Roll |
@@ -23,7 +23,8 @@ Prototype for a space fighter game set inside a nebula around a young, violently
 | Wheel / `[` `]` | Gun convergence (120–500) |
 | T | Next target |
 | M | Mute |
-| Touch | Orbit: drag and pinch. Fly: left half drag steers, right half hold thrusts, Fire button shoots |
+| , / . | Slow time down / speed it back up (1×, 0.5×, 0.25×, 0.1×) |
+| Touch | Orbit: drag and pinch. Fly: left half drag steers, right half drag up/down is the throttle, Fire button shoots |
 
 ## Cockpit view
 
@@ -48,6 +49,12 @@ Static from the ionized sheath jitters the symbology and makes it drop out, but 
 Near-field dust streaks sell speed and density from inside the volume. 700 motes wrap in a box around the camera, each drawn as a line stretched along velocity, with brightness set by local dust density. They warm in color inside a plasma sheath.
 
 ![Cockpit inside an ionized sheath](docs/screenshots/cockpit-sheath.png)
+
+## Flight
+
+The fighter never stops. The throttle sets a cruise speed between 34 and 95, and the engine holds it against the dust: dense dust still drags you below cruise, but never below 28. Shift boosts to 1.8× cruise. At the edge of the nebula the ship comes about on its own, turning harder the deeper you go, the way Deckrunner's ship swings round at the end of the hull.
+
+Time scale slows the whole simulation (bandits, rounds, eruptions, shock fronts) while the stick and throttle stay at real-time rates, so you can fly a pass in slow motion and watch how it unfolds.
 
 ## Combat
 

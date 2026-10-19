@@ -80,7 +80,8 @@ canvas#hud2d{position:fixed;inset:0;width:100%;height:100%;display:block;pointer
   <div class="bar"><i id="shieldbar"></i></div>
   <div class="row"><span class="lbl">Local dust</span><span class="num" id="dustv">0.00</span></div>
   <div class="bar"><i id="dustbar"></i></div>
-  <div class="row"><span class="lbl">Speed</span><span class="num" id="speedv">0</span></div>
+  <div class="row"><span class="lbl">Speed / cruise</span><span class="num" id="speedv">0</span></div>
+  <div class="row"><span class="lbl">Throttle</span><span class="num" id="thrv">40%</span></div>
   <div class="row"><span class="lbl">Drag</span><span class="num" id="dragv">0.00</span></div>
   <div class="row"><span class="lbl">Star range</span><span class="num" id="rangev">0</span></div>
   <div class="row"><span class="lbl">Guns</span><span class="num" id="gunv">ALT · 240</span></div>
@@ -96,6 +97,7 @@ canvas#hud2d{position:fixed;inset:0;width:100%;height:100%;display:block;pointer
   <div class="row"><span class="lbl">Camera</span><span class="num" id="camv">ORBIT</span></div>
   <div class="row"><span class="lbl">Volume</span><span class="num" id="qualv">MED</span></div>
   <div class="row"><span class="lbl">Bandits</span><span class="num" id="banv">0</span></div>
+  <div class="row"><span class="lbl">Time scale</span><span class="num" id="tsv">1×</span></div>
 </div>
 
 <div id="alert"></div>
@@ -112,7 +114,7 @@ canvas#hud2d{position:fixed;inset:0;width:100%;height:100%;display:block;pointer
 <div class="hud panel" id="help">
   <div class="lbl">Flight</div>
   <div class="keys">
-    <b>W / S</b><span>Thrust / brake</span>
+    <b>W / S</b><span>Throttle up / down (always forward)</span>
     <b>Arrows</b><span>Pitch and yaw</span>
     <b>Mouse</b><span>Click to capture, steer</span>
     <b>Q / E</b><span>Roll</span>
@@ -122,9 +124,10 @@ canvas#hud2d{position:fixed;inset:0;width:100%;height:100%;display:block;pointer
     <b>Wheel / [ ]</b><span>Gun convergence</span>
     <b>T</b><span>Next target</span>
     <b>M</b><span>Mute</span>
+    <b>, / .</b><span>Slower / faster time</span>
     <b>V</b><span>Cockpit / chase view</span>
     <b>H</b><span>Hide this card</span>
-    <b>Touch</b><span>Left drag steers, right hold thrusts, Fire button</span>
+    <b>Touch</b><span>Left drag steers, right drag is the throttle, Fire button</span>
   </div>
 </div>
 
@@ -133,6 +136,7 @@ canvas#hud2d{position:fixed;inset:0;width:100%;height:100%;display:block;pointer
   <button type="button" id="bCam">Fly <b>C</b></button>
   <button type="button" id="bView" hidden>Chase <b>V</b></button>
   <button type="button" id="bErupt">Erupt <b>F</b></button>
+  <button type="button" id="bTime">Time 1× <b>, .</b></button>
   <button type="button" id="bQual">Volume <b>1-3</b></button>
 </div>
 
@@ -882,16 +886,19 @@ function resize(){
   camera.aspect=w/h;camera.updateProjectionMatrix();
   sizeHud();
 }
+const TS=[1,0.5,0.25,0.1];
+function setTimeScale(v){S.ts=v;$('tsv').textContent=v+'×';$('bTime').firstChild.textContent='Time '+v+'× ';}
+function stepTimeScale(d){const i=TS.indexOf(S.ts);setTimeScale(TS[Math.max(0,Math.min(TS.length-1,(i<0?0:i)+d))]);}
 function setQuality(i){qi=i;volMat.uniforms.uSteps.value=QUAL[qi].steps;$('qualv').textContent=QUAL[qi].name;resize();}
 window.addEventListener('resize',resize);
 
 /* ---------- flight + camera state ---------- */
 const S={mode:'orbit',view:'cockpit',help:true,shake:0,sheath:0,hull:100,shield:100,vel:new THREE.Vector3(),q:new THREE.Quaternion(),
-  dust:0,drag:0,static:0,hit:0,haz:'CLEAR',hazLvl:0,lockTau:0,locked:false,inPath:null,tick:0,frozen:false};
+  dust:0,drag:0,static:0,hit:0,haz:'CLEAR',hazLvl:0,lockTau:0,locked:false,inPath:null,tick:0,frozen:false,thr:0.4,tgtSpd:0,ts:1,rdt:0};
 const orbit={az:0.35,el:0.22,dist:330,auto:true,idle:0,c:new THREE.Vector3()};
 const keys={};
 const mouse={dx:0,dy:0,locked:false};
-const touch={steer:null,thrust:null};
+const touch={steer:null,thrust:null,t0:0.4};
 function resetShip(){
   ship.position.set(0,12,175);S.q.identity();S.vel.set(0,0,-10);S.hull=100;S.shield=100;
 }
@@ -908,6 +915,7 @@ addEventListener('keydown',e=>{
   if(e.code==='KeyT')cycleTarget();
   if(e.code==='BracketLeft')setConv(G.conv-20);if(e.code==='BracketRight')setConv(G.conv+20);
   if(e.code==='KeyM')sfx.mute();
+  if(e.code==='Comma')stepTimeScale(1);if(e.code==='Period')stepTimeScale(-1);
   if(e.code==='Digit1')setQuality(0);if(e.code==='Digit2')setQuality(1);if(e.code==='Digit3')setQuality(2);
 });
 addEventListener('keyup',e=>{keys[e.code]=false;});
@@ -919,7 +927,7 @@ function syncChrome(){
   $('bFire').hidden=!(TOUCH&&S.mode==='fly');
   $('bView').firstChild.textContent=S.view==='cockpit'?'Chase ':'Cockpit ';
   $('help').hidden=!S.help||cockpit();
-  $('tip').textContent=S.mode==='orbit'?'Drag to orbit · press C or Fly to take the stick':(TOUCH?'Left drag steers · right hold thrusts':'Click to capture the mouse · Esc releases · V changes view');
+  $('tip').textContent=S.mode==='orbit'?'Drag to orbit · press C or Fly to take the stick':(TOUCH?'Left drag steers · right drag sets throttle':'Click to capture the mouse · Esc releases · V changes view');
 }
 function toggleCam(){
   S.mode=S.mode==='orbit'?'fly':'orbit';
@@ -932,6 +940,7 @@ $('bCam').addEventListener('click',toggleCam);
 $('bView').addEventListener('click',toggleView);
 $('bErupt').addEventListener('click',forceErupt);
 $('bQual').addEventListener('click',()=>setQuality((qi+1)%3));
+$('bTime').addEventListener('click',()=>{const i=TS.indexOf(S.ts);setTimeScale(TS[(i+1)%TS.length]);});
 
 // pointer: orbit drag / pinch in orbit mode; pointer lock + touch sticks in fly mode
 const ptrs=new Map();let pinch0=0;
@@ -945,7 +954,7 @@ canvas.addEventListener('pointerdown',e=>{
       else if(e.button===2)setGunMode();
     }
     else if(e.clientX<innerWidth*0.5){if(touch.steer===null)touch.steer=e.pointerId;}
-    else{if(touch.thrust===null)touch.thrust=e.pointerId;}
+    else{if(touch.thrust===null){touch.thrust=e.pointerId;touch.t0=S.thr;}}
   }
   if(ptrs.size===2){const[a,b]=[...ptrs.values()];pinch0=Math.hypot(a.x-b.x,a.y-b.y);}
   orbit.auto=false;orbit.idle=0;
@@ -971,37 +980,61 @@ document.addEventListener('mousemove',e=>{if(mouse.locked){mouse.dx+=e.movementX
 const _q=new THREE.Quaternion(),_v=new THREE.Vector3(),_fwd=new THREE.Vector3(),_up=new THREE.Vector3(),_tmp=new THREE.Vector3();
 const AX={x:new THREE.Vector3(1,0,0),y:new THREE.Vector3(0,1,0),z:new THREE.Vector3(0,0,1)};
 const camLook=new THREE.Vector3();
+const SPD_FLOOR=28, SPD_LO=34, SPD_HI=95;   // always forward: the throttle picks a cruise speed, nothing stops the ship
+const cruise=()=>SPD_LO+(SPD_HI-SPD_LO)*S.thr;
+const _m4=new THREE.Matrix4();
 function flight(dt,time){
-  let pitch=0,yaw=0,roll=0,thrust=0;
-  if(S.mode==='fly'){
+  const rdt=S.rdt||dt, fly=S.mode==='fly';
+  let pitch=0,yaw=0,roll=0;
+  if(fly){
     if(keys.ArrowUp)pitch-=1.4;if(keys.ArrowDown)pitch+=1.4;
     if(keys.ArrowLeft)yaw+=1.4;if(keys.ArrowRight)yaw-=1.4;
     if(keys.KeyQ)roll+=2.0;if(keys.KeyE)roll-=2.0;
-    if(keys.KeyW)thrust=1;
+    if(keys.KeyW)S.thr=Math.min(1,S.thr+0.6*rdt);
+    if(keys.KeyS)S.thr=Math.max(0,S.thr-0.6*rdt);
     if(touch.steer!==null){const p=ptrs.get(touch.steer);if(p){yaw-=Math.max(-1,Math.min(1,(p.x-p.sx)/70))*1.5;pitch+=Math.max(-1,Math.min(1,(p.y-p.sy)/70))*1.3;}}
-    if(touch.thrust!==null)thrust=1;
+    if(touch.thrust!==null){const p=ptrs.get(touch.thrust);if(p)S.thr=Math.max(0,Math.min(1,touch.t0-(p.y-p.sy)/160));} // right thumb is a throttle lever
   }
-  _q.setFromAxisAngle(AX.x,pitch*dt-mouse.dy*0.0022);S.q.multiply(_q);
-  _q.setFromAxisAngle(AX.y,yaw*dt-mouse.dx*0.0022);S.q.multiply(_q);
-  _q.setFromAxisAngle(AX.z,roll*dt);S.q.multiply(_q);
+  _q.setFromAxisAngle(AX.x,pitch*rdt-mouse.dy*0.0022);S.q.multiply(_q);
+  _q.setFromAxisAngle(AX.y,yaw*rdt-mouse.dx*0.0022);S.q.multiply(_q);
+  _q.setFromAxisAngle(AX.z,roll*rdt);S.q.multiply(_q);
   S.q.normalize();mouse.dx=mouse.dy=0;
+  // the edge of the nebula: you can't stop, so the ship comes about on its own, harder the deeper you go
+  S.edge=false;
+  if(fly){
+    const r0=ship.position.length(), deep=(r0-RN*0.84)/(RN*0.1);
+    if(deep>0){
+      _tmp.copy(ship.position).multiplyScalar(-1/r0);_fwd.set(0,0,-1).applyQuaternion(S.q);
+      if(_fwd.dot(_tmp)<0.5){
+        _up.set(0,1,0).applyQuaternion(S.q);_v.copy(ship.position).add(_tmp);
+        _m4.lookAt(ship.position,_v,_up);_q.setFromRotationMatrix(_m4);S.q.rotateTowards(_q,Math.min(1.5,0.5+deep)*rdt);S.edge=true;
+      }
+    }
+  }
   _fwd.set(0,0,-1).applyQuaternion(S.q);
-  const boost=keys.ShiftLeft||keys.ShiftRight?1.8:1;
-  S.vel.addScaledVector(_fwd,thrust*34*boost*dt);
-  if(S.mode==='fly'&&keys.KeyS)S.vel.multiplyScalar(Math.exp(-2.2*dt));
+  const boost=fly&&(keys.ShiftLeft||keys.ShiftRight)?1.8:1;
+  S.tgtSpd=cruise()*boost;
   // the environment pushes back: dust is drag, read from the same grid the renderer draws
   S.dust=gameDens(ship.position.x,ship.position.y,ship.position.z);
   S.drag=0.22+S.dust*3.0;
   S.vel.multiplyScalar(Math.exp(-S.drag*dt));
+  let thrust=0;
+  if(fly){
+    // the engine holds the cruise speed against the dust: up to 40 u/s² forward, 22 u/s² of retro when throttling back
+    const fs=S.vel.dot(_fwd), err=S.tgtSpd-fs;
+    const acc=err>0?Math.min(err,40*boost*dt):Math.max(err,-22*dt);
+    S.vel.addScaledVector(_fwd,acc);thrust=Math.max(0,Math.min(1,err/12));
+    const fs2=S.vel.dot(_fwd);if(fs2<SPD_FLOOR)S.vel.addScaledVector(_fwd,SPD_FLOOR-fs2);
+  }
   // nudge velocity toward the nose so it flies rather than drifts
   const sp=S.vel.length();if(sp>0.01){_v.copy(_fwd).multiplyScalar(sp);S.vel.lerp(_v,Math.min(1,1.6*dt));}
-  if(S.vel.length()>95*boost)S.vel.setLength(95*boost);
+  if(S.vel.length()>SPD_HI*boost)S.vel.setLength(SPD_HI*boost);
   ship.position.addScaledVector(S.vel,dt);
   const r=ship.position.length();
   if(r<R_STAR+3){ship.position.setLength(R_STAR+3);S.vel.copy(ship.position).setLength(25);damage(40,true);}
   if(r>RN*0.96){_tmp.copy(ship.position).divideScalar(r);S.vel.addScaledVector(_tmp,-Math.min(6*(r-RN*0.96),120)*dt);}
   ship.quaternion.copy(S.q);
-  const eng=ship.userData.eng,es=0.7+thrust*boost*0.9+Math.random()*0.15*thrust;eng[0].scale.setScalar(es);eng[1].scale.setScalar(es);
+  const eng=ship.userData.eng,es=0.7+(0.3+thrust*0.7)*boost*0.9*(fly?1:0)+Math.random()*0.12;eng[0].scale.setScalar(es);eng[1].scale.setScalar(es);
 }
 function damage(amount,direct){
   if(S.mode!=='fly')return; // the parked ship in orbit view is scenery
@@ -1465,7 +1498,7 @@ function hud(){
   $('hullv').textContent=Math.round(S.hull);$('hullbar').style.width=Math.max(0,S.hull)+'%';
   $('shieldv').textContent=Math.round(S.shield);$('shieldbar').style.width=Math.max(0,S.shield)+'%';
   $('dustv').textContent=S.dust.toFixed(2);$('dustbar').style.width=Math.min(100,S.dust*160)+'%';
-  $('speedv').textContent=S.vel.length().toFixed(0);$('dragv').textContent=S.drag.toFixed(2);
+  $('speedv').textContent=S.vel.length().toFixed(0)+' / '+S.tgtSpd.toFixed(0);$('thrv').textContent=Math.round(S.thr*100)+'%';$('dragv').textContent=S.drag.toFixed(2);
   $('rangev').textContent=ship.position.length().toFixed(0);
   let ar=0,al=0;for(const T of tend){if(T.state==='warn'||T.state==='rise')ar++;if(T.state==='erupt'||T.state==='fade')al++;}
   $('arv').textContent=ar;$('tendv').textContent=al;$('nextv').textContent=Math.max(0,nextEvent).toFixed(1)+' s';
@@ -1479,7 +1512,8 @@ function hud(){
   $('killv').textContent=G.kills+' / '+G.deaths;
   $('banv').textContent=foes.filter(f=>f.alive).length;
   const al2=$('alert');
-  if(flying&&G.downT>0){al2.className='hot';al2.innerHTML='SHOT DOWN<small>'+G.kills+' SPLASHED · '+G.deaths+' LOST</small>';}
+  if(flying&&S.edge&&G.downT<=0){al2.className='';al2.innerHTML='EDGE OF THE NEBULA<small>COMING ABOUT</small>';}
+  else if(flying&&G.downT>0){al2.className='hot';al2.innerHTML='SHOT DOWN<small>'+G.kills+' SPLASHED · '+G.deaths+' LOST</small>';}
   else if(flying&&S.frontGap!==null&&S.frontGap<160&&S.haz!=='SHOCK FRONT'){al2.className='hot';al2.innerHTML='SHOCK FRONT INBOUND<small>IMPACT IN '+S.frontEta.toFixed(1)+' S · '+S.frontGap.toFixed(0)+' OUT</small>';}
   else if(flying&&S.inPath!==null){al2.className='hot';al2.innerHTML='IN THE ERUPTION PATH<small>LIFTOFF IN '+S.inPath.toFixed(1)+' S · CLEAR THE CONE</small>';}
   else if(ar>0){let eta=1e9;for(const T of tend){if(T.state==='warn')eta=Math.min(eta,WARN-T.t+RISE);else if(T.state==='rise')eta=Math.min(eta,RISE-T.t);}
@@ -1606,6 +1640,12 @@ function drawHud(){
     htext(label,bx+26,cy-th/2-10,HUDG,'center',10);
   }
   tape(cx-tx,spd,'',2.2,'SPD',-1);
+  { // cruise speed caret on the speed tape
+    const y=cy-(S.tgtSpd-spd)*2.2;
+    if(Math.abs(y-cy)<th/2){const x=cx-tx;hx.fillStyle=hcol(HUDA,0.9);hx.beginPath();hx.moveTo(x+2,y);hx.lineTo(x+11,y-5);hx.lineTo(x+11,y+5);hx.closePath();hx.fill();}
+    htext('THR '+Math.round(S.thr*100),cx-tx-32,cy+th/2+14,HUDG,'center',10);
+  }
+  if(S.ts<1&&Math.sin(performance.now()*0.006)>-0.3)htext('TIME '+S.ts+'×',cx,HH*0.25,HUDA,'center',13);
   tape(cx+tx,ship.position.length(),'',1.2,'R★',1);
   // dust density bar under the speed box
   const dw=52, dx0=cx-tx-58;
@@ -1712,7 +1752,8 @@ function frame(){
   requestAnimationFrame(frame);
   if(!ready||document.hidden){clock.getDelta();return;}
   const dt=Math.min(clock.getDelta(),0.05);
-  if(!S.frozen){simT+=dt;step(dt);}
+  S.rdt=dt;  // real time: stick and throttle rates stay normal in slow motion
+  if(!S.frozen){simT+=dt*S.ts;step(dt*S.ts);}
   render();
 }
 function step(dt){
@@ -1792,7 +1833,8 @@ window.__qa={
   view:(v)=>{S.view=v;syncChrome();},
   aim:(yawDeg,pitchDeg)=>{S.q.setFromEuler(new THREE.Euler(pitchDeg/DEG,yawDeg/DEG,0,'YXZ'));},
   speed:(v)=>{_v.set(0,0,-1).applyQuaternion(S.q);S.vel.copy(_v).multiplyScalar(v);},
-  advance:(sec)=>{for(let t=0;t<sec;t+=1/30){simT+=1/30;step(1/30);}},
+  advance:(sec)=>{S.rdt=1/30;for(let t=0;t<sec;t+=1/30){simT+=1/30;step(1/30);}},
+  timeScale:setTimeScale,throttle:(t)=>{S.thr=t;},
   place:(x,y,z,yaw)=>{ship.position.set(x,y,z);S.q.setFromAxisAngle(AX.y,yaw||0);S.vel.set(0,0,0);camera.position.set(x,y+2.4,z+9.5);},
   quality:setQuality,
   // park the fighter `gap` units ahead of the newest CME front, nose toward the star
@@ -1805,7 +1847,7 @@ window.__qa={
     const side=new THREE.Vector3(0,1,0).cross(p).normalize();p.addScaledVector(side,off);
     ship.position.copy(p);S.vel.set(0,0,0);S.q.setFromRotationMatrix(new THREE.Matrix4().lookAt(p,new THREE.Vector3(0,0,0),new THREE.Vector3(0,1,0)));
     _v.set(0,3.0,13).applyQuaternion(S.q).add(ship.position);camera.position.copy(_v);return k;},
-  state:()=>({mode:S.mode,hull:S.hull,shield:S.shield,dust:S.dust,haz:S.haz,tau:S.lockTau,locked:S.locked,static:S.static,
+  state:()=>({mode:S.mode,speed:+S.vel.length().toFixed(1),cruise:+S.tgtSpd.toFixed(1),r:+ship.position.length().toFixed(0),hull:S.hull,shield:S.shield,dust:S.dust,haz:S.haz,tau:S.lockTau,locked:S.locked,static:S.static,
     tendrils:tend.map(t=>t.state),calls:renderer.info.render.calls,
     kills:G.kills,deaths:G.deaths,heat:G.heat,overheat:G.overheat,bolts:bolts.length,ebolts:ebolts.length,sparks:sparks.length,
     target:G.target?G.target.id:null,
