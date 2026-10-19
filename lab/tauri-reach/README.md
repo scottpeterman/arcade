@@ -23,7 +23,7 @@ Prototype for a space fighter game set inside a nebula around a young, violently
 | Wheel / `[` `]` | Gun convergence (120–500) |
 | T | Next target |
 | M | Mute |
-| , / . | Slow time down / speed it back up (1×, 0.5×, 0.25×, 0.1×) |
+| , / . | Game speed down / up 10% (also the Game speed slider, 10–100%, remembered per browser) |
 | Touch | Orbit: drag and pinch. Fly: left half drag steers, right half drag up/down is the throttle, Fire button shoots |
 
 ## Cockpit view
@@ -54,7 +54,7 @@ Near-field dust streaks sell speed and density from inside the volume. 700 motes
 
 The fighter never stops. The throttle sets a cruise speed between 34 and 95, and the engine holds it against the dust: dense dust still drags you below cruise, but never below 28. Shift boosts to 1.8× cruise. At the edge of the nebula the ship comes about on its own, turning harder the deeper you go, the way Deckrunner's ship swings round at the end of the hull.
 
-Time scale slows the whole simulation (bandits, rounds, eruptions, shock fronts) while the stick and throttle stay at real-time rates, so you can fly a pass in slow motion and watch how it unfolds.
+Game speed (10–100%) slows the whole simulation: bandits, rounds, your own rate of fire, eruptions and shock fronts. The stick and throttle stay at real-time rates, so at lower speeds you have more time to line up shots and dodge. The setting is kept in the browser between sessions.
 
 ## Combat
 

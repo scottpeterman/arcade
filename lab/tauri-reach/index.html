@@ -54,6 +54,11 @@ canvas#hud2d{position:fixed;inset:0;width:100%;height:100%;display:block;pointer
 #ctl button:hover{border-color:rgba(255,179,107,.6)}
 #ctl button:focus-visible{outline:2px solid var(--plasma);outline-offset:2px}
 #ctl button b{float:right;font-family:var(--mono);font-weight:400;color:var(--dim);letter-spacing:0}
+#gs{background:var(--panel);border:1px solid var(--line);border-radius:3px;padding:7px 12px 8px;min-width:132px;font-size:11px;letter-spacing:.16em;text-transform:uppercase;font-weight:600}
+#gs .top{display:flex;justify-content:space-between;align-items:baseline}
+#gs .top b{font-family:var(--mono);font-weight:400;color:var(--warn);letter-spacing:0}
+#gs input{width:100%;margin:6px 0 0;accent-color:var(--plasma);touch-action:auto}
+#gs .keys2{font-family:var(--mono);font-weight:400;color:var(--dim);letter-spacing:0;font-size:10px;text-transform:none}
 #help{bottom:calc(12px + env(safe-area-inset-bottom,0px));left:calc(10px + env(safe-area-inset-left,0px));width:210px}
 .keys{display:grid;grid-template-columns:auto 1fr;gap:3px 10px;margin-top:6px;font-size:11px;color:var(--dim)}
 .keys b{font-family:var(--mono);color:var(--cyan);font-weight:400}
@@ -97,7 +102,7 @@ canvas#hud2d{position:fixed;inset:0;width:100%;height:100%;display:block;pointer
   <div class="row"><span class="lbl">Camera</span><span class="num" id="camv">ORBIT</span></div>
   <div class="row"><span class="lbl">Volume</span><span class="num" id="qualv">MED</span></div>
   <div class="row"><span class="lbl">Bandits</span><span class="num" id="banv">0</span></div>
-  <div class="row"><span class="lbl">Time scale</span><span class="num" id="tsv">1×</span></div>
+  <div class="row"><span class="lbl">Game speed</span><span class="num" id="tsv">100%</span></div>
 </div>
 
 <div id="alert"></div>
@@ -124,7 +129,7 @@ canvas#hud2d{position:fixed;inset:0;width:100%;height:100%;display:block;pointer
     <b>Wheel / [ ]</b><span>Gun convergence</span>
     <b>T</b><span>Next target</span>
     <b>M</b><span>Mute</span>
-    <b>, / .</b><span>Slower / faster time</span>
+    <b>, / .</b><span>Game speed down / up 10%</span>
     <b>V</b><span>Cockpit / chase view</span>
     <b>H</b><span>Hide this card</span>
     <b>Touch</b><span>Left drag steers, right drag is the throttle, Fire button</span>
@@ -136,7 +141,9 @@ canvas#hud2d{position:fixed;inset:0;width:100%;height:100%;display:block;pointer
   <button type="button" id="bCam">Fly <b>C</b></button>
   <button type="button" id="bView" hidden>Chase <b>V</b></button>
   <button type="button" id="bErupt">Erupt <b>F</b></button>
-  <button type="button" id="bTime">Time 1× <b>, .</b></button>
+  <div id="gs"><div class="top"><span>Game speed</span><b id="gsv">100%</b></div>
+    <input type="range" id="gsr" min="10" max="100" step="5" value="100" aria-label="Game speed">
+    <div class="keys2">, slower · . faster</div></div>
   <button type="button" id="bQual">Volume <b>1-3</b></button>
 </div>
 
@@ -886,9 +893,13 @@ function resize(){
   camera.aspect=w/h;camera.updateProjectionMatrix();
   sizeHud();
 }
-const TS=[1,0.5,0.25,0.1];
-function setTimeScale(v){S.ts=v;$('tsv').textContent=v+'×';$('bTime').firstChild.textContent='Time '+v+'× ';}
-function stepTimeScale(d){const i=TS.indexOf(S.ts);setTimeScale(TS[Math.max(0,Math.min(TS.length-1,(i<0?0:i)+d))]);}
+// game speed: scales the whole simulation (bandits, rounds, eruptions, your guns), 10-100%, remembered per browser
+function setTimeScale(v){
+  v=Math.round(Math.max(0.1,Math.min(1,v))*20)/20;S.ts=v;
+  const pct=Math.round(v*100)+'%';$('tsv').textContent=pct;$('gsv').textContent=pct;$('gsr').value=Math.round(v*100);
+  try{localStorage.setItem('tauriReach.gameSpeed',String(v));}catch(e){}
+}
+function stepTimeScale(d){setTimeScale(S.ts+d*0.1);}
 function setQuality(i){qi=i;volMat.uniforms.uSteps.value=QUAL[qi].steps;$('qualv').textContent=QUAL[qi].name;resize();}
 window.addEventListener('resize',resize);
 
@@ -915,7 +926,7 @@ addEventListener('keydown',e=>{
   if(e.code==='KeyT')cycleTarget();
   if(e.code==='BracketLeft')setConv(G.conv-20);if(e.code==='BracketRight')setConv(G.conv+20);
   if(e.code==='KeyM')sfx.mute();
-  if(e.code==='Comma')stepTimeScale(1);if(e.code==='Period')stepTimeScale(-1);
+  if(e.code==='Comma')stepTimeScale(-1);if(e.code==='Period')stepTimeScale(1);
   if(e.code==='Digit1')setQuality(0);if(e.code==='Digit2')setQuality(1);if(e.code==='Digit3')setQuality(2);
 });
 addEventListener('keyup',e=>{keys[e.code]=false;});
@@ -940,7 +951,10 @@ $('bCam').addEventListener('click',toggleCam);
 $('bView').addEventListener('click',toggleView);
 $('bErupt').addEventListener('click',forceErupt);
 $('bQual').addEventListener('click',()=>setQuality((qi+1)%3));
-$('bTime').addEventListener('click',()=>{const i=TS.indexOf(S.ts);setTimeScale(TS[(i+1)%TS.length]);});
+$('gsr').addEventListener('input',e=>setTimeScale(e.target.value/100));
+$('gsr').addEventListener('keydown',e=>e.stopPropagation()); // arrow keys on the slider must not fly the ship
+$('gsr').addEventListener('change',e=>e.target.blur()); // hand the keys back to the stick once set
+$('gs').addEventListener('pointerdown',e=>e.stopPropagation());
 
 // pointer: orbit drag / pinch in orbit mode; pointer lock + touch sticks in fly mode
 const ptrs=new Map();let pinch0=0;
@@ -1645,7 +1659,7 @@ function drawHud(){
     if(Math.abs(y-cy)<th/2){const x=cx-tx;hx.fillStyle=hcol(HUDA,0.9);hx.beginPath();hx.moveTo(x+2,y);hx.lineTo(x+11,y-5);hx.lineTo(x+11,y+5);hx.closePath();hx.fill();}
     htext('THR '+Math.round(S.thr*100),cx-tx-32,cy+th/2+14,HUDG,'center',10);
   }
-  if(S.ts<1&&Math.sin(performance.now()*0.006)>-0.3)htext('TIME '+S.ts+'×',cx,HH*0.25,HUDA,'center',13);
+  if(S.ts<1)htext('GAME SPEED '+Math.round(S.ts*100)+'%',cx,HH*0.80,HUDA,'center',12);
   tape(cx+tx,ship.position.length(),'',1.2,'R★',1);
   // dust density bar under the speed box
   const dw=52, dx0=cx-tx-58;
@@ -1873,6 +1887,7 @@ window.__qa={
     return {w,h,lit,mx,segs:fxGeo.drawRange.count/2,bolts:bolts.length};}
 };
 resize();
+try{const v=parseFloat(localStorage.getItem('tauriReach.gameSpeed'));setTimeScale(v>0?v:1);}catch(e){setTimeScale(1);}
 frame();
 })();
 </script>
