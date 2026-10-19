@@ -1,6 +1,6 @@
 # Tauri Reach
 
-Environment prototype for a space fighter game set inside a nebula around a young, violently active star. There is no combat yet. This is the world the fight will happen in: a volumetric nebula you can fly through, and a star that periodically throws plasma tendrils through it.
+Prototype for a space fighter game set inside a nebula around a young, violently active star: a volumetric nebula you can fly through, a star that throws plasma through it, and two bandits to dogfight with kinetic guns. The star's interference hits everyone's sensors, yours and theirs.
 
 ![Orbit view with an eruption underway](docs/screenshots/orbit-eruption.png)
 
@@ -18,7 +18,12 @@ Environment prototype for a space fighter game set inside a nebula around a youn
 | Mouse | Click to capture, then steer |
 | Q / E | Roll |
 | Shift | Boost |
-| Touch | Orbit: drag and pinch. Fly: left half drag steers, right half hold thrusts |
+| Space / left mouse | Guns |
+| G / right mouse | Alternating pairs ↔ linked quad |
+| Wheel / `[` `]` | Gun convergence (120–500) |
+| T | Next target |
+| M | Mute |
+| Touch | Orbit: drag and pinch. Fly: left half drag steers, right half hold thrusts, Fire button shoots |
 
 ## Cockpit view
 
@@ -31,16 +36,42 @@ The cockpit HUD is drawn on a 2D canvas over the WebGL view:
 - **Side tapes.** Speed on the left, with a dust-density bar. Range to the star on the right.
 - **Markers.**
   - A flight-path marker shows where the ship is actually going, not where the nose points.
-  - The star and the target drone are marked on screen, and get edge arrows when off-screen.
+  - The star and the bandits are marked on screen, and get edge arrows when off-screen.
   - Plasma threats are marked at the closest point on each live tendril.
   - Eruption warnings sit on the active region.
-- **Target diamond.** Solid with a lock ring when the line of sight is clear. Dashed with the optical depth when dust blocks it, or `STATIC` when the sheath whites out the sensors.
+- **Target diamond.** Solid with a lock ring (its hit points) when the line of sight is clear. Dashed with the optical depth when dust blocks it, or `STATIC` when interference whites out the sensors.
+- **Lead pip.** Where to put the boresight so a round meets the target. It turns red when it sits on the boresight inside gun range.
+- **Guns.** Heat bar, mode and convergence under the boresight, and a hit marker around it.
 
 Static from the ionized sheath jitters the symbology and makes it drop out, but the canopy frame stays still. Plasma contact and hits shake the eye point.
 
 Near-field dust streaks sell speed and density from inside the volume. 700 motes wrap in a box around the camera, each drawn as a line stretched along velocity, with brightness set by local dust density. They warm in color inside a plasma sheath.
 
 ![Cockpit inside an ionized sheath](docs/screenshots/cockpit-sheath.png)
+
+## Combat
+
+![Cockpit: tracers converging on a crossing bandit, lead pip on the boresight](docs/screenshots/dogfight-cockpit.png)
+
+**Guns.** Kinetic only, ported from Deckrunner. Four ports converge at the convergence range: alternating pairs fire fast, the linked quad fires all four at 1.5× damage, more slowly. Every shot adds heat; at 100 the guns lock until heat falls below 35. Rounds travel at 900 u/s for 0.8 s and inherit the ship's velocity. Hits are swept-segment tests from each round's previous position to its current one, so fast rounds can't tunnel through a fighter.
+
+**Bandits.** Two at a time, respawning 5 s after a kill. Each one flies the same arcade model as the player: velocity follows the nose, and dust is drag. Its turn rate is limited and it rolls into its turns.
+
+- **Attack.** Lead pursuit on its own firing solution. It fires 4–6 round bursts when its nose is within about 7° of the solution and inside 430 units.
+- **Extend.** After an overshoot or a close pass, it breaks off along a random heading for 2–3.5 s, then comes back around.
+- It keeps clear of the star and stays inside the nebula.
+
+**Interference cuts both ways.** Bandits run the same environment checks as the player: shock fronts shove them and drain their hit points, plasma and the jet core burn them, and a kill by the star is announced. Their own static scales their aim error from 0.6° to almost 10°, and above 0.8 they hold fire. They also need an optical depth under 1.3 along the line to you, so dense dust hides you. For the player, the lock (optical depth under 1.0, static under 0.45) gates the lead pip. The pip wanders as static climbs, and without a lock you fire down the boresight.
+
+![56 units ahead of a shock front: sensor noise, lock still holding at τ 0.77](docs/screenshots/shock-dogfight.png)
+
+![Chase view of the same pass](docs/screenshots/dogfight-chase.png)
+
+**Tracers and effects.** Tracers and sparks are 1-pixel lines, too thin for the half-resolution volume to resolve their depth. They render into their own target with colors pre-dimmed by a CPU optical-depth march from the camera, and are added after the composite. So a burst fired into thick dust fades the way the dust says it should, and bloom still picks it up.
+
+![A kill: debris, flash and sparks](docs/screenshots/splash.png)
+
+**Sound.** Small WebAudio synthesis: guns, hits, rounds cracking past the canopy, explosions, and a static bed whose hiss and crackle follow the interference level.
 
 ## How it works
 
@@ -54,7 +85,7 @@ At startup the page bakes a 96³ density grid from warped fbm noise (about 0.6 s
 Because both sides read the same field, what you see is what you get:
 
 - **Drag.** The fighter's drag is the dust density at its position.
-- **Line of sight.** The target lock integrates optical depth along the line to the drone through the grid, using the same absorption constant as the shader. Dust you can see between you and the target breaks the lock.
+- **Line of sight.** The target lock integrates optical depth along the line to the target through the grid, using the same absorption constant as the shader. Dust you can see between you and the target breaks the lock. Bandits use the same march to decide whether they can see you.
 
 ### The volume
 

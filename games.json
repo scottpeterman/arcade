@@ -94,10 +94,10 @@
     {
       "slug": "tauri-reach",
       "title": "Tauri Reach",
-      "tagline": "A young star erupting plasma inside a raymarched 3D nebula. Environment prototype for a fighter game.",
+      "tagline": "Dogfight inside a raymarched nebula while a young star erupts. The static hits their sensors too.",
       "path": "lab/tauri-reach/",
       "thumb": "lab/thumbs/tauri-reach.webp",
-      "tags": ["webgl", "visualization", "3d"],
+      "tags": ["webgl", "shooter", "3d"],
       "input": ["keyboard", "mouse", "touch"],
       "shelf": "lab",
       "readme": "lab/tauri-reach/README.md"
