@@ -24,6 +24,7 @@ Prototype for a space fighter game set inside a nebula around a young, violently
 | T | Next target |
 | M | Mute |
 | P | Pause (the sim stops, rendering continues, so screenshots stay clean) |
+| K | Launch the station assault (the Station button does the same) |
 | , / . | Game speed down / up 10% (also the Game speed slider, 10–100%, remembered per browser) |
 | Touch | Orbit: drag and pinch. Fly: left half drag steers, right half drag up/down is the throttle, Fire button shoots |
 
@@ -83,6 +84,24 @@ Game speed (10–100%) slows the whole simulation: bandits, rounds, your own rat
 ![A kill: debris, flash and sparks](docs/screenshots/splash.png)
 
 **Sound.** Small WebAudio synthesis: guns, hits, rounds cracking past the canopy, explosions, and a static bed whose hiss and crackle follow the interference level.
+
+## The station
+
+The final-sortie set piece, in the spirit of Deckrunner's starbase. Until progression is in, K or the Station button puts it on scope.
+
+![The station: a spinning disc with spike pylons, window bands and four rim reactors](docs/screenshots/station-overview.png)
+
+- **Structure.** A 68-unit disc with stepped decks, spike pylons out of both faces with collar rings and beacon tips, window bands, and running lights around the rim. It spins slowly on its axis, about 150 units out from the star.
+- **Guns.** Eight turrets: three on each deck face and one on each pylon collar. They track you, lead on your relative velocity (including the station's spin), and fire short bursts. They follow the same rules as bandits: dust line of sight, aim error that grows with static from shock fronts sweeping the station. A turret can't fire through its own deck.
+- **Reactors.** Four glowing cores on the rim, 40 hit points each. You have to fly the edge to reach them.
+- **Hull.** Solid. Your rounds stop on it, and so do theirs, so the disc is cover. Flying into it scrapes you off with damage.
+
+![Assault: reactors marked RX, guns marked GUN, a reactor locked](docs/screenshots/station-cockpit.png)
+
+**The last reactor kills the power.** The lights and windows go dark, the guns die, and the spin bleeds off. Pushed off station-keeping, the station starts falling toward Tauri-B and tumbling. Secondary explosions run across the hull. Inside about 110 units the hull starts to glow and shed burning debris. About 13 seconds after the last reactor, it is consumed in the corona in one large flash, and the star answers with an eruption.
+
+![Depowered and falling, the hull heating](docs/screenshots/station-fall.png)
+![Consumed by Tauri-B; the star's answer is already brightening](docs/screenshots/station-consumed.png)
 
 ## How it works
 
