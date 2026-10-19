@@ -42,6 +42,7 @@ canvas#hud2d{position:fixed;inset:0;width:100%;height:100%;display:block;pointer
 #tl{top:calc(10px + env(safe-area-inset-top,0px));left:calc(10px + env(safe-area-inset-left,0px));width:190px}
 #tr{top:calc(10px + env(safe-area-inset-top,0px));right:calc(10px + env(safe-area-inset-right,0px));width:200px}
 #alert{position:fixed;top:calc(16px + env(safe-area-inset-top,0px));left:50%;transform:translateX(-50%);text-align:center;font-weight:600;letter-spacing:.28em;font-size:13px;color:var(--warn);text-shadow:0 0 14px rgba(255,207,74,.6);pointer-events:none;z-index:6;white-space:nowrap}
+#pausev{position:fixed;left:50%;bottom:calc(36px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);font-family:var(--mono);font-size:9px;letter-spacing:.2em;color:var(--dim);opacity:.8;pointer-events:none;z-index:6}
 #alert.hot{color:var(--hot);text-shadow:0 0 16px rgba(255,90,74,.8)}
 #alert small{display:block;font-family:var(--mono);font-size:11px;letter-spacing:.12em;margin-top:3px;color:var(--text);text-shadow:none}
 #strip{bottom:calc(14px + env(safe-area-inset-bottom,0px));left:50%;transform:translateX(-50%);display:flex;gap:6px}
@@ -106,6 +107,7 @@ canvas#hud2d{position:fixed;inset:0;width:100%;height:100%;display:block;pointer
 </div>
 
 <div id="alert"></div>
+<div id="pausev" hidden>PAUSED · P</div>
 
 <div class="hud" id="strip">
   <div class="chip ok" id="hazchip">CLEAR</div>
@@ -129,6 +131,7 @@ canvas#hud2d{position:fixed;inset:0;width:100%;height:100%;display:block;pointer
     <b>Wheel / [ ]</b><span>Gun convergence</span>
     <b>T</b><span>Next target</span>
     <b>M</b><span>Mute</span>
+    <b>P</b><span>Pause</span>
     <b>, / .</b><span>Game speed down / up 10%</span>
     <b>V</b><span>Cockpit / chase view</span>
     <b>H</b><span>Hide this card</span>
@@ -899,13 +902,18 @@ function setTimeScale(v){
   const pct=Math.round(v*100)+'%';$('tsv').textContent=pct;$('gsv').textContent=pct;$('gsr').value=Math.round(v*100);
   try{localStorage.setItem('tauriReach.gameSpeed',String(v));}catch(e){}
 }
+function setPaused(on){
+  S.paused=!!on;$('pausev').hidden=!S.paused;
+  mouse.dx=mouse.dy=0;G.mouseFire=false;  // no stored stick input or held trigger on resume
+  if(S.paused)sfx.hiss(0);
+}
 function stepTimeScale(d){setTimeScale(S.ts+d*0.1);}
 function setQuality(i){qi=i;volMat.uniforms.uSteps.value=QUAL[qi].steps;$('qualv').textContent=QUAL[qi].name;resize();}
 window.addEventListener('resize',resize);
 
 /* ---------- flight + camera state ---------- */
 const S={mode:'orbit',view:'cockpit',help:true,shake:0,sheath:0,hull:100,shield:100,vel:new THREE.Vector3(),q:new THREE.Quaternion(),
-  dust:0,drag:0,static:0,hit:0,haz:'CLEAR',hazLvl:0,lockTau:0,locked:false,inPath:null,tick:0,frozen:false,thr:0.4,tgtSpd:0,ts:1,rdt:0};
+  dust:0,drag:0,static:0,hit:0,haz:'CLEAR',hazLvl:0,lockTau:0,locked:false,inPath:null,tick:0,frozen:false,paused:false,thr:0.4,tgtSpd:0,ts:1,rdt:0};
 const orbit={az:0.35,el:0.22,dist:330,auto:true,idle:0,c:new THREE.Vector3()};
 const keys={};
 const mouse={dx:0,dy:0,locked:false};
@@ -926,6 +934,7 @@ addEventListener('keydown',e=>{
   if(e.code==='KeyT')cycleTarget();
   if(e.code==='BracketLeft')setConv(G.conv-20);if(e.code==='BracketRight')setConv(G.conv+20);
   if(e.code==='KeyM')sfx.mute();
+  if(e.code==='KeyP')setPaused(!S.paused);
   if(e.code==='Comma')stepTimeScale(-1);if(e.code==='Period')stepTimeScale(1);
   if(e.code==='Digit1')setQuality(0);if(e.code==='Digit2')setQuality(1);if(e.code==='Digit3')setQuality(2);
 });
@@ -988,7 +997,7 @@ canvas.addEventListener('wheel',e=>{e.preventDefault();if(S.mode==='fly'){setCon
 document.addEventListener('pointerlockchange',()=>{mouse.locked=document.pointerLockElement===canvas;if(!mouse.locked)G.mouseFire=false;});
 {const bf=$('bFire'),on=e=>{e.preventDefault();G.touchFire=true;},off=()=>{G.touchFire=false;};
   bf.addEventListener('pointerdown',on);bf.addEventListener('pointerup',off);bf.addEventListener('pointercancel',off);bf.addEventListener('pointerleave',off);}
-document.addEventListener('mousemove',e=>{if(mouse.locked){mouse.dx+=e.movementX;mouse.dy+=e.movementY;}});
+document.addEventListener('mousemove',e=>{if(mouse.locked&&!S.paused){mouse.dx+=e.movementX;mouse.dy+=e.movementY;}});
 
 /* ---------- per-frame sim ---------- */
 const _q=new THREE.Quaternion(),_v=new THREE.Vector3(),_fwd=new THREE.Vector3(),_up=new THREE.Vector3(),_tmp=new THREE.Vector3();
@@ -1233,9 +1242,16 @@ function buildFx(){
     seg(e.x-e.vx*len,e.y-e.vy*len,e.z-e.vz*len,e.x,e.y,e.z,0.6*a,0.08*a,0.03*a,4.5*a,1.0*a,0.45*a);
     pt(e.x,e.y,e.z,3.2*a,0.6*a,0.3*a,7);
   }
-  for(const f of foes){ // running light, so a bandit reads against the nebula at range
-    if(!f.alive)continue;const a=atten(f.p.x,f.p.y,f.p.z)*(Math.sin(simT*7+f.id*2)>0?1:0.35);
-    pt(f.p.x,f.p.y,f.p.z,2.2*a,0.35*a,0.25*a,5.5);
+  for(const f of foes){ // light kit: engine glow, wingtip navs, a tail strobe, a faint cockpit; the bandit reads at range
+    if(!f.alive)continue;
+    const a=atten(f.p.x,f.p.y,f.p.z), L=(x,y,z)=>_g4.set(x,y,z).applyQuaternion(f.q).add(f.p);
+    for(const sx of[-0.78,0.78]){const fl=0.85+Math.random()*0.3;L(sx,0.62,2.45);pt(_g4.x,_g4.y,_g4.z,3.4*a*fl,1.1*a*fl,0.4*a*fl,6.5);} // exhausts
+    const nav=0.7+0.3*Math.sin(simT*3+f.id);
+    L(-3.72,-0.42,0);pt(_g4.x,_g4.y,_g4.z,2.6*a*nav,0.25*a*nav,0.2*a*nav,3.2);
+    L(3.72,-0.42,0);pt(_g4.x,_g4.y,_g4.z,2.6*a*nav,0.25*a*nav,0.2*a*nav,3.2);
+    const ph=(simT+f.id*0.55)%1.3, strobe=ph<0.05||(ph>0.14&&ph<0.19)?1:0; // double flash
+    if(strobe){L(0,0.95,2.85);pt(_g4.x,_g4.y,_g4.z,3.5*a,3.4*a,3.2*a,7.5);}
+    L(0,0.42,-1.75);pt(_g4.x,_g4.y,_g4.z,0.9*a,0.6*a,0.25*a,2.4);  // cockpit
   }
   let ax=1e9,ay=0,az=0,aa=1;
   for(const p of sparks){
@@ -1767,7 +1783,7 @@ function frame(){
   if(!ready||document.hidden){clock.getDelta();return;}
   const dt=Math.min(clock.getDelta(),0.05);
   S.rdt=dt;  // real time: stick and throttle rates stay normal in slow motion
-  if(!S.frozen){simT+=dt*S.ts;step(dt*S.ts);}
+  if(!S.frozen&&!S.paused){simT+=dt*S.ts;step(dt*S.ts);}
   render();
 }
 function step(dt){
@@ -1848,7 +1864,7 @@ window.__qa={
   aim:(yawDeg,pitchDeg)=>{S.q.setFromEuler(new THREE.Euler(pitchDeg/DEG,yawDeg/DEG,0,'YXZ'));},
   speed:(v)=>{_v.set(0,0,-1).applyQuaternion(S.q);S.vel.copy(_v).multiplyScalar(v);},
   advance:(sec)=>{S.rdt=1/30;for(let t=0;t<sec;t+=1/30){simT+=1/30;step(1/30);}},
-  timeScale:setTimeScale,throttle:(t)=>{S.thr=t;},
+  timeScale:setTimeScale,pause:setPaused,throttle:(t)=>{S.thr=t;},
   place:(x,y,z,yaw)=>{ship.position.set(x,y,z);S.q.setFromAxisAngle(AX.y,yaw||0);S.vel.set(0,0,0);camera.position.set(x,y+2.4,z+9.5);},
   quality:setQuality,
   // park the fighter `gap` units ahead of the newest CME front, nose toward the star

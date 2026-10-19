@@ -23,6 +23,7 @@ Prototype for a space fighter game set inside a nebula around a young, violently
 | Wheel / `[` `]` | Gun convergence (120–500) |
 | T | Next target |
 | M | Mute |
+| P | Pause (the sim stops, rendering continues, so screenshots stay clean) |
 | , / . | Game speed down / up 10% (also the Game speed slider, 10–100%, remembered per browser) |
 | Touch | Orbit: drag and pinch. Fly: left half drag steers, right half drag up/down is the throttle, Fire button shoots |
 
@@ -62,7 +63,7 @@ Game speed (10–100%) slows the whole simulation: bandits, rounds, your own rat
 
 **Guns.** Kinetic only, ported from Deckrunner. Four ports converge at the convergence range: alternating pairs fire fast, the linked quad fires all four at 1.5× damage, more slowly. Every shot adds heat; at 100 the guns lock until heat falls below 35. Rounds travel at 900 u/s for 0.8 s and inherit the ship's velocity. Hits are swept-segment tests from each round's previous position to its current one, so fast rounds can't tunnel through a fighter.
 
-**Bandits.** Two at a time, respawning 5 s after a kill. The airframe is a space-going close-support brawler on the A-10 pattern: straight thick wings with drooped tips, twin engine pods carried high on the aft fuselage, twin tails, and a rotary cannon out of the nose. It is slower and tougher than the player (10 hit points), and fires 6–9 round bursts from the nose gun. Each one flies the same arcade model as the player: velocity follows the nose, and dust is drag. Its turn rate is limited and it rolls into its turns.
+**Bandits.** Two at a time, respawning 5 s after a kill. The airframe is a space-going close-support brawler on the A-10 pattern: straight thick wings with drooped tips, twin engine pods carried high on the aft fuselage, twin tails, and a rotary cannon out of the nose. It is slower and tougher than the player (10 hit points), and fires 6–9 round bursts from the nose gun. A small light kit makes it read at range: flickering engine exhausts, red wingtip navs, a double-flash tail strobe and a faint cockpit glow. Each one flies the same arcade model as the player: velocity follows the nose, and dust is drag. Its turn rate is limited and it rolls into its turns.
 
 ![Bandit, front quarter](docs/screenshots/bandit-front.png)
 ![Bandit from behind: the twin exhausts are what you see in a chase](docs/screenshots/bandit-rear.png)
