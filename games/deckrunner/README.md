@@ -23,7 +23,7 @@ Each wave opens with a target briefing: hull dimensions, shield generators, laun
     <td align="center"><img src="docs/screenshots/wave-03-destroyer.png" width="240" alt="Wave 3 briefing: Destroyer"><br><b>03 · Destroyer</b><br>2100 m · first launch bay</td>
   </tr>
   <tr>
-    <td align="center"><img src="docs/screenshots/wave-04-heavy-cruiser.png" width="240" alt="Wave 4 briefing: Heavy Cruiser"><br><b>04 · Heavy Cruiser</b><br>2500 m · ring-wing heavies</td>
+    <td align="center"><img src="docs/screenshots/wave-04-heavy-cruiser.png" width="240" alt="Wave 4 briefing: Heavy Cruiser"><br><b>04 · Heavy Cruiser</b><br>2500 m · gunship heavies</td>
     <td align="center"><img src="docs/screenshots/wave-05-battle-carrier.png" width="240" alt="Wave 5 briefing: Battle Carrier"><br><b>05 · Battle Carrier</b><br>2900 m · two hangars</td>
     <td align="center"><img src="docs/screenshots/wave-06-dreadnought.png" width="240" alt="Wave 6 briefing: Dreadnought"><br><b>06 · Dreadnought</b><br>3300 m · 4 generators · 32 turrets</td>
   </tr>
