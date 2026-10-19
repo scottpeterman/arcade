@@ -55,7 +55,10 @@ Near-field dust streaks sell speed and density from inside the volume. 700 motes
 
 **Guns.** Kinetic only, ported from Deckrunner. Four ports converge at the convergence range: alternating pairs fire fast, the linked quad fires all four at 1.5× damage, more slowly. Every shot adds heat; at 100 the guns lock until heat falls below 35. Rounds travel at 900 u/s for 0.8 s and inherit the ship's velocity. Hits are swept-segment tests from each round's previous position to its current one, so fast rounds can't tunnel through a fighter.
 
-**Bandits.** Two at a time, respawning 5 s after a kill. Each one flies the same arcade model as the player: velocity follows the nose, and dust is drag. Its turn rate is limited and it rolls into its turns.
+**Bandits.** Two at a time, respawning 5 s after a kill. The airframe is a space-going close-support brawler on the A-10 pattern: straight thick wings with drooped tips, twin engine pods carried high on the aft fuselage, twin tails, and a rotary cannon out of the nose. It is slower and tougher than the player (10 hit points), and fires 6–9 round bursts from the nose gun. Each one flies the same arcade model as the player: velocity follows the nose, and dust is drag. Its turn rate is limited and it rolls into its turns.
+
+![Bandit, front quarter](docs/screenshots/bandit-front.png)
+![Bandit from behind: the twin exhausts are what you see in a chase](docs/screenshots/bandit-rear.png)
 
 - **Attack.** Lead pursuit on its own firing solution. It fires 4–6 round bursts when its nose is within about 7° of the solution and inside 430 units.
 - **Extend.** After an overshoot or a close pass, it breaks off along a random heading for 2–3.5 s, then comes back around.

@@ -592,19 +592,58 @@ const ship=new THREE.Group();
 const shieldMesh=new THREE.Mesh(new THREE.SphereGeometry(2.6,24,16),new THREE.MeshBasicMaterial({color:new THREE.Color(0.4,1.6,2.4),transparent:true,opacity:0,blending:THREE.AdditiveBlending,depthWrite:false,wireframe:true}));
 ship.add(shieldMesh);
 scene.add(ship);
-// bandit: a dark dart with forward-swept blades and one red engine; each gets its own material for the hit flash
-const FOE_BODY=new THREE.ConeGeometry(0.75,4.2,4).rotateX(-Math.PI/2).rotateZ(Math.PI/4);
-const FOE_BLADE=new THREE.BoxGeometry(2.6,0.12,0.9), FOE_TIP=new THREE.BoxGeometry(0.12,1.1,0.8), FOE_GLOW=new THREE.SphereGeometry(0.38,10,8);
+// bandit: a space-going close-support brawler on the A-10 pattern. Straight thick wings, twin engine pods carried
+// high on the aft fuselage, twin tails on the stabilizer ends, and a rotary cannon that sticks out of the nose.
+// Nose is -z. About 6.6 long and 6.8 across, faceted to match the player's ship.
+const WH=(()=>{
+  const g={};
+  const seg=(r0,r1,z0,z1,n)=>{ // a fuselage section from z0 (radius r0) to z1 (radius r1)
+    const c=new THREE.CylinderGeometry(r1,r0,z1-z0,n||8,1,false);c.rotateX(Math.PI/2);c.translate(0,0,(z0+z1)/2);return c;};
+  // fuselage, flattened a little, nose to tail
+  g.fus=[seg(0.18,0.42,-3.05,-2.25),seg(0.42,0.56,-2.25,-1.0),seg(0.56,0.54,-1.0,0.9),seg(0.54,0.24,0.9,3.0)];
+  for(const c of g.fus)c.scale(0.92,0.86,1);
+  g.barrel=seg(0.085,0.085,-3.75,-2.9,7);g.barrel.translate(0,-0.12,0);
+  g.muzzle=seg(0.12,0.12,-3.85,-3.75,7);g.muzzle.translate(0,-0.12,0);
+  g.canopy=new THREE.SphereGeometry(0.34,10,6,0,Math.PI*2,0,Math.PI*0.5);g.canopy.scale(0.9,0.75,1.6);g.canopy.translate(0,0.36,-1.75);
+  // straight wing, slight taper, thick section; one shape mirrored
+  const wing=(span,root,tip,thick,sweep)=>{
+    const s=new THREE.Shape();s.moveTo(0,-root/2);s.lineTo(span,-tip/2+sweep);s.lineTo(span,tip/2+sweep);s.lineTo(0,root/2);s.closePath();
+    const e=new THREE.ExtrudeGeometry(s,{depth:thick,bevelEnabled:false});e.rotateX(Math.PI/2);e.translate(0,thick/2,0);return e;};
+  g.wingR=wing(2.95,1.55,0.9,0.17,0.1);g.wingR.translate(0.42,-0.22,-0.05);
+    g.tipR=new THREE.BoxGeometry(0.42,0.1,0.95);g.tipR.rotateZ(-0.38);g.tipR.translate(3.52,-0.3,0.05); // drooped tips
+  // engine pods on short pylons above the aft fuselage
+  g.pod=seg(0.4,0.36,0.55,2.05,10);
+  g.intake=new THREE.TorusGeometry(0.36,0.07,6,14);g.intake.translate(0,0,0.55);
+  g.pylon=new THREE.BoxGeometry(0.12,0.4,0.9);g.pylon.translate(0,-0.36,1.35);
+  g.nozzle=seg(0.36,0.3,2.05,2.3,10);
+  // stabilizer with the twin tails at its ends
+  g.stab=new THREE.BoxGeometry(3.0,0.1,0.62);g.stab.translate(0,0.18,2.65);
+  const fin=new THREE.Shape();fin.moveTo(-0.38,0);fin.lineTo(0.42,0);fin.lineTo(0.36,1.05);fin.lineTo(-0.1,1.05);fin.closePath();
+  g.fin=new THREE.ExtrudeGeometry(fin,{depth:0.09,bevelEnabled:false});g.fin.rotateY(Math.PI/2);g.fin.translate(-0.045,-0.32,2.66);
+  g.glow=new THREE.CircleGeometry(0.27,12);
+  g.nav=new THREE.SphereGeometry(0.09,6,4);
+  return g;
+})();
 function foeMesh(){
   const g=new THREE.Group();
-  const mat=new THREE.MeshStandardMaterial({color:0x5c6170,metalness:0.7,roughness:0.35,flatShading:true,emissive:0x1a0806});
-  g.add(new THREE.Mesh(FOE_BODY,mat));
+  const mat=new THREE.MeshStandardMaterial({color:0x6b7178,metalness:0.55,roughness:0.5,flatShading:true,emissive:0x1a0806});
+  const dark=new THREE.MeshStandardMaterial({color:0x2a2d33,metalness:0.6,roughness:0.45,flatShading:true});
+  const glass=new THREE.MeshStandardMaterial({color:0x10141c,metalness:0.9,roughness:0.12,emissive:0x2a0a06,flatShading:true});
+  const red=new THREE.MeshBasicMaterial({color:new THREE.Color(3.0,0.35,0.25)});
+  const M=(geo,m,x,y)=>{const o=new THREE.Mesh(geo,m);if(x!==undefined)o.position.set(x,y||0,0);g.add(o);return o;};
+  for(const c of WH.fus)M(c,mat);
+  M(WH.barrel,dark);M(WH.muzzle,dark);M(WH.canopy,glass);
+  M(WH.wingR,mat);M(WH.wingR,mat).scale.x=-1;M(WH.tipR,dark);M(WH.tipR,dark).scale.x=-1; // mirror on the mesh, so winding stays right
+  M(WH.stab,mat);
+  const glows=[];
   for(const s of[-1,1]){
-    const w=new THREE.Mesh(FOE_BLADE,mat);w.position.set(s*1.5,0,0.6);w.rotation.y=s*0.45;g.add(w);
-    const t=new THREE.Mesh(FOE_TIP,mat);t.position.set(s*2.65,0,0.05);t.rotation.y=s*0.45;g.add(t);
+    M(WH.pod,mat,s*0.78,0.62);M(WH.intake,dark,s*0.78,0.62);M(WH.pylon,dark,s*0.78,0.62);M(WH.nozzle,dark,s*0.78,0.62);
+    const e=new THREE.Mesh(WH.glow,new THREE.MeshBasicMaterial({color:new THREE.Color(4.0,0.9,0.45),side:THREE.DoubleSide}));
+    e.position.set(s*0.78,0.62,2.31);g.add(e);glows.push(e);
+    M(WH.fin,mat,s*1.5,0.18);
+    const n=M(WH.nav,red,s*3.72,-0.42);
   }
-  const glow=new THREE.Mesh(FOE_GLOW,new THREE.MeshBasicMaterial({color:new THREE.Color(4.0,0.9,0.5)}));glow.position.z=2.05;g.add(glow);
-  g.userData.mat=mat;g.userData.glow=glow;g.visible=false;scene.add(g);return g;
+  g.userData.mat=mat;g.userData.glows=glows;g.visible=false;scene.add(g);return g;
 }
 
 /* ---------- near-field dust streaks: the sense of speed and density from inside the volume ---------- */
@@ -849,7 +888,7 @@ window.addEventListener('resize',resize);
 /* ---------- flight + camera state ---------- */
 const S={mode:'orbit',view:'cockpit',help:true,shake:0,sheath:0,hull:100,shield:100,vel:new THREE.Vector3(),q:new THREE.Quaternion(),
   dust:0,drag:0,static:0,hit:0,haz:'CLEAR',hazLvl:0,lockTau:0,locked:false,inPath:null,tick:0,frozen:false};
-const orbit={az:0.35,el:0.22,dist:330,auto:true,idle:0};
+const orbit={az:0.35,el:0.22,dist:330,auto:true,idle:0,c:new THREE.Vector3()};
 const keys={};
 const mouse={dx:0,dy:0,locked:false};
 const touch={steer:null,thrust:null};
@@ -965,6 +1004,7 @@ function flight(dt,time){
   const eng=ship.userData.eng,es=0.7+thrust*boost*0.9+Math.random()*0.15*thrust;eng[0].scale.setScalar(es);eng[1].scale.setScalar(es);
 }
 function damage(amount,direct){
+  if(S.mode!=='fly')return; // the parked ship in orbit view is scenery
   let a=amount;
   if(S.shield>0&&!direct){const s=Math.min(S.shield,a);S.shield-=s;a-=s;}
   else if(S.shield>0){const s=Math.min(S.shield,a*0.5);S.shield-=s;a-=s;}
@@ -1019,8 +1059,8 @@ function hazards(dt){
    Gunnery is Deckrunner's: four ports converging at a set range, alternating pairs or a linked quad, heat with an
    overheat lockout, swept-segment hit tests. Rounds inherit the shooter's velocity, so the lead pip is solved in the
    shooter's frame. Bandits fly the same arcade model as the player and see through the same dust and static. */
-const BOLT_SPD=900, BOLT_LIFE=0.8, EBOLT_SPD=560, EBOLT_LIFE=1.15, FOE_R=3.2, SHIP_R=2.4, FOE_DMG=6;
-const FOE_TURN=1.35, FOE_SPD=74, FOE_EXT=96, NFOES=2;
+const BOLT_SPD=900, BOLT_LIFE=0.8, EBOLT_SPD=560, EBOLT_LIFE=1.15, FOE_R=3.4, SHIP_R=2.4, FOE_DMG=5;
+const FOE_TURN=1.2, FOE_SPD=66, FOE_EXT=88, NFOES=2;
 const GUNS=[[-1.4,-0.1,-0.3],[1.4,-0.1,-0.3],[-0.55,-0.3,-1.1],[0.55,-0.3,-1.1]]; // ship-local, nose is -z
 const GUNS_ALT=[[0,1],[2,3]], GUNS_LINK=[0,1,2,3];
 const G={heat:0,overheat:false,mode:'ALT',alt:0,conv:240,fireT:0,mouseFire:false,touchFire:false,ai:true,
@@ -1242,7 +1282,7 @@ function rounds(dt){
 
 /* ---- bandits ---- */
 for(let i=0;i<NFOES;i++)foes.push({id:i,m:foeMesh(),p:new THREE.Vector3(),v:new THREE.Vector3(),q:new THREE.Quaternion(),aim:new THREE.Vector3(),ext:new THREE.Vector3(),
-  hp:0,max:6,alive:false,state:'attack',t:0,dur:0,burst:0,shotT:0,cool:0,gun:0,tau:0,losT:0,st:0,hitT:0,respawn:0.5+i*1.5});
+  hp:0,max:10,alive:false,state:'attack',t:0,dur:0,burst:0,shotT:0,cool:0,gun:0,tau:0,losT:0,st:0,hitT:0,respawn:0.5+i*1.5});
 function spawnFoe(f,pos){
   const P=ship.position;
   if(pos)_g3.copy(pos);
@@ -1277,9 +1317,9 @@ function foeShoot(f){
   const err=(0.6+f.st*9)/DEG;
   _g4.set(Math.random()*2-1,Math.random()*2-1,Math.random()*2-1).cross(f.aim).normalize().multiplyScalar(Math.tan(err)*Math.sqrt(Math.random()));
   _g4.add(f.aim).normalize();
-  _g2.set((f.gun^=1)?1.5:-1.5,0,-0.8).applyQuaternion(f.q).add(f.p);
+  _g2.set(0,-0.12,-3.9).applyQuaternion(f.q).add(f.p); // the nose cannon
   ebolts.push({x:_g2.x,y:_g2.y,z:_g2.z,px:_g2.x,py:_g2.y,pz:_g2.z,vx:_g4.x*EBOLT_SPD+f.v.x,vy:_g4.y*EBOLT_SPD+f.v.y,vz:_g4.z*EBOLT_SPD+f.v.z,life:EBOLT_LIFE,alive:true,snap:false});
-  flash(_g2.x+_g1.x*1.5,_g2.y+_g1.y*1.5,_g2.z+_g1.z*1.5,2.2,3.2,0.07,4,1.4,0.6);
+  flash(_g2.x+_g1.x*0.6,_g2.y+_g1.y*0.6,_g2.z+_g1.z*0.6,2.4,3.6,0.06,4,1.4,0.6);
   sfx.foeGun(f.p.distanceTo(ship.position));
 }
 function foeEnvironment(f,dt){ // the star treats bandits the way it treats you
@@ -1342,9 +1382,9 @@ function updateFoes(dt){
       // guns: only with a line of sight through the dust and sensors that can hold a solution
       f.losT-=dt;if(f.losT<=0){f.losT=0.25;f.tau=opticalDepth(f.p,P,24);}
       f.cool-=dt;
-      if(f.burst>0){f.shotT-=dt;if(f.shotT<=0){foeShoot(f);f.burst--;f.shotT=0.075;}}
+      if(f.burst>0){f.shotT-=dt;if(f.shotT<=0){foeShoot(f);f.burst--;f.shotT=0.05;}}
       else if(fly&&f.state==='attack'&&f.cool<=0&&dist<430&&f.tau<1.3&&f.st<0.8&&_g1.dot(f.aim)>0.992){
-        f.burst=4+(Math.random()*3|0);f.shotT=0;f.cool=rand(1.1,2.0);
+        f.burst=6+(Math.random()*4|0);f.shotT=0;f.cool=rand(1.4,2.4);
       }
     }
     f.p.addScaledVector(f.v,dt);
@@ -1352,7 +1392,7 @@ function updateFoes(dt){
     if(f.alive&&f.p.length()<R_STAR+1.5)killFoe(f,false);
     if(!f.alive)continue;
     f.m.position.copy(f.p);f.m.quaternion.copy(f.q);
-    const u=f.m.userData;u.glow.scale.setScalar(0.85+Math.random()*0.35);
+    const u=f.m.userData;for(const e of u.glows)e.scale.setScalar(0.85+Math.random()*0.3);
     if(f.hitT>0)u.mat.emissive.setRGB(1.4,0.7,0.3);else u.mat.emissive.setHex(0x1a0806);
   }
 }
@@ -1396,8 +1436,8 @@ function updateCamera(dt,time){
     orbit.idle+=dt;if(orbit.idle>6)orbit.auto=true;
     if(orbit.auto)orbit.az+=dt*0.035;
     const ce=Math.cos(orbit.el);
-    camera.position.set(Math.sin(orbit.az)*ce*orbit.dist,Math.sin(orbit.el)*orbit.dist,Math.cos(orbit.az)*ce*orbit.dist);
-    camera.up.set(0,1,0);camera.lookAt(0,0,0);
+    camera.position.set(Math.sin(orbit.az)*ce*orbit.dist,Math.sin(orbit.el)*orbit.dist,Math.cos(orbit.az)*ce*orbit.dist).add(orbit.c);
+    camera.up.set(0,1,0);camera.lookAt(orbit.c);
   }else if(S.view==='cockpit'){
     // eye at the canopy, locked to the airframe; buffeting shakes the eye, not the world
     const k=S.shake;
@@ -1744,7 +1784,10 @@ bake(ms=>{
 
 window.__qa={
   fly:()=>{if(S.mode!=='fly')toggleCam();},
-  orbit:(az,el,dist)=>{if(S.mode!=='orbit')toggleCam();orbit.auto=false;orbit.idle=-1e9;orbit.az=az;orbit.el=el;orbit.dist=dist;},
+  orbit:(az,el,dist)=>{if(S.mode!=='orbit')toggleCam();orbit.auto=false;orbit.idle=-1e9;orbit.az=az;orbit.el=el;orbit.dist=dist;orbit.c.set(0,0,0);},
+  // model closeup: park bandit i at p (nose toward -z) and orbit the camera around it
+  inspect:(i,az,el,dist,x,y,z)=>{G.ai=false;const f=foes[i];spawnFoe(f,new THREE.Vector3(x,y,z));f.q.identity();f.v.set(0,0,0);f.m.quaternion.identity();
+    f.respawn=1e9;if(S.mode!=='orbit')toggleCam();orbit.auto=false;orbit.idle=-1e9;orbit.az=az;orbit.el=el;orbit.dist=dist;orbit.c.copy(f.p);return i;},
   erupt:forceErupt,
   view:(v)=>{S.view=v;syncChrome();},
   aim:(yawDeg,pitchDeg)=>{S.q.setFromEuler(new THREE.Euler(pitchDeg/DEG,yawDeg/DEG,0,'YXZ'));},
