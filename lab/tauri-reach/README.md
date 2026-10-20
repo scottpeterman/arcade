@@ -6,7 +6,7 @@ Prototype for a space fighter game set inside a nebula around a young, violently
 
 ## Sorties
 
-The page opens on the briefing for the furthest sortie you have unlocked. Each sortie has its own splash: the codename, the briefing, the objective and conditions, and the target turning in its own view over the live nebula. Clear a sortie to unlock the next; progress is kept in the browser (`?all` unlocks everything, `?lab` skips straight to free flight).
+The page opens on the briefing for the furthest sortie you have unlocked. Each sortie has its own splash: the codename, the briefing, the objective and conditions, and the target turning in its own view over the live nebula. Clear a sortie to unlock the next; progress is kept in the browser. To skip ahead, `?sortie=N` opens on sortie N (1–5) with it and the ones before it unlocked, the way Deckrunner's `?wave=N` works; that skip isn't saved. `?all` unlocks everything, and `?lab` goes straight to free flight.
 
 ![Briefing: First Light, with the BR-10 Shrike in the threat view](docs/screenshots/briefing-first-light.png)
 

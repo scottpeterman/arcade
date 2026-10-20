@@ -1078,6 +1078,8 @@ const SORTIES=[
 const SO={mode:'boot',i:0,def:null,result:null,endT:0,t:0,shots:0,hits:0,spawned:0,unlocked:0};
 try{SO.unlocked=Math.max(0,Math.min(SORTIES.length-1,parseInt(localStorage.getItem('tauriReach.unlocked'))||0));}catch(e){}
 if(/[?&]all\b/.test(location.search))SO.unlocked=SORTIES.length-1;
+// ?sortie=N skips ahead like Deckrunner's ?wave=N: opens on sortie N with it and everything before it unlocked (not saved)
+SO.start=-1;try{const n=parseInt(new URLSearchParams(location.search).get('sortie'),10);if(n>=1){SO.start=Math.min(n,SORTIES.length)-1;SO.unlocked=Math.max(SO.unlocked,SO.start);}}catch(e){}
 function resetShip(){
   ship.position.set(0,12,175);S.q.identity();S.vel.set(0,0,-10);S.hull=100;S.shield=100;
 }
@@ -2495,7 +2497,7 @@ bake(ms=>{
   let sum=0,mx=0,filled=0;for(let i=0;i<NV;i++){const d=DENS[i];sum+=d;if(d>mx)mx=d;if(d>DENS_BIAS)filled++;}
   window.__bake={ms:Math.round(ms),mean:sum/NV,max:mx,filled:filled/NV};
   $('loading').hidden=true;ready=true;clock.getDelta();
-  if(/[?&]lab\b/.test(location.search))enterLab();else showBrief(Math.min(SO.unlocked,SORTIES.length-1));
+  if(/[?&]lab\b/.test(location.search))enterLab();else showBrief(SO.start>=0?SO.start:Math.min(SO.unlocked,SORTIES.length-1));
   window.__ready=true;
 });
 
