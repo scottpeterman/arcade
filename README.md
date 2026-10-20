@@ -19,6 +19,10 @@ Wireframe and vector games for the browser. Each game is a single self-contained
     <td align="center"><img src="games/banrion/docs/screenshots/low-angle-kingside.png" width="400" alt="Banrion: a Closed Ruy Lopez midgame against the engine"><br><b>Banrion</b> · vs the engine, move 16</td>
     <td align="center"><img src="lab/ringworld/docs/screenshots/arch.png" width="400" alt="Ringworld: the far side of the ring arching up across the sky"><br><b>Ringworld</b> (lab) · the arch</td>
   </tr>
+  <tr>
+    <td align="center"><img src="games/normandy/docs/screenshots/hedgehog-cover.png" width="400" alt="Normandy: crouched behind a Czech hedgehog on Omaha Beach, the seawall ahead"><br><b>Normandy</b> · Dog Green, hedgehog cover</td>
+    <td align="center"><img src="lab/tauri-reach/docs/screenshots/station-overview.png" width="400" alt="Tauri Reach: the spindle station over the young star's jets"><br><b>Tauri Reach</b> (lab) · the station</td>
+  </tr>
 </table>
 
 More per game in each `docs/screenshots/` folder.

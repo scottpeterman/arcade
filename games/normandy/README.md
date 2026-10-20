@@ -1,6 +1,20 @@
 # NORMANDY
 
-First-person beach assault, Omaha · Dog Green, 6 June 1944. The ramp drops, you wade in, run hedgehog to hedgehog under a sweeping MG42, shelter at the seawall, go through the gap and grenade the casemate.
+First-person beach assault, Omaha · Dog Green, 6 June 1944. The ramp drops, you wade in, run hedgehog to hedgehog under a sweeping MG42, shelter at the seawall, go through the gap and take the casemate: grenade, rifle or bayonet.
+
+<table>
+  <tr>
+    <td align="center"><img src="docs/screenshots/ramp-down.png" width="400" alt="Ramp down: the beach and the hedgehog field from the shallows"><br>Ramp down</td>
+    <td align="center"><img src="docs/screenshots/hedgehog-cover.png" width="400" alt="Crouched behind a Czech hedgehog, the seawall ahead"><br>Hedgehog cover</td>
+  </tr>
+  <tr>
+    <td align="center"><img src="docs/screenshots/seawall-approach.png" width="400" alt="The seawall and its exit gap from the upper beach, first aid and an ammo can on the shingle"><br>The seawall and the gap</td>
+    <td align="center"><img src="docs/screenshots/casemate-slit.png" width="400" alt="The casemate from behind the wall, MG firing from the slit, riflemen along the parapet"><br>The casemate</td>
+  </tr>
+  <tr>
+    <td align="center" colspan="2"><img src="docs/screenshots/rear-door.png" width="400" alt="The casemate's rear door open, both crew holding the doorway"><br>The rear door</td>
+  </tr>
+</table>
 
 One self-contained HTML file, built from `game.html` plus assets.
 

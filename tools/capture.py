@@ -426,5 +426,38 @@ SCENES["banrion"] = {
 }
 
 
+# ---- Normandy: window.__qa stages the beach. Drop into a stage, place the camera, let the
+# sim run (MG bursts, riflemen, tracers), then freeze it so the frame renders clean.
+# __qa.advance() steps the sim without rendering; freeze(true) holds it while frames draw.
+def normandy(stage, place=None, run_s=1.5, door=False, hero_pose=None):
+    def fn(t):
+        t.open(f"games/normandy/index.html?stage={stage}&start=1", 300)
+        t.page.wait_for_function("window.__qa && window.__qa.ready", timeout=120000)
+        t.js("(() => { const d = __qa.dbg(); d.pl.hp = 1e9; })()")     # stays alive while the sim runs
+        if place:
+            x, z, yaw, pitch, crouch = place
+            t.js(f"__qa.place({x}, {z}, {yaw}, {pitch}, {'true' if crouch else 'false'})")
+        t.js(f"__qa.advance({run_s})")
+        if door:
+            # face the crew in the doorway
+            t.js("""(() => { const d = __qa.dbg(), c = d.game.enemies.filter(e => e.crew && e.post === 'door');
+              if (!c.length) return; const e = c[0]; d.pl.yaw = Math.atan2(e.x - d.pl.x, e.z - d.pl.z) + 0.08; d.pl.pitch = -0.02; })()""")
+        t.js("(() => { const d = __qa.dbg(); d.pl.hp = 100; d.game.msgs = []; __qa.freeze(true); })()")
+        t.wait(900)
+    return fn
+
+SCENES["normandy"] = {
+    "dir": "games/normandy",
+    "readme": [
+        ("ramp-down", normandy(1, (0, -11.5, 0.05, 0.03, False), run_s=2.2)),
+        ("hedgehog-cover", normandy(2, (-6.4, 30.0, 0.22, 0.04, True), run_s=2.6)),
+        ("seawall-approach", normandy(2, (-14, 84, 0.22, 0.07, False), run_s=1.6)),
+        ("casemate-slit", normandy(4, (8, 108.2, 1.32, 0.05, False), run_s=1.0)),
+        ("rear-door", normandy(5, (19.6, 122.4, 3.1, 0.0, False), run_s=2.0, door=True)),
+    ],
+    "hero": normandy(2, (-6.4, 30.0, 0.22, 0.04, True), run_s=2.6),
+}
+
+
 if __name__ == "__main__":
     main()
