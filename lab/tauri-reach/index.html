@@ -1,4 +1,4 @@
-<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body class="briefing">
 <title>Tauri Reach</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -72,6 +72,91 @@ canvas#hud2d{position:fixed;inset:0;width:100%;height:100%;display:block;pointer
 #loading .bar{height:4px}
 #bakebar{background:linear-gradient(90deg,#d9785a,#ffb36b)}
 #tip{position:fixed;left:50%;bottom:calc(52px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);font-size:11px;letter-spacing:.14em;color:var(--dim);text-transform:uppercase;pointer-events:none;z-index:5;white-space:nowrap}
+
+/* ---------- sortie briefing splash + debrief ---------- */
+body.briefing #tl,body.briefing #tr,body.briefing #strip,body.briefing #help,body.briefing #tip,body.briefing #alert,
+body.briefing #bracket,body.briefing #ctl,body.briefing #pausev,body.briefing #hud2d{display:none!important}
+.chip.obj{color:var(--text);border-color:rgba(255,179,107,.45)}
+#brief{--acc:255,179,107;position:fixed;inset:0;z-index:20;color:var(--text);overflow:hidden}
+#brief .bf-shade{position:absolute;inset:0;pointer-events:none;
+  background:linear-gradient(90deg,rgba(3,3,8,.92) 0%,rgba(3,3,8,.78) 34%,rgba(3,3,8,.25) 62%,rgba(3,3,8,.55) 100%),
+  radial-gradient(120% 90% at 70% 50%,transparent 40%,rgba(3,3,8,.7) 100%)}
+.bf-grid{position:relative;height:100%;box-sizing:border-box;display:grid;grid-template-columns:minmax(340px,40%) 1fr;grid-template-rows:auto minmax(0,1fr) auto;
+  padding:calc(18px + env(safe-area-inset-top,0px)) calc(24px + env(safe-area-inset-right,0px)) calc(18px + env(safe-area-inset-bottom,0px)) calc(28px + env(safe-area-inset-left,0px));gap:12px 28px}
+.bf-top{grid-column:1/-1;display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap}
+.bf-mark{font-weight:600;letter-spacing:.32em;font-size:12px;color:var(--plasma)}
+.bf-mark span{color:var(--dim);letter-spacing:.2em}
+#bfsel{display:flex;gap:6px;flex-wrap:wrap}
+#bfsel button{font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);background:rgba(8,10,20,.55);
+  border:1px solid var(--line);border-radius:2px;padding:5px 10px;cursor:pointer;display:flex;gap:8px;align-items:baseline}
+#bfsel button b{color:var(--text);font-weight:400}
+#bfsel button.on{color:rgb(var(--acc));border-color:rgba(var(--acc),.7);box-shadow:inset 0 -2px 0 rgba(var(--acc),.8)}
+#bfsel button:disabled{opacity:.38;cursor:default}
+#bfsel button:not(:disabled):hover{border-color:rgba(var(--acc),.6)}
+.bf-text{align-self:center;max-width:560px;padding:8px 0;min-height:0;max-height:100%;overflow-y:auto;scrollbar-width:none}
+.bf-num{font-family:var(--mono);font-size:12px;letter-spacing:.3em;color:rgb(var(--acc))}
+#bfcode{margin:6px 0 2px;font-weight:600;font-size:clamp(36px,min(6vw,10vh),88px);line-height:.95;letter-spacing:.06em;color:#f4f1ea;
+  text-shadow:0 0 28px rgba(var(--acc),.35)}
+.bf-tag{font-size:13px;letter-spacing:.34em;text-transform:uppercase;color:var(--dim);padding-bottom:16px;margin-bottom:16px;
+  border-bottom:1px solid rgba(var(--acc),.35);position:relative}
+.bf-tag:after{content:"";position:absolute;left:0;bottom:-1px;width:64px;height:2px;background:rgb(var(--acc))}
+#bfbrief p{margin:0 0 10px;font-size:clamp(13px,1.9vh,15px);line-height:1.55;color:#c9d1e2;max-width:52ch}
+.bf-h{font-size:10px;letter-spacing:.24em;text-transform:uppercase;color:rgb(var(--acc));margin:16px 0 6px;font-weight:600}
+#bfobj{list-style:none;margin:0;padding:0}
+#bfobj li{font-size:13px;color:var(--dim);padding:2px 0 2px 18px;position:relative;letter-spacing:.04em}
+#bfobj li:before{content:"";position:absolute;left:2px;top:9px;width:7px;height:7px;border:1px solid rgba(var(--acc),.8);transform:rotate(45deg)}
+#bfobj li b{color:var(--text);font-weight:600;font-size:15px;letter-spacing:.06em}
+#bfobj li:first-child:before{background:rgb(var(--acc))}
+#bfcond{display:flex;gap:0;margin-top:16px;border:1px solid var(--line);border-radius:2px;background:rgba(8,10,20,.5);width:max-content;max-width:100%}
+#bfcond div{padding:7px 14px;display:flex;flex-direction:column;gap:2px;border-left:1px solid var(--line)}
+#bfcond div:first-child{border-left:0}
+#bfcond .num{font-size:14px;color:var(--text)}
+.bf-view{position:relative;min-height:240px}
+#spl3d{position:absolute;inset:0;width:100%;height:100%;display:block}
+.bf-ticks{position:absolute;inset:6% 4%;pointer-events:none;
+  background:linear-gradient(rgba(var(--acc),.7),rgba(var(--acc),.7)) top left/22px 1px no-repeat,linear-gradient(rgba(var(--acc),.7),rgba(var(--acc),.7)) top left/1px 22px no-repeat,
+  linear-gradient(rgba(var(--acc),.7),rgba(var(--acc),.7)) top right/22px 1px no-repeat,linear-gradient(rgba(var(--acc),.7),rgba(var(--acc),.7)) top right/1px 22px no-repeat,
+  linear-gradient(rgba(var(--acc),.7),rgba(var(--acc),.7)) bottom left/22px 1px no-repeat,linear-gradient(rgba(var(--acc),.7),rgba(var(--acc),.7)) bottom left/1px 22px no-repeat,
+  linear-gradient(rgba(var(--acc),.7),rgba(var(--acc),.7)) bottom right/22px 1px no-repeat,linear-gradient(rgba(var(--acc),.7),rgba(var(--acc),.7)) bottom right/1px 22px no-repeat}
+.bf-scan{position:absolute;left:4%;right:4%;height:1px;top:6%;pointer-events:none;background:linear-gradient(90deg,transparent,rgba(var(--acc),.55),transparent);
+  animation:bfscan 5.5s linear infinite;opacity:.6}
+@keyframes bfscan{0%{top:6%;opacity:0}8%{opacity:.6}92%{opacity:.6}100%{top:94%;opacity:0}}
+.bf-cap{position:absolute;right:4%;bottom:6%;text-align:right;pointer-events:none;padding:0 14px 12px 0}
+.bf-cap .bf-h{margin-top:0}
+#bfspec{font-family:var(--mono);font-size:12px;line-height:1.7;color:#aab4c8;letter-spacing:.04em}
+.bf-foot{grid-column:1/-1;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.bf-foot button,#dbbtns button{font-family:var(--display);font-weight:600;font-size:13px;letter-spacing:.24em;text-transform:uppercase;cursor:pointer;
+  color:#0a0a10;background:rgb(var(--acc));border:1px solid rgb(var(--acc));border-radius:2px;padding:12px 22px;min-height:46px;
+  box-shadow:0 0 24px rgba(var(--acc),.35)}
+.bf-foot button b,#dbbtns button b{font-family:var(--mono);font-weight:400;letter-spacing:.06em;margin-left:10px;opacity:.65}
+.bf-foot button.ghost,#dbbtns button.ghost{color:var(--text);background:rgba(8,10,20,.6);border-color:var(--line);box-shadow:none;font-size:11px;letter-spacing:.18em}
+.bf-foot button:hover{filter:brightness(1.08)}
+.bf-foot button.ghost:hover,#dbbtns button.ghost:hover{border-color:rgba(var(--acc),.6)}
+.bf-foot button:focus-visible,#dbbtns button:focus-visible,#bfsel button:focus-visible{outline:2px solid #fff;outline-offset:2px}
+.bf-keys{font-family:var(--mono);font-size:11px;color:var(--dim);letter-spacing:.08em;margin-left:auto}
+.bf-in>*{animation:bfin .7s cubic-bezier(.2,.7,.2,1) both}
+.bf-in>*:nth-child(2){animation-delay:.08s}.bf-in>*:nth-child(3){animation-delay:.16s}.bf-in>*:nth-child(4){animation-delay:.26s}
+.bf-in>*:nth-child(5){animation-delay:.34s}.bf-in>*:nth-child(6){animation-delay:.4s}.bf-in>*:nth-child(7){animation-delay:.46s}
+@keyframes bfin{from{opacity:0;transform:translateX(-18px)}to{opacity:1;transform:none}}
+#debrief{--acc:255,179,107;position:fixed;inset:0;z-index:21;display:grid;place-items:center;background:radial-gradient(80% 70% at 50% 50%,rgba(3,3,8,.35),rgba(3,3,8,.82))}
+#debrief .card{width:min(460px,92vw);padding:22px 24px;border-color:rgba(var(--acc),.45);animation:bfin .6s cubic-bezier(.2,.7,.2,1) both}
+#dbk{font-family:var(--mono);font-size:11px;letter-spacing:.24em;color:rgb(var(--acc))}
+#dbh{margin:8px 0 4px;font-size:clamp(28px,4.4vw,40px);letter-spacing:.08em;font-weight:600;color:#f4f1ea;text-shadow:0 0 22px rgba(var(--acc),.4)}
+#dbsub{color:var(--dim);font-size:13px;letter-spacing:.04em}
+#dbstats{display:grid;grid-template-columns:repeat(4,1fr);margin:18px 0;border:1px solid var(--line);background:rgba(8,10,20,.5)}
+#dbstats div{padding:9px 10px;display:flex;flex-direction:column;gap:3px;border-left:1px solid var(--line)}
+#dbstats div:first-child{border-left:0}
+#dbstats .num{font-size:16px}
+#dbbtns{display:flex;gap:8px;flex-wrap:wrap}
+#dbbtns button{padding:10px 16px;font-size:12px;letter-spacing:.18em}#dbbtns button.ghost{font-size:11px;letter-spacing:.14em}
+@media (max-width:820px){
+  .bf-grid{grid-template-columns:1fr;grid-template-rows:auto minmax(150px,30vh) auto auto;padding:12px 14px;gap:8px;overflow-y:auto}
+  .bf-view{order:-0;grid-row:2}.bf-text{grid-row:3;max-width:none}.bf-foot{grid-row:4}
+  #brief .bf-shade{background:rgba(3,3,8,.72)}
+  #bfbrief p{font-size:14px}.bf-keys{display:none}.bf-cap{display:none}
+  #dbstats{grid-template-columns:repeat(2,1fr)}#dbstats div:nth-child(3){border-left:0}
+}
+@media (prefers-reduced-motion:reduce){.bf-in>*,#debrief .card{animation:none}.bf-scan{display:none}}
 @media (max-width:640px){#help{display:none}#tr{width:150px}#tl{width:150px}#strip{flex-wrap:wrap;justify-content:center;width:92vw}}
 </style>
 
@@ -110,6 +195,7 @@ canvas#hud2d{position:fixed;inset:0;width:100%;height:100%;display:block;pointer
 <div id="pausev" hidden>PAUSED · P</div>
 
 <div class="hud" id="strip">
+  <div class="chip obj" id="objchip" hidden></div>
   <div class="chip ok" id="hazchip">CLEAR</div>
   <div class="chip ok" id="sensechip">SENSORS NOMINAL</div>
   <div class="chip ok" id="lockchip">TARGET LOCK</div>
@@ -146,12 +232,35 @@ canvas#hud2d{position:fixed;inset:0;width:100%;height:100%;display:block;pointer
   <button type="button" id="bView" hidden>Chase <b>V</b></button>
   <button type="button" id="bErupt">Erupt <b>F</b></button>
   <button type="button" id="bStation">Station <b>K</b></button>
+  <button type="button" id="bSorties">Sorties</button>
+  <button type="button" id="bAbort" hidden>Abort sortie</button>
   <div id="gs"><div class="top"><span>Game speed</span><b id="gsv">100%</b></div>
     <input type="range" id="gsr" min="10" max="100" step="5" value="100" aria-label="Game speed">
     <div class="keys2">, slower · . faster</div></div>
   <button type="button" id="bQual">Volume <b>1-3</b></button>
 </div>
 
+
+<div id="brief" hidden>
+  <div class="bf-shade"></div>
+  <div class="bf-grid">
+    <header class="bf-top"><div class="bf-mark">MACHĒ AUDAX <span>// TAURI REACH</span></div><nav id="bfsel" aria-label="Sorties"></nav></header>
+    <section class="bf-text bf-in" id="bftext">
+      <div class="bf-num" id="bfnum"></div>
+      <h1 id="bfcode"></h1>
+      <div class="bf-tag" id="bftag"></div>
+      <div id="bfbrief"></div>
+      <div class="bf-h">Objective</div>
+      <ul id="bfobj"></ul>
+      <div id="bfcond"></div>
+    </section>
+    <section class="bf-view" aria-hidden="true"><canvas id="spl3d"></canvas><div class="bf-ticks"></div><div class="bf-scan"></div>
+      <div class="bf-cap"><div class="bf-h" id="bfthreat"></div><div id="bfspec"></div></div></section>
+    <footer class="bf-foot"><button type="button" id="bLaunch">Launch <b>Enter</b></button><button type="button" id="bLab" class="ghost">Free flight · lab <b>L</b></button>
+      <span class="bf-keys">← → sortie · M mute · in flight: Space guns, W/S throttle, mouse steers</span></footer>
+  </div>
+</div>
+<div id="debrief" hidden><div class="card panel"><div id="dbk"></div><h2 id="dbh"></h2><div id="dbsub"></div><div id="dbstats"></div><div id="dbbtns"></div></div></div>
 <div id="loading">
   <div class="card panel">
     <div class="title">BAKING NEBULA</div>
@@ -168,6 +277,7 @@ canvas#hud2d{position:fixed;inset:0;width:100%;height:100%;display:block;pointer
 <script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/postprocessing/ShaderPass.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/postprocessing/MaskPass.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/loaders/GLTFLoader.js"></script>
 <script>
 (function(){
 "use strict";
@@ -540,10 +650,11 @@ function updateTendril(T,dt,time){
   }
 }
 let nextEvent=2.5;
+const EV={a:7,b:5}; // eruption spacing: a + rand*b seconds (sorties set it)
 const TF=new Float32Array(NT*4), TG=new Float32Array(NT*4), TH=new Float32Array(NT*4);
 function tickTendrils(dt,time){
   nextEvent-=dt;
-  if(nextEvent<=0){spawnTendril();nextEvent=7+rng()*5;}
+  if(nextEvent<=0){spawnTendril();nextEvent=EV.a+rng()*EV.b;}
   for(let k=0;k<NT;k++){
     const T=tend[k];updateTendril(T,dt,time);
     const alive=T.state!=='dead', P=T.pts;
@@ -920,16 +1031,63 @@ const orbit={az:0.35,el:0.22,dist:330,auto:true,idle:0,c:new THREE.Vector3()};
 const keys={};
 const mouse={dx:0,dy:0,locked:false};
 const touch={steer:null,thrust:null,t0:0.4};
+/* ---------- sorties: the campaign, in order ----------
+   kind 'splash' is won at n kills; 'station' is won when Tauri-B consumes the station.
+   cap = bandits up at once, hp = bandit hit points, ev = eruption spacing [base, random], first = seconds to the first eruption.
+   pose drives the briefing's model: subject, camera azimuth/elevation/distance, turn rate. */
+const SORTIES=[
+  {code:'FIRST LIGHT',tag:'Shakedown flight',acc:'255,179,107',
+   brief:['A lone BR-10 Shrike is running patrol through the Reach. Tauri-B is quiet for now. That will not last.',
+          'Get the feel of the guns. The four ports converge at the range you set, and the lead pip only shows while you hold a lock. Without one, you fire down the boresight.'],
+   obj:['Splash 2 Shrikes','One at a time'],
+   cond:[['Bandits','2'],['Up at once','1'],['Tauri-B','Quiet']],
+   kind:'splash',n:2,cap:1,hp:8,respawn:3,ev:[13,6],first:16,
+   pose:{subject:'shrike',az:0.75,el:0.3,dist:19,spin:0.3,yo:-0.75}},
+  {code:'DUST LANE',tag:'Hunt in the dark',acc:'217,120,90',
+   brief:['Two Shrikes are working the dust lane on the far side of the star.',
+          'Dust you can see is dust they can hide in. When the target diamond goes dashed, the line of sight is blocked: close the range, or drag them into clear gas. It works both ways. They cannot shoot what they cannot see.'],
+   obj:['Splash 4 Shrikes','Two up at once'],
+   cond:[['Bandits','4'],['Up at once','2'],['Tauri-B','Restless']],
+   kind:'splash',n:4,cap:2,hp:10,respawn:3.5,ev:[9,5],first:10,
+   pose:{subject:'shrike',az:-0.6,el:0.12,dist:16,spin:0.25,yo:0.7}},
+  {code:'STORM FRONT',tag:'Fight through the outburst',acc:'255,207,74',
+   brief:['Tauri-B has gone into outburst. Eruptions every few seconds, shock fronts sweeping the whole nebula.',
+          'Watch the ERUPT diamonds and clear the cone before liftoff. A front closing on you blinds your sensors, and it blinds theirs the same way. Use the static. A Shrike in whiteout holds its fire.'],
+   obj:['Splash 4 Shrikes','Survive the outburst'],
+   cond:[['Bandits','4'],['Up at once','2'],['Tauri-B','Outburst']],
+   kind:'splash',n:4,cap:2,hp:10,respawn:3.5,ev:[3.5,2.5],first:4,
+   pose:{subject:'shrike',az:0.4,el:-0.08,dist:17,spin:0.22,yo:-0.45}},
+  {code:'SHRIKE PACK',tag:'Three at once',acc:'255,90,74',
+   brief:['A full pack, hardened for the push to the station. Three in the air at a time, and they take more punishment.',
+          'Do not turn with them. A Shrike is slower and turns wider than you. Extend, come back around on your terms, and use the linked quad when you get a clean pass.'],
+   obj:['Splash 6 Shrikes','Three up at once'],
+   cond:[['Bandits','6'],['Up at once','3'],['Airframe','Hardened']],
+   kind:'splash',n:6,cap:3,hp:13,respawn:4,ev:[8,5],first:9,
+   pose:{subject:'pack',az:0.5,el:0.24,dist:52,spin:0.18,yo:-0.35}},
+  {code:'TERMINUS',tag:'Take the station',acc:'111,243,255',
+   brief:['This is what they were guarding. A spinning disc 150 units off the star, eight gun turrets on its decks and pylons, four reactors on the rim.',
+          'Fly the edge to reach the reactors. The hull is cover, for them and for you. Kill the last reactor and the station loses station-keeping. Tauri-B does the rest.'],
+   obj:['Destroy 4 reactors','Watch it fall into the star'],
+   cond:[['Turrets','8'],['Escorts','2'],['Reactors','4']],
+   kind:'station',escorts:2,cap:1,hp:10,respawn:6,ev:[10,5],first:12,
+   pose:{subject:'station',az:0.6,el:0.3,dist:190,spin:0.08,yo:0}}
+];
+const SO={mode:'boot',i:0,def:null,result:null,endT:0,t:0,shots:0,hits:0,spawned:0,unlocked:0};
+try{SO.unlocked=Math.max(0,Math.min(SORTIES.length-1,parseInt(localStorage.getItem('tauriReach.unlocked'))||0));}catch(e){}
+if(/[?&]all\b/.test(location.search))SO.unlocked=SORTIES.length-1;
 function resetShip(){
   ship.position.set(0,12,175);S.q.identity();S.vel.set(0,0,-10);S.hull=100;S.shield=100;
 }
 resetShip();
 
 addEventListener('keydown',e=>{
+  if(sortieKeys(e))return;
   keys[e.code]=true;
+  const lab=SO.mode==='lab';
   if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space'].includes(e.code))e.preventDefault();
-  if(e.code==='KeyC'||e.code==='Tab'){e.preventDefault();toggleCam();}
-  if(e.code==='KeyF')forceErupt();
+  if(e.code==='Tab')e.preventDefault();
+  if(lab&&(e.code==='KeyC'||e.code==='Tab'))toggleCam();
+  if(lab&&e.code==='KeyF')forceErupt();
   if(e.code==='KeyV')toggleView();
   if(e.code==='KeyH'){S.help=!S.help;syncChrome();}
   if(e.code==='KeyG')setGunMode();
@@ -937,7 +1095,7 @@ addEventListener('keydown',e=>{
   if(e.code==='BracketLeft')setConv(G.conv-20);if(e.code==='BracketRight')setConv(G.conv+20);
   if(e.code==='KeyM')sfx.mute();
   if(e.code==='KeyP')setPaused(!S.paused);
-  if(e.code==='KeyK')spawnStation();
+  if(lab&&e.code==='KeyK')spawnStation();
   if(e.code==='Comma')stepTimeScale(-1);if(e.code==='Period')stepTimeScale(1);
   if(e.code==='Digit1')setQuality(0);if(e.code==='Digit2')setQuality(1);if(e.code==='Digit3')setQuality(2);
 });
@@ -950,6 +1108,10 @@ function syncChrome(){
   $('bFire').hidden=!(TOUCH&&S.mode==='fly');
   $('bView').firstChild.textContent=S.view==='cockpit'?'Chase ':'Cockpit ';
   $('help').hidden=!S.help||cockpit();
+  const lab=SO.mode==='lab';
+  for(const id of['bCam','bErupt','bStation','bSorties'])$(id).hidden=!lab;
+  $('bAbort').hidden=SO.mode!=='sortie';
+  document.body.classList.toggle('briefing',SO.mode==='brief'||SO.mode==='debrief'||SO.mode==='boot');
   $('tip').textContent=S.mode==='orbit'?'Drag to orbit · press C or Fly to take the stick':(TOUCH?'Left drag steers · right drag sets throttle':'Click to capture the mouse · Esc releases · V changes view');
 }
 function toggleCam(){
@@ -963,6 +1125,8 @@ $('bCam').addEventListener('click',toggleCam);
 $('bView').addEventListener('click',toggleView);
 $('bErupt').addEventListener('click',forceErupt);
 $('bStation').addEventListener('click',()=>spawnStation());
+$('bSorties').addEventListener('click',()=>showBrief(SO.i));
+$('bAbort').addEventListener('click',()=>showBrief(SO.i));
 $('bQual').addEventListener('click',()=>setQuality((qi+1)%3));
 $('gsr').addEventListener('input',e=>setTimeScale(e.target.value/100));
 $('gsr').addEventListener('keydown',e=>e.stopPropagation()); // arrow keys on the slider must not fly the ship
@@ -1064,7 +1228,7 @@ function flight(dt,time){
   const eng=ship.userData.eng,es=0.7+(0.3+thrust*0.7)*boost*0.9*(fly?1:0)+Math.random()*0.12;eng[0].scale.setScalar(es);eng[1].scale.setScalar(es);
 }
 function damage(amount,direct){
-  if(S.mode!=='fly')return; // the parked ship in orbit view is scenery
+  if(S.mode!=='fly'||S.dead||SO.result==='won')return; // the parked ship in orbit view is scenery; a won sortie is over
   let a=amount;
   if(S.shield>0&&!direct){const s=Math.min(S.shield,a);S.shield-=s;a-=s;}
   else if(S.shield>0){const s=Math.min(S.shield,a*0.5);S.shield-=s;a-=s;}
@@ -1120,7 +1284,7 @@ function hazards(dt){
    overheat lockout, swept-segment hit tests. Rounds inherit the shooter's velocity, so the lead pip is solved in the
    shooter's frame. Bandits fly the same arcade model as the player and see through the same dust and static. */
 const BOLT_SPD=900, BOLT_LIFE=0.8, EBOLT_SPD=560, EBOLT_LIFE=1.15, FOE_R=3.4, SHIP_R=2.4, FOE_DMG=5;
-const FOE_TURN=1.2, FOE_SPD=66, FOE_EXT=88, NFOES=2;
+const FOE_TURN=1.2, FOE_SPD=66, FOE_EXT=88, NFOES=3;  // lab flies 2; sorties set how many are up at once
 const GUNS=[[-1.4,-0.1,-0.3],[1.4,-0.1,-0.3],[-0.55,-0.3,-1.1],[0.55,-0.3,-1.1]]; // ship-local, nose is -z
 const GUNS_ALT=[[0,1],[2,3]], GUNS_LINK=[0,1,2,3];
 const G={heat:0,overheat:false,mode:'ALT',alt:0,conv:240,fireT:0,mouseFire:false,touchFire:false,ai:true,
@@ -1300,6 +1464,7 @@ function fire(){
     const vx=cx-_g2.x,vy=cy-_g2.y,vz=cz-_g2.z,l=Math.hypot(vx,vy,vz)||1;
     bolts.push({x:_g2.x,y:_g2.y,z:_g2.z,px:_g2.x,py:_g2.y,pz:_g2.z,vx:vx/l*BOLT_SPD+S.vel.x,vy:vy/l*BOLT_SPD+S.vel.y,vz:vz/l*BOLT_SPD+S.vel.z,life:BOLT_LIFE,dmg,alive:true});
   }
+  SO.shots+=idx.length;
   G.heat+=link?9.5:3;
   if(G.heat>=100){G.heat=100;G.overheat=true;sfx.overheat();}
   G.flash=1;S.shake=Math.max(S.shake,link?0.16:0.08);
@@ -1373,13 +1538,13 @@ function spawnFoe(f,pos){
   f.m.visible=true;f.m.position.copy(f.p);f.m.quaternion.copy(f.q);
 }
 function hurtFoe(f,dmg,x,y,z){
-  f.hp-=dmg;f.hitT=0.1;G.hitMark=0.14;sfx.hit();
+  f.hp-=dmg;f.hitT=0.1;G.hitMark=0.14;SO.hits++;sfx.hit();
   burst(x,y,z,8,[4,3.2,2],[25,70],[0.18,0.38],f.v.x,f.v.y,f.v.z);
   if(f.hp<=0)killFoe(f,true);
 }
 function killFoe(f,byPlayer){
   if(!f.alive)return;
-  f.alive=false;f.m.visible=false;f.respawn=5;f.burst=0;
+  f.alive=false;f.m.visible=false;f.respawn=SO.def?SO.def.respawn:5;f.burst=0;
   explode(f.p,f.v);
   if(byPlayer){G.kills++;G.killText='SPLASH ONE';}else G.killText='BANDIT LOST TO THE STAR';
   G.killMsg=1.6;
@@ -1418,7 +1583,7 @@ function foeEnvironment(f,dt){ // the star treats bandits the way it treats you
 function updateFoes(dt){
   const fly=S.mode==='fly', P=ship.position;
   for(const f of foes){
-    if(!f.alive){f.respawn-=dt;if(f.respawn<=0)spawnFoe(f);continue;}
+    if(!f.alive){if(!foeSlot(f))continue;f.respawn-=dt;if(f.respawn<=0){spawnFoe(f);SO.spawned++;}continue;}
     f.t+=dt;f.hitT=Math.max(0,f.hitT-dt);
     const rx=P.x-f.p.x,ry=P.y-f.p.y,rz=P.z-f.p.z,dist=Math.hypot(rx,ry,rz);
     _g1.set(0,0,-1).applyQuaternion(f.q);
@@ -1504,6 +1669,7 @@ function targetLock(){
   G.pipPt.set(P.x+rx+vx*t,P.y+ry+vy*t,P.z+rz+vz*t);
 }
 function shotDown(){
+  if(SO.mode==='sortie'){sortieDown();return;}
   G.deaths++;G.downT=2.5;
   resetShip();S.hit=1;S.vel.set(0,0,-10);
   ebolts.length=0;
@@ -1603,7 +1769,7 @@ function hullBlocks(b){ // a round that reaches the hull stops there (end point 
   return !!stationSolid(stationLocal((b.x+b.px)/2,(b.y+b.py)/2,(b.z+b.pz)/2,_s1));
 }
 function hurtPart(p,dmg,x,y,z){
-  p.hp-=dmg;G.hitMark=0.14;sfx.hit();
+  p.hp-=dmg;G.hitMark=0.14;SO.hits++;sfx.hit();
   burst(x,y,z,8,p.kind==='reactor'?[2.6,3.6,4.4]:[4,3.2,2],[25,70],[0.18,0.38],p.v.x,p.v.y,p.v.z);
   if(p.hp<=0)killPart(p);
 }
@@ -1765,6 +1931,7 @@ function hud(){
   const hb=$('heatbar');hb.style.width=G.heat.toFixed(0)+'%';hb.classList.toggle('hot',G.overheat);
   $('killv').textContent=G.kills+' / '+G.deaths;
   $('banv').textContent=foes.filter(f=>f.alive).length;
+  objChip();
   const al2=$('alert');
   if(flying&&S.edge&&G.downT<=0){al2.className='';al2.innerHTML='EDGE OF THE NEBULA<small>COMING ABOUT</small>';}
   else if(flying&&G.downT>0){al2.className='hot';al2.innerHTML='SHOT DOWN<small>'+G.kills+' SPLASHED · '+G.deaths+' LOST</small>';}
@@ -2000,6 +2167,245 @@ function drawHud(){
   hx.restore();
 }
 
+/* ---------- sorties: briefing, flight, debrief ----------
+   brief   the splash: briefing text over the live nebula, with the BR-10 Shrike (or the station) turning in its own view
+   sortie  flying it; bandits spawn only as the sortie allows, and the objective chip tracks it
+   debrief the result, then on to the next sortie, again, or back to the briefing
+   lab     the old free-flight sandbox: every key, endless bandits, the Station and Erupt buttons */
+const pad2=n=>String(n).padStart(2,'0');
+function foeSlot(f){
+  if(SO.mode==='lab')return f.id<2;
+  if(SO.mode!=='sortie'||SO.result||S.dead)return false;
+  const d=SO.def;if(f.id>=d.cap)return false;
+  if(d.kind==='station')return SO.spawned<d.escorts;
+  let alive=0;for(const x of foes)if(x.alive)alive++;
+  return alive<d.n-G.kills;  // never more in the air than are left to splash
+}
+function clearSky(){
+  for(const T of tend){T.state='dead';T.t=0;}
+  bolts.length=0;ebolts.length=0;sparks.length=0;
+  for(const f of foes){f.alive=false;f.m.visible=false;f.burst=0;}
+  G.target=null;G.manual=false;G.heat=0;G.overheat=false;G.killMsg=0;G.downT=0;G.hitMark=0;G.mouseFire=false;G.touchFire=false;
+  S.dead=false;S.static=0;S.hit=0;S.shake=0;S.sheath=0;
+}
+function parkStation(){ST.state='off';ST.g.visible=false;}
+function backdrop(d){ // the briefing's view: the nebula turning slowly, or the station if that is the target
+  S.mode='orbit';orbit.auto=true;orbit.idle=0;orbit.followSt=false;orbit.el=0.22;orbit.dist=330;orbit.c.set(0,0,0);
+  parkStation(); // the station appears in the briefing's own view, not twice
+}
+function releaseMouse(){if(document.pointerLockElement)document.exitPointerLock();}
+function showBrief(i){
+  SO.i=Math.max(0,Math.min(SORTIES.length-1,i));SO.mode='brief';SO.def=null;SO.result=null;
+  releaseMouse();clearSky();resetShip();EV.a=7;EV.b=5;nextEvent=3;
+  const d=SORTIES[SO.i];backdrop(d);
+  $('debrief').hidden=true;$('brief').hidden=false;
+  renderBrief();syncChrome();spl.show(d);
+}
+function renderBrief(){
+  const d=SORTIES[SO.i], b=$('brief');
+  b.style.setProperty('--acc',d.acc);
+  $('bfnum').textContent='SORTIE '+pad2(SO.i+1)+' / '+pad2(SORTIES.length);
+  $('bfcode').textContent=d.code;$('bftag').textContent=d.tag;
+  $('bfbrief').innerHTML=d.brief.map(t=>'<p>'+t+'</p>').join('');
+  $('bfobj').innerHTML='<li><b>'+d.obj[0]+'</b></li>'+d.obj.slice(1).map(t=>'<li>'+t+'</li>').join('');
+  $('bfcond').innerHTML=d.cond.map(([k,v])=>'<div><span class="lbl">'+k+'</span><span class="num">'+v+'</span></div>').join('');
+  const th=d.kind==='station'
+    ?['Target // Terminus platform',['68 u disc, stepped decks','Spike pylons fore and aft','8 turrets · lead on your vector','4 rim reactors · 40 hp each']]
+    :['Threat // BR-10 Shrike',['Close-support brawler','7-barrel rotary, nose mount','Hull '+d.hp+' · slower, wider turns','Same dust, same static as you']];
+  $('bfthreat').textContent=th[0];$('bfspec').innerHTML=th[1].map(t=>'<div>'+t+'</div>').join('');
+  $('bfsel').innerHTML=SORTIES.map((s,k)=>'<button type="button" data-k="'+k+'"'+(k>SO.unlocked?' disabled':'')+(k===SO.i?' class="on"':'')+'><b>'+pad2(k+1)+'</b>'+(k>SO.unlocked?'Locked':s.code)+'</button>').join('');
+  const t=$('bftext');t.classList.remove('bf-in');void t.offsetWidth;t.classList.add('bf-in'); // replay the entrance
+}
+$('bfsel').addEventListener('click',e=>{const b=e.target.closest('button');if(b&&!b.disabled)showBrief(+b.dataset.k);});
+$('bLaunch').addEventListener('click',()=>launch(SO.i));
+$('bLab').addEventListener('click',enterLab);
+function launch(i){
+  const d=SORTIES[i];if(!d||i>SO.unlocked)return;
+  SO.i=i;SO.def=d;SO.mode='sortie';SO.result=null;SO.t=0;SO.shots=0;SO.hits=0;SO.spawned=0;
+  $('brief').hidden=true;$('debrief').hidden=true;spl.hide();
+  clearSky();G.kills=0;
+  EV.a=d.ev[0];EV.b=d.ev[1];nextEvent=d.first;
+  for(const f of foes){f.max=d.hp;f.respawn=2.5+f.id*3;}
+  if(d.kind==='station')spawnStation();else parkStation();
+  resetShip();S.thr=0.45;
+  if(d.kind==='station'){_m4.lookAt(ship.position,ST.pos,AX.y);S.q.setFromRotationMatrix(_m4);}
+  S.vel.set(0,0,-cruise()).applyQuaternion(S.q);
+  S.mode='fly';S.view='cockpit';syncChrome();
+  if(!TOUCH&&canvas.requestPointerLock)canvas.requestPointerLock();
+  G.killText='SORTIE '+pad2(i+1)+' · '+d.code;G.killMsg=2.6;
+}
+function enterLab(){
+  SO.mode='lab';SO.def=null;SO.result=null;
+  $('brief').hidden=true;$('debrief').hidden=true;spl.hide();
+  clearSky();parkStation();resetShip();EV.a=7;EV.b=5;nextEvent=2;
+  for(const f of foes){f.max=10;f.respawn=0.5+f.id*1.5;}
+  S.mode='orbit';orbit.auto=true;orbit.followSt=false;orbit.c.set(0,0,0);orbit.dist=330;
+  syncChrome();
+}
+function sortieWin(){
+  SO.result='won';SO.endT=SO.def.kind==='station'?3.5:2.6;
+  if(SO.i+1<SORTIES.length&&SO.unlocked<SO.i+1){SO.unlocked=SO.i+1;try{localStorage.setItem('tauriReach.unlocked',String(SO.unlocked));}catch(e){}}
+  for(const f of foes)f.burst=0;ebolts.length=0;
+}
+function sortieDown(){
+  if(SO.result)return;
+  SO.result='lost';SO.endT=3.2;G.deaths++;
+  explode(ship.position,S.vel);S.dead=true;S.hull=0;
+  releaseMouse();
+  // death cam: orbit the wreck while it burns
+  S.mode='orbit';orbit.auto=true;orbit.idle=0;orbit.followSt=false;orbit.c.copy(ship.position);orbit.dist=60;orbit.el=0.3;
+  S.vel.multiplyScalar(0.2);ebolts.length=0;syncChrome();
+}
+function sortieTick(dt){
+  if(SO.mode!=='sortie')return;
+  if(!SO.result){
+    SO.t+=dt;
+    const d=SO.def;
+    if(d.kind==='splash'&&G.kills>=d.n)sortieWin();
+    if(d.kind==='station'&&ST.state==='gone')sortieWin();
+  }else if((SO.endT-=dt)<=0)showDebrief();
+}
+function showDebrief(){
+  const d=SO.def, won=SO.result==='won', last=SO.i===SORTIES.length-1;
+  SO.mode='debrief';releaseMouse();
+  if(won){S.mode='orbit';orbit.auto=true;orbit.followSt=false;orbit.c.set(0,0,0);orbit.dist=330;orbit.el=0.22;}
+  const mm=Math.floor(SO.t/60), ss=Math.floor(SO.t%60);
+  const acc=SO.shots?Math.round(SO.hits/SO.shots*100)+'%':'—';
+  const rows=[['Time',mm+':'+pad2(ss)],
+    d.kind==='station'?['Reactors',(4-ST.reactors)+' / 4']:['Splashed',G.kills+' / '+d.n],
+    ['Hull',won?Math.max(0,Math.round(S.hull))+'':'Lost'],['Accuracy',acc]];
+  const db=$('debrief');db.style.setProperty('--acc',won?d.acc:'255,90,74');
+  $('dbk').textContent='SORTIE '+pad2(SO.i+1)+' // '+d.code;
+  $('dbh').textContent=won?(last?'CAMPAIGN COMPLETE':'SORTIE COMPLETE'):'SHOT DOWN';
+  $('dbsub').textContent=won?(last?'The station is gone and Tauri-B answered. The Reach is quiet.':'Next up: '+SORTIES[SO.i+1].code+'.'):'The Shrikes keep the Reach for now. Get back in the air.';
+  $('dbstats').innerHTML=rows.map(([k,v])=>'<div><span class="lbl">'+k+'</span><span class="num">'+v+'</span></div>').join('');
+  const btns=won&&!last?[['next','Next sortie','Enter'],['again','Fly it again','R'],['brief','Briefing','B']]
+    :won?[['brief','Sortie select','Enter'],['again','Fly it again','R']]
+    :[['again','Retry','Enter'],['brief','Briefing','B']];
+  $('dbbtns').innerHTML=btns.map(([a,l,k],j)=>'<button type="button" data-a="'+a+'"'+(j?' class="ghost"':'')+'>'+l+' <b>'+k+'</b></button>').join('');
+  db.hidden=false;syncChrome();
+  const first=$('dbbtns').querySelector('button');if(first)first.focus({preventScroll:true});
+}
+function debriefAct(a){
+  if(a==='next')showBrief(SO.i+1);else if(a==='again')launch(SO.i);else showBrief(SO.i);
+}
+$('dbbtns').addEventListener('click',e=>{const b=e.target.closest('button');if(b)debriefAct(b.dataset.a);});
+function sortieKeys(e){ // the briefing and debrief take the keyboard; returns true when the key is used up here
+  if(SO.mode==='brief'){
+    if(e.code==='Enter'||e.code==='Space'){e.preventDefault();launch(SO.i);}
+    else if(e.code==='ArrowRight'||e.code==='ArrowDown'){e.preventDefault();if(SO.i<SO.unlocked)showBrief(SO.i+1);}
+    else if(e.code==='ArrowLeft'||e.code==='ArrowUp'){e.preventDefault();if(SO.i>0)showBrief(SO.i-1);}
+    else if(e.code==='KeyL')enterLab();
+    else if(e.code==='KeyM')sfx.mute();
+    return true;
+  }
+  if(SO.mode==='debrief'){
+    const won=SO.result==='won', last=SO.i===SORTIES.length-1;
+    if(e.code==='Enter'||e.code==='Space'){e.preventDefault();debriefAct(won&&!last?'next':won?'brief':'again');}
+    else if(e.code==='KeyR')debriefAct('again');
+    else if(e.code==='KeyB')debriefAct('brief');
+    else if(e.code==='KeyM')sfx.mute();
+    return true;
+  }
+  return SO.mode==='boot';
+}
+function objChip(){
+  const el=$('objchip');
+  if(SO.mode!=='sortie'){el.hidden=true;return;}
+  el.hidden=false;const d=SO.def;let t,cls='obj';
+  if(SO.result==='won'){t='SORTIE COMPLETE';cls='ok';}
+  else if(SO.result==='lost'){t='SHOT DOWN';cls='hot';}
+  else if(d.kind==='station')t=ST.state==='dying'?'STATION FALLING':d.code+' · REACTORS '+(4-ST.reactors)+' / 4';
+  else t=d.code+' · SPLASH '+G.kills+' / '+d.n;
+  chip(el,cls,t);
+}
+
+/* ---------- the briefing's model view: its own small renderer over the live nebula ----------
+   The BR-10 Shrike here is the detailed airframe (158 parts, ~10.5k triangles, assets/br10-shrike.glb, built by
+   assets/build_shrike.py). It is too heavy for the dogfight, so play uses the lighter in-game bandit; if the file
+   cannot load, the briefing falls back to that one. */
+const spl=(()=>{
+  const cv=$('spl3d');
+  let R=null,sc,cam,root,key,rim,on=false,t=0,last=0,d=null,shrike=null,station=null,blink=[],glows=[];
+  const srgb=c=>c<=0.04045?c/12.92:Math.pow((c+0.055)/1.055,2.4);
+  function prep(g){ // vertex colours are authored in sRGB; give each part a material that suits it
+    const cache={};
+    g.traverse(o=>{
+      if(!o.isMesh)return;
+      const base=o.name.replace(/_\d+$/,''), col=o.geometry.getAttribute('color');
+      if(col&&!col.isFloat32Linear){
+        const n=col.count,a=new Float32Array(n*3);
+        for(let i=0;i<n;i++){a[i*3]=srgb(col.getX(i));a[i*3+1]=srgb(col.getY(i));a[i*3+2]=srgb(col.getZ(i));}
+        o.geometry.setAttribute('color',new THREE.BufferAttribute(a,3));o.geometry.attributes.color.isFloat32Linear=true;
+      }
+      let m;
+      if(base==='engine_glow'){m=new THREE.MeshBasicMaterial({color:new THREE.Color(4.0,1.5,0.6)});glows.push(o);}
+      else if(base==='aft_aux_glow'||base==='rcs_emitter'){m=cache[base]||(cache[base]=new THREE.MeshBasicMaterial({color:new THREE.Color(0.6,2.6,3.4)}));}
+      else if(base==='nav_light'){o.geometry.computeBoundingSphere();m=new THREE.MeshBasicMaterial({color:o.geometry.boundingSphere.center.x<0?new THREE.Color(3,0.3,0.25):new THREE.Color(0.4,2.4,3.2)});blink.push(m);m.userData.on=m.color.clone();}
+      else if(base==='canopy')m=cache.c||(cache.c=new THREE.MeshStandardMaterial({color:0x0b1a24,metalness:0.9,roughness:0.12,emissive:0x061016,vertexColors:false}));
+      else if(base==='tail_marking'||base==='wing_stripe'||base==='exhaust_ring'||base==='cannon_muzzle_ring')m=cache.e||(cache.e=new THREE.MeshStandardMaterial({vertexColors:true,metalness:0.7,roughness:0.35,flatShading:true}));
+      else m=cache.a||(cache.a=new THREE.MeshStandardMaterial({vertexColors:true,metalness:0.55,roughness:0.48,flatShading:true}));
+      o.material=m;
+    });
+    return g;
+  }
+  function fallback(){const m=foeMesh();scene.remove(m);m.visible=true;m.scale.setScalar(1.4);glows=m.userData.glows;return m;}
+  function init(){
+    if(R)return;
+    try{R=new THREE.WebGLRenderer({canvas:cv,antialias:true,alpha:true});}catch(e){R=null;return;}
+    R.setPixelRatio(Math.min(devicePixelRatio||1,2));R.outputEncoding=THREE.sRGBEncoding;
+    R.toneMapping=THREE.ACESFilmicToneMapping;R.toneMappingExposure=1.0;R.setClearColor(0x000000,0);
+    sc=new THREE.Scene();cam=new THREE.PerspectiveCamera(30,1,0.1,2000);
+    key=new THREE.DirectionalLight(0xffc995,1.7);key.position.set(-6,5,-4);   // Tauri-B
+    rim=new THREE.DirectionalLight(0x7fb8ff,1.0);rim.position.set(5,2,7);
+    sc.add(key,rim,new THREE.HemisphereLight(0x8fa8d8,0x26140e,0.3));
+    root=new THREE.Group();sc.add(root);
+    const done=g=>{shrike=g;if(on&&d)set(d);};
+    if(THREE.GLTFLoader)new THREE.GLTFLoader().load('assets/br10-shrike.glb',g=>done(prep(g.scene)),undefined,()=>done(fallback()));
+    else done(fallback());
+  }
+  function subject(kind){
+    if(kind==='station'){
+      if(!station){station=ST.g.clone(true);station.position.set(0,0,0);station.quaternion.identity();station.scale.setScalar(1);}
+      station.visible=true;return station;
+    }
+    if(!shrike)return null;
+    if(kind==='pack'){ // a three-ship echelon; clones share the parts
+      const g=new THREE.Group();
+      for(const [x,y,z] of [[0,0,0],[-10,1.6,9],[10,-1.4,10]]){const c=shrike.clone(true);c.position.set(x,y,z);g.add(c);}
+      return g;
+    }
+    return shrike;
+  }
+  function set(nd){
+    d=nd;while(root.children.length)root.remove(root.children[0]);
+    const s=subject(d.pose.subject);if(s)root.add(s);
+    const a=d.acc.split(',').map(v=>v/255);key.color.setRGB(0.6+a[0]*0.4,0.55+a[1]*0.35,0.45+a[2]*0.3);
+    t=0;
+  }
+  function size(){const w=cv.clientWidth|0,h=cv.clientHeight|0;if(!R||w<2||h<2)return;if(cv.width!==Math.round(w*R.getPixelRatio())||cv.height!==Math.round(h*R.getPixelRatio()))R.setSize(w,h,false);cam.aspect=w/h;cam.updateProjectionMatrix();}
+  function tick(now){
+    if(!on)return;requestAnimationFrame(tick);
+    const dt=Math.min(0.05,(now-(last||now))/1000);last=now;t+=dt;
+    if(!R||!d)return;size();
+    const p=d.pose, e=1-Math.pow(1-Math.min(1,t/2.2),3);           // dolly in on arrival
+    const dist=p.dist*(1.35-0.35*e);
+    cam.position.set(Math.sin(p.az)*Math.cos(p.el)*dist,Math.sin(p.el)*dist,Math.cos(p.az)*Math.cos(p.el)*dist);
+    cam.lookAt(0,p.subject==='station'?0:0.2,p.subject==='pack'?4:0);
+    root.rotation.y=p.subject==='station'?t*p.spin:p.az+Math.PI+p.yo+Math.sin(t*p.spin)*0.5; // nose quartering toward the camera, swaying
+    root.rotation.z=p.subject==='station'?0.18:Math.sin(t*0.45)*0.1;  // a slow bank, the station a fixed tilt
+    root.position.y=p.subject==='station'?0:Math.sin(t*0.7)*0.25;
+    for(const g of glows)g.scale.setScalar(0.9+Math.random()*0.2);
+    const fl=(t%1.4)<0.08||((t%1.4)>0.2&&(t%1.4)<0.28);                 // double-flash navs
+    for(const m of blink)m.color.copy(m.userData.on).multiplyScalar(fl?1:0.08);
+    R.render(sc,cam);
+  }
+  return {
+    show(nd){init();on=true;last=0;if(R&&shrike!==undefined)set(nd);else d=nd;requestAnimationFrame(tick);},
+    hide(){on=false;}
+  };
+})();
+
 /* ---------- loop ---------- */
 let simT=0,ready=false;
 function frame(){
@@ -2020,14 +2426,15 @@ function step(dt){
   guns(dt);
   updateFoes(dt);
   updateStation(dt);
-  if(S.mode==='fly')stationCollide();
+  sortieTick(dt);
+  if(S.mode==='fly'&&!S.dead)stationCollide();
   rounds(dt);
   updateSparks(dt);
   pickTarget(dt);
   targetLock();
   sfx.hiss(S.mode==='fly'?S.static:0);
   shieldMesh.material.opacity=Math.min(0.35,S.hit*0.5+(S.hazLvl?0.08:0));
-  ship.visible=!cockpit();
+  ship.visible=!cockpit()&&!S.dead;
   updateCamera(dt,simT);
   moteLines.visible=S.mode==='fly';
   if(moteLines.visible)updateMotes(S.sheath);
@@ -2076,6 +2483,7 @@ bake(ms=>{
   let sum=0,mx=0,filled=0;for(let i=0;i<NV;i++){const d=DENS[i];sum+=d;if(d>mx)mx=d;if(d>DENS_BIAS)filled++;}
   window.__bake={ms:Math.round(ms),mean:sum/NV,max:mx,filled:filled/NV};
   $('loading').hidden=true;ready=true;clock.getDelta();
+  if(/[?&]lab\b/.test(location.search))enterLab();else showBrief(Math.min(SO.unlocked,SORTIES.length-1));
   window.__ready=true;
 });
 
@@ -2136,6 +2544,12 @@ window.__qa={
     let lit=0,mx=0;for(let i=0;i<buf.length;i+=4){const v=THREE.DataUtils.fromHalfFloat(buf[i]);if(v>0.01)lit++;if(v>mx)mx=v;}
     return {w,h,lit,mx,segs:fxGeo.drawRange.count/2,bolts:bolts.length};}
 };
+// the scene hooks above drive the lab: any of them (state readers aside) leaves the briefing for free flight first
+{const QA=window.__qa, RO=new Set(['state','stationState','fxProbe','tendrilPoint']);
+  for(const k of Object.keys(QA)){if(RO.has(k))continue;const fn=QA[k];QA[k]=function(){if(SO.mode!=='lab'&&SO.mode!=='sortie')enterLab();return fn.apply(this,arguments);};}
+  Object.assign(QA,{brief:showBrief,sortie:launch,lab:enterLab,
+    sortieState:()=>({mode:SO.mode,i:SO.i,result:SO.result,t:+SO.t.toFixed(1),kills:G.kills,spawned:SO.spawned,shots:SO.shots,hits:SO.hits,unlocked:SO.unlocked,
+      alive:foes.filter(f=>f.alive).length,hull:S.hull,station:ST.state,reactors:ST.reactors})});}
 resize();
 try{const v=parseFloat(localStorage.getItem('tauriReach.gameSpeed'));setTimeScale(v>0?v:1);}catch(e){setTimeScale(1);}
 frame();

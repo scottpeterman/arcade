@@ -4,14 +4,36 @@ Prototype for a space fighter game set inside a nebula around a young, violently
 
 ![Orbit view with an eruption underway](docs/screenshots/orbit-eruption.png)
 
+## Sorties
+
+The page opens on the briefing for the furthest sortie you have unlocked. Each sortie has its own splash: the codename, the briefing, the objective and conditions, and the target turning in its own view over the live nebula. Clear a sortie to unlock the next; progress is kept in the browser (`?all` unlocks everything, `?lab` skips straight to free flight).
+
+![Briefing: First Light, with the BR-10 Shrike in the threat view](docs/screenshots/briefing-first-light.png)
+
+| # | Sortie | Objective | Up at once | Tauri-B |
+|---|---|---|---|---|
+| 1 | First Light | Splash 2 Shrikes (8 hp) | 1 | Quiet: eruptions every 13–19 s |
+| 2 | Dust Lane | Splash 4 Shrikes | 2 | Restless: 9–14 s |
+| 3 | Storm Front | Splash 4 Shrikes | 2 | Outburst: 3.5–6 s |
+| 4 | Shrike Pack | Splash 6 hardened Shrikes (13 hp) | 3 | 8–13 s |
+| 5 | Terminus | Kill the 4 reactors and watch the station fall into the star | 2 escorts, 1 at a time | 10–15 s |
+
+- **Briefing.** Enter or Launch flies it; ← → (or the chips along the top) pick another unlocked sortie; L drops into free flight.
+- **In flight.** The objective is the first chip on the bottom strip. Only as many bandits are put up as are left to splash, and one lost to the star is replaced. C, F and K are lab-only during a sortie; Abort sortie (bottom right) returns to the briefing.
+- **Shot down** ends the sortie: a death cam circles the wreck, then the debrief. **Debrief** shows time, kills (or reactors), hull and accuracy: Enter goes on, R flies it again, B returns to the briefing.
+
+**The briefing model.** The splash shows the BR-10 Shrike in full detail: 158 parts, about 10.5k triangles, with a stepped armored hull, cheek plates, a seven-barrel chin cannon, elevated nacelles with intake fans, and twin tails. It is too heavy for the dogfight, where the lighter in-game bandit stands in for it. It loads from `assets/br10-shrike.glb`, rebuilt by `assets/build_shrike.py` (trimesh). Its vertex colors are converted from sRGB, and each part gets a material by name: glowing exhausts, aux and RCS emitters, double-flash navs, and a dark glass canopy. Shrike Pack shows a three-ship echelon, and Terminus shows the station. If the file can't load, the briefing falls back to the in-game bandit mesh.
+
+![Briefing: Shrike Pack, the three-ship echelon](docs/screenshots/briefing-shrike-pack.png)
+
 ## Controls
 
 | Input | Action |
 |---|---|
-| C or Tab | Switch between orbit camera and flying the fighter |
+| C or Tab | Switch between orbit camera and flying the fighter (lab only) |
 | V | Cockpit or chase view while flying (cockpit is the default) |
 | H | Hide the controls card |
-| F | Trigger an eruption now |
+| F | Trigger an eruption now (lab only) |
 | 1 / 2 / 3 | Volume quality: low, medium, high |
 | W / S | Throttle up / down. The ship always flies forward; the throttle sets cruise speed (34–95) |
 | Arrows | Pitch and yaw |
@@ -24,7 +46,7 @@ Prototype for a space fighter game set inside a nebula around a young, violently
 | T | Next target |
 | M | Mute |
 | P | Pause (the sim stops, rendering continues, so screenshots stay clean) |
-| K | Launch the station assault (the Station button does the same) |
+| K | Launch the station assault (lab only; the Station button does the same) |
 | , / . | Game speed down / up 10% (also the Game speed slider, 10–100%, remembered per browser) |
 | Touch | Orbit: drag and pinch. Fly: left half drag steers, right half drag up/down is the throttle, Fire button shoots |
 
@@ -64,7 +86,7 @@ Game speed (10–100%) slows the whole simulation: bandits, rounds, your own rat
 
 **Guns.** Kinetic only, ported from Deckrunner. Four ports converge at the convergence range: alternating pairs fire fast, the linked quad fires all four at 1.5× damage, more slowly. Every shot adds heat; at 100 the guns lock until heat falls below 35. Rounds travel at 900 u/s for 0.8 s and inherit the ship's velocity. Hits are swept-segment tests from each round's previous position to its current one, so fast rounds can't tunnel through a fighter.
 
-**Bandits.** Two at a time, respawning 5 s after a kill. The airframe is a space-going close-support brawler on the A-10 pattern: straight thick wings with drooped tips, twin engine pods carried high on the aft fuselage, twin tails, and a rotary cannon out of the nose. It is slower and tougher than the player (10 hit points), and fires 6–9 round bursts from the nose gun. A small light kit makes it read at range: flickering engine exhausts, red wingtip navs, a double-flash tail strobe and a faint cockpit glow. Each one flies the same arcade model as the player: velocity follows the nose, and dust is drag. Its turn rate is limited and it rolls into its turns.
+**Bandits.** In free flight, two at a time, respawning 5 s after a kill; sorties set their own count and toughness. The airframe is a space-going close-support brawler on the A-10 pattern: straight thick wings with drooped tips, twin engine pods carried high on the aft fuselage, twin tails, and a rotary cannon out of the nose. It is slower and tougher than the player (10 hit points), and fires 6–9 round bursts from the nose gun. A small light kit makes it read at range: flickering engine exhausts, red wingtip navs, a double-flash tail strobe and a faint cockpit glow. Each one flies the same arcade model as the player: velocity follows the nose, and dust is drag. Its turn rate is limited and it rolls into its turns.
 
 ![Bandit, front quarter](docs/screenshots/bandit-front.png)
 ![Bandit from behind: the twin exhausts are what you see in a chase](docs/screenshots/bandit-rear.png)
@@ -87,7 +109,7 @@ Game speed (10–100%) slows the whole simulation: bandits, rounds, your own rat
 
 ## The station
 
-The final-sortie set piece, in the spirit of Deckrunner's starbase. Until progression is in, K or the Station button puts it on scope.
+The final-sortie set piece (Terminus), in the spirit of Deckrunner's starbase. In free flight, K or the Station button puts it on scope.
 
 ![The station: a spinning disc with spike pylons, window bands and four rim reactors](docs/screenshots/station-overview.png)
 
