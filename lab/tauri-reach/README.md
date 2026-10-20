@@ -20,7 +20,7 @@ The page opens on the briefing for the furthest sortie you have unlocked. Each s
 
 - **Briefing.** Enter or Launch flies it; ← → (or the chips along the top) pick another unlocked sortie; L drops into free flight.
 - **In flight.** The objective is the first chip on the bottom strip. Only as many bandits are put up as are left to splash, and one lost to the star is replaced. C, F and K are lab-only during a sortie; Abort sortie (bottom right) returns to the briefing.
-- **Shot down** ends the sortie: a death cam circles the wreck, then the debrief. **Debrief** shows time, kills (or reactors), hull and accuracy: Enter goes on, R flies it again, B returns to the briefing.
+- **Losing the fighter** ends the sortie: a death cam circles the wreck, then the debrief. The debrief names what got you: the Shrikes' guns, the star itself (flying into Tauri-B is fatal), plasma, a jet, a shock front, or the station's hull. **Debrief** shows time, kills (or reactors), hull and accuracy: Enter goes on, R flies it again, B returns to the briefing.
 
 **The briefing model.** The splash shows the BR-10 Shrike in full detail: 158 parts, about 10.5k triangles, with a stepped armored hull, cheek plates, a seven-barrel chin cannon, elevated nacelles with intake fans, and twin tails. It is too heavy for the dogfight, where the lighter in-game bandit stands in for it. It loads from `assets/br10-shrike.glb`, rebuilt by `assets/build_shrike.py` (trimesh). Its vertex colors are converted from sRGB, and each part gets a material by name: glowing exhausts, aux and RCS emitters, double-flash navs, and a dark glass canopy. Shrike Pack shows a three-ship echelon, and Terminus shows the station. If the file can't load, the briefing falls back to the in-game bandit mesh.
 
@@ -47,7 +47,7 @@ The page opens on the briefing for the furthest sortie you have unlocked. Each s
 | M | Mute |
 | P | Pause (the sim stops, rendering continues, so screenshots stay clean) |
 | K | Launch the station assault (lab only; the Station button does the same) |
-| , / . | Game speed down / up 10% (also the Game speed slider, 10–100%, remembered per browser) |
+| , / . | Game speed down / up 10% (also the Game speed slider, 40–160%, remembered per browser) |
 | Touch | Orbit: drag and pinch. Fly: left half drag steers, right half drag up/down is the throttle, Fire button shoots |
 
 ## Cockpit view
@@ -78,7 +78,7 @@ Near-field dust streaks sell speed and density from inside the volume. 700 motes
 
 The fighter never stops. The throttle sets a cruise speed between 34 and 95, and the engine holds it against the dust: dense dust still drags you below cruise, but never below 28. Shift boosts to 1.8× cruise. At the edge of the nebula the ship comes about on its own, turning harder the deeper you go, the way Deckrunner's ship swings round at the end of the hull.
 
-Game speed (10–100%) slows the whole simulation: bandits, rounds, your own rate of fire, eruptions and shock fronts. The stick and throttle stay at real-time rates, so at lower speeds you have more time to line up shots and dodge. The setting is kept in the browser between sessions.
+Game speed slows or speeds the whole simulation: bandits, rounds, your own rate of fire, eruptions and shock fronts. 100% is the default and sits mid-slider; it runs the sim at a quarter of its raw rate, which is where it plays well. The slider goes from 40% to 160%. The stick and throttle stay at real-time rates, so at lower speeds you have more time to line up shots and dodge. The setting is kept in the browser between sessions.
 
 ## Combat
 

@@ -235,7 +235,7 @@ body.briefing #bracket,body.briefing #ctl,body.briefing #pausev,body.briefing #h
   <button type="button" id="bSorties">Sorties</button>
   <button type="button" id="bAbort" hidden>Abort sortie</button>
   <div id="gs"><div class="top"><span>Game speed</span><b id="gsv">100%</b></div>
-    <input type="range" id="gsr" min="10" max="100" step="5" value="100" aria-label="Game speed">
+    <input type="range" id="gsr" min="40" max="160" step="10" value="100" aria-label="Game speed">
     <div class="keys2">, slower · . faster</div></div>
   <button type="button" id="bQual">Volume <b>1-3</b></button>
 </div>
@@ -1009,18 +1009,21 @@ function resize(){
   camera.aspect=w/h;camera.updateProjectionMatrix();
   sizeHud();
 }
-// game speed: scales the whole simulation (bandits, rounds, eruptions, your guns), 10-100%, remembered per browser
-function setTimeScale(v){
-  v=Math.round(Math.max(0.1,Math.min(1,v))*20)/20;S.ts=v;
-  const pct=Math.round(v*100)+'%';$('tsv').textContent=pct;$('gsv').textContent=pct;$('gsr').value=Math.round(v*100);
-  try{localStorage.setItem('tauriReach.gameSpeed',String(v));}catch(e){}
+// game speed: scales the whole simulation (bandits, rounds, eruptions, your guns), remembered per browser.
+// Calibrated so 100% (the default, mid-slider) is a quarter of raw sim speed; the slider runs 40-160% in 10% steps.
+const GS_BASE=0.25, GS_MIN=0.4, GS_MAX=1.6;
+const gsPct=()=>Math.round(S.ts/GS_BASE*100);
+function setTimeScale(v){ // v is the raw sim rate (GS_BASE = 100%)
+  v=Math.round(Math.max(GS_MIN,Math.min(GS_MAX,v/GS_BASE))*10)/10*GS_BASE;S.ts=v;
+  const pct=gsPct()+'%';$('tsv').textContent=pct;$('gsv').textContent=pct;$('gsr').value=gsPct();
+  try{localStorage.setItem('tauriReach.gameSpeed2',String(v));}catch(e){}
 }
 function setPaused(on){
   S.paused=!!on;$('pausev').hidden=!S.paused;
   mouse.dx=mouse.dy=0;G.mouseFire=false;  // no stored stick input or held trigger on resume
   if(S.paused)sfx.hiss(0);
 }
-function stepTimeScale(d){setTimeScale(S.ts+d*0.1);}
+function stepTimeScale(d){setTimeScale(S.ts+d*0.1*GS_BASE);}
 function setQuality(i){qi=i;volMat.uniforms.uSteps.value=QUAL[qi].steps;$('qualv').textContent=QUAL[qi].name;resize();}
 window.addEventListener('resize',resize);
 
@@ -1128,7 +1131,7 @@ $('bStation').addEventListener('click',()=>spawnStation());
 $('bSorties').addEventListener('click',()=>showBrief(SO.i));
 $('bAbort').addEventListener('click',()=>showBrief(SO.i));
 $('bQual').addEventListener('click',()=>setQuality((qi+1)%3));
-$('gsr').addEventListener('input',e=>setTimeScale(e.target.value/100));
+$('gsr').addEventListener('input',e=>setTimeScale(e.target.value/100*GS_BASE));
 $('gsr').addEventListener('keydown',e=>e.stopPropagation()); // arrow keys on the slider must not fly the ship
 $('gsr').addEventListener('change',e=>e.target.blur()); // hand the keys back to the stick once set
 $('gs').addEventListener('pointerdown',e=>e.stopPropagation());
@@ -1222,13 +1225,14 @@ function flight(dt,time){
   if(S.vel.length()>SPD_HI*boost)S.vel.setLength(SPD_HI*boost);
   ship.position.addScaledVector(S.vel,dt);
   const r=ship.position.length();
-  if(r<R_STAR+3){ship.position.setLength(R_STAR+3);S.vel.copy(ship.position).setLength(25);damage(40,true);}
+  if(r<R_STAR+3){ship.position.setLength(R_STAR+3);S.vel.copy(ship.position).setLength(25);damage(999,true,'star');}
   if(r>RN*0.96){_tmp.copy(ship.position).divideScalar(r);S.vel.addScaledVector(_tmp,-Math.min(6*(r-RN*0.96),120)*dt);}
   ship.quaternion.copy(S.q);
   const eng=ship.userData.eng,es=0.7+(0.3+thrust*0.7)*boost*0.9*(fly?1:0)+Math.random()*0.12;eng[0].scale.setScalar(es);eng[1].scale.setScalar(es);
 }
-function damage(amount,direct){
+function damage(amount,direct,cause){
   if(S.mode!=='fly'||S.dead||SO.result==='won')return; // the parked ship in orbit view is scenery; a won sortie is over
+  S.cause=cause||'guns';
   let a=amount;
   if(S.shield>0&&!direct){const s=Math.min(S.shield,a);S.shield-=s;a-=s;}
   else if(S.shield>0){const s=Math.min(S.shield,a*0.5);S.shield-=s;a-=s;}
@@ -1267,10 +1271,10 @@ function hazards(dt){
   const jetNear=ay>R_STAR?Math.exp(-Math.max(jax-jw,0)/10)*smooth(R_STAR,R_STAR*2.5,ay)*smooth(JET_LEN+10,JET_LEN*0.55,ay):0;
   if(jet>0.3){S.vel.y+=Math.sign(p.y)*90*dt;}
   S.jetNear=jetNear;
-  if(core>0){damage(70*dt,true);S.haz='PLASMA CONTACT';S.hazLvl=2;}
-  else if(jet>0.3){damage(55*dt,true);S.haz='JET CONTACT';S.hazLvl=2;}
-  else if(frontHit>0.2){damage(40*frontHit*dt,false);S.haz='SHOCK FRONT';S.hazLvl=2;}
-  else if(sheath>0.25){damage(28*sheath*dt,false);S.haz='IONIZED SHEATH';S.hazLvl=1;}
+  if(core>0){damage(70*dt,true,'plasma');S.haz='PLASMA CONTACT';S.hazLvl=2;}
+  else if(jet>0.3){damage(55*dt,true,'jet');S.haz='JET CONTACT';S.hazLvl=2;}
+  else if(frontHit>0.2){damage(40*frontHit*dt,false,'shock');S.haz='SHOCK FRONT';S.hazLvl=2;}
+  else if(sheath>0.25){damage(28*sheath*dt,false,'plasma');S.haz='IONIZED SHEATH';S.hazLvl=1;}
   else if(frontProx>0.3){S.haz='SHOCK INBOUND';S.hazLvl=1;}
   else{S.haz='CLEAR';S.hazLvl=0;S.shield=Math.min(100,S.shield+9*dt);}
   const want=Math.min(1,Math.max(core?1:0,jet>0.3?1:0,frontHit*0.95,frontProx*1.05,sheath*1.3,jetNear*0.75));
@@ -1871,7 +1875,7 @@ function stationCollide(){ // the player can't fly through the hull: pushed out,
   _s2.copy(n).transformDirection(ST.g.matrixWorld);
   P.addScaledVector(_s2,2.5);
   const vn=S.vel.dot(_s2);if(vn<0)S.vel.addScaledVector(_s2,-1.6*vn);
-  damage(Math.min(30,4+Math.abs(vn)*0.35),true);S.shake=Math.max(S.shake,0.5);
+  damage(Math.min(30,4+Math.abs(vn)*0.35),true,'station');S.shake=Math.max(S.shake,0.5);
 }
 function stationLights(){ // rim running lights, only while the station has power
   if(ST.state!=='armed')return;
@@ -1934,7 +1938,7 @@ function hud(){
   objChip();
   const al2=$('alert');
   if(flying&&S.edge&&G.downT<=0){al2.className='';al2.innerHTML='EDGE OF THE NEBULA<small>COMING ABOUT</small>';}
-  else if(flying&&G.downT>0){al2.className='hot';al2.innerHTML='SHOT DOWN<small>'+G.kills+' SPLASHED · '+G.deaths+' LOST</small>';}
+  else if(flying&&G.downT>0){al2.className='hot';al2.innerHTML=DEATH[S.cause||'guns'][0]+'<small>'+G.kills+' SPLASHED · '+G.deaths+' LOST</small>';}
   else if(flying&&S.frontGap!==null&&S.frontGap<160&&S.haz!=='SHOCK FRONT'){al2.className='hot';al2.innerHTML='SHOCK FRONT INBOUND<small>IMPACT IN '+S.frontEta.toFixed(1)+' S · '+S.frontGap.toFixed(0)+' OUT</small>';}
   else if(flying&&S.inPath!==null){al2.className='hot';al2.innerHTML='IN THE ERUPTION PATH<small>LIFTOFF IN '+S.inPath.toFixed(1)+' S · CLEAR THE CONE</small>';}
   else if(ar>0){let eta=1e9;for(const T of tend){if(T.state==='warn')eta=Math.min(eta,WARN-T.t+RISE);else if(T.state==='rise')eta=Math.min(eta,RISE-T.t);}
@@ -2066,7 +2070,7 @@ function drawHud(){
     if(Math.abs(y-cy)<th/2){const x=cx-tx;hx.fillStyle=hcol(HUDA,0.9);hx.beginPath();hx.moveTo(x+2,y);hx.lineTo(x+11,y-5);hx.lineTo(x+11,y+5);hx.closePath();hx.fill();}
     htext('THR '+Math.round(S.thr*100),cx-tx-32,cy+th/2+14,HUDG,'center',10);
   }
-  if(S.ts<1)htext('GAME SPEED '+Math.round(S.ts*100)+'%',cx,HH*0.80,HUDA,'center',12);
+  if(gsPct()!==100)htext('GAME SPEED '+gsPct()+'%',cx,HH*0.80,HUDA,'center',12);
   tape(cx+tx,ship.position.length(),'',1.2,'R★',1);
   // dust density bar under the speed box
   const dw=52, dx0=cx-tx-58;
@@ -2173,6 +2177,13 @@ function drawHud(){
    debrief the result, then on to the next sortie, again, or back to the briefing
    lab     the old free-flight sandbox: every key, endless bandits, the Station and Erupt buttons */
 const pad2=n=>String(n).padStart(2,'0');
+const DEATH={ // what killed you: headline and a line of advice for the debrief
+  guns:['SHOT DOWN','The Shrikes keep the Reach for now. Get back in the air.'],
+  star:['LOST TO TAURI-B','You flew into the star. Keep an eye on the R★ tape.'],
+  plasma:['CAUGHT IN THE PLASMA','An eruption took you. When the ERUPT diamond goes red, clear the cone.'],
+  jet:['LOST IN THE JET','The polar jets are lethal. Stay off the star\'s spin axis.'],
+  shock:['LOST TO THE SHOCK FRONT','BRACE means get out of its path, not ride it out.'],
+  station:['LOST ON THE HULL','The station\'s hull is solid. Fly the edge, not through it.']};
 function foeSlot(f){
   if(SO.mode==='lab')return f.id<2;
   if(SO.mode!=='sortie'||SO.result||S.dead)return false;
@@ -2276,8 +2287,9 @@ function showDebrief(){
     ['Hull',won?Math.max(0,Math.round(S.hull))+'':'Lost'],['Accuracy',acc]];
   const db=$('debrief');db.style.setProperty('--acc',won?d.acc:'255,90,74');
   $('dbk').textContent='SORTIE '+pad2(SO.i+1)+' // '+d.code;
-  $('dbh').textContent=won?(last?'CAMPAIGN COMPLETE':'SORTIE COMPLETE'):'SHOT DOWN';
-  $('dbsub').textContent=won?(last?'The station is gone and Tauri-B answered. The Reach is quiet.':'Next up: '+SORTIES[SO.i+1].code+'.'):'The Shrikes keep the Reach for now. Get back in the air.';
+  const why=DEATH[S.cause]||DEATH.guns;
+  $('dbh').textContent=won?(last?'CAMPAIGN COMPLETE':'SORTIE COMPLETE'):why[0];
+  $('dbsub').textContent=won?(last?'The station is gone and Tauri-B answered. The Reach is quiet.':'Next up: '+SORTIES[SO.i+1].code+'.'):why[1];
   $('dbstats').innerHTML=rows.map(([k,v])=>'<div><span class="lbl">'+k+'</span><span class="num">'+v+'</span></div>').join('');
   const btns=won&&!last?[['next','Next sortie','Enter'],['again','Fly it again','R'],['brief','Briefing','B']]
     :won?[['brief','Sortie select','Enter'],['again','Fly it again','R']]
@@ -2314,7 +2326,7 @@ function objChip(){
   if(SO.mode!=='sortie'){el.hidden=true;return;}
   el.hidden=false;const d=SO.def;let t,cls='obj';
   if(SO.result==='won'){t='SORTIE COMPLETE';cls='ok';}
-  else if(SO.result==='lost'){t='SHOT DOWN';cls='hot';}
+  else if(SO.result==='lost'){t=(DEATH[S.cause]||DEATH.guns)[0];cls='hot';}
   else if(d.kind==='station')t=ST.state==='dying'?'STATION FALLING':d.code+' · REACTORS '+(4-ST.reactors)+' / 4';
   else t=d.code+' · SPLASH '+G.kills+' / '+d.n;
   chip(el,cls,t);
@@ -2498,7 +2510,7 @@ window.__qa={
   aim:(yawDeg,pitchDeg)=>{S.q.setFromEuler(new THREE.Euler(pitchDeg/DEG,yawDeg/DEG,0,'YXZ'));},
   speed:(v)=>{_v.set(0,0,-1).applyQuaternion(S.q);S.vel.copy(_v).multiplyScalar(v);},
   advance:(sec)=>{S.rdt=1/30;for(let t=0;t<sec;t+=1/30){simT+=1/30;step(1/30);}},
-  timeScale:setTimeScale,pause:setPaused,
+  timeScale:(v)=>{S.ts=v;},pause:setPaused, // raw sim rate, unclamped (1 = full speed)
   station:spawnStation,
   stationState:()=>({state:ST.state,reactors:ST.reactors,pos:[ST.pos.x,ST.pos.y,ST.pos.z].map(v=>+v.toFixed(1)),r:+ST.pos.length().toFixed(1),heat:+ST.heat.toFixed(2),
     parts:ST.parts.map(p=>p.id+':'+(p.alive?p.hp:'x')).join(' ')}),
@@ -2551,7 +2563,7 @@ window.__qa={
     sortieState:()=>({mode:SO.mode,i:SO.i,result:SO.result,t:+SO.t.toFixed(1),kills:G.kills,spawned:SO.spawned,shots:SO.shots,hits:SO.hits,unlocked:SO.unlocked,
       alive:foes.filter(f=>f.alive).length,hull:S.hull,station:ST.state,reactors:ST.reactors})});}
 resize();
-try{const v=parseFloat(localStorage.getItem('tauriReach.gameSpeed'));setTimeScale(v>0?v:1);}catch(e){setTimeScale(1);}
+try{const v=parseFloat(localStorage.getItem('tauriReach.gameSpeed2'));setTimeScale(v>0?v:GS_BASE);}catch(e){setTimeScale(GS_BASE);}
 frame();
 })();
 </script>
