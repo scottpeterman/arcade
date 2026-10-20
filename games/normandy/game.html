@@ -2170,6 +2170,8 @@ async function buildWorldWhenReady(){
     pl.x = 0; pl.z = -21.2; pl.fy = BOAT.deck;
     setMode('title');
     window.__qa.ready = true;
+    // ?start=1 skips the title screen (used for the arcade thumbnail; sound stays off until a tap)
+    try { if (new URLSearchParams(location.search).has('start')){ newGame(); game.msgs = []; } } catch (err) {}
   } catch (err){
     console.error(err);
     flash('COULD NOT LOAD THE BEACH', 30, WARN);

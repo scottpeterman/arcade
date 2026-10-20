@@ -40,6 +40,20 @@
       "shelf": "featured"
     },
     {
+      "slug": "normandy",
+      "title": "Normandy",
+      "tagline": "Omaha, Dog Green, 6 June 1944. Ramp down, hedgehog to hedgehog, then take the casemate.",
+      "path": "games/normandy/",
+      "thumb": "games/normandy/thumb.webp",
+      "tags": ["shooter", "3d"],
+      "input": ["keyboard", "mouse", "touch"],
+      "players": "1",
+      "shelf": "featured",
+      "readme": "games/normandy/README.md",
+      "thumb_query": "?stage=2&start=1",
+      "thumb_wait": 5000
+    },
+    {
       "slug": "vector-command",
       "title": "Vector Command",
       "tagline": "Defense console. Hold the line against incoming waves.",

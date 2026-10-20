@@ -29,7 +29,7 @@ python3 tools/slice_sprites.py src/1000011203.png build/soldier_blue --add down=
 python3 tools/build.py ../freedoom
 ```
 
-This writes `dist/index.html` (full page) and `dist/artifact.html` (fragment). The build needs Pillow, numpy and scipy.
+This writes `index.html` (the playable page, also copied to `dist/index.html`) and `dist/artifact.html` (fragment for the Claude artifact). Commit `index.html`: the arcade repo's `.gitignore` drops anything under `dist/`. The build needs Pillow, numpy and scipy.
 
 `slice_sprites.py` finds cells as connected components and assigns each one to the nearest row and column label, because the sheet is not on a fixed grid. It removes red spatter, then anchors each frame helmet-over-feet. The debug sheet shows every frame on its anchor.
 
@@ -55,7 +55,7 @@ Skip ahead for testing or practice. Later stages start with the ramp down; stage
 | 4 | gap | through the gap, riflemen to your left |
 | 5 | bunker | beside the casemate |
 
-Choose with `?stage=4` or `?stage=gap` (local file, GitHub Pages), `#stage4` or `#gap` (also works for the Claude artifact link), the 0–5 keys on the title screen, or by tapping the STAGE line on a phone.
+Choose with `?stage=4` or `?stage=gap` (local file, GitHub Pages), `#stage4` or `#gap` (also works for the Claude artifact link), the 0–5 keys on the title screen, or by tapping the STAGE line on a phone. Add `&start=1` (or `?start=1`) to skip the title screen.
 
 ## Controls
 

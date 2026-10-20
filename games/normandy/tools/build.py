@@ -127,6 +127,9 @@ def main():
     full = ('<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n'
             '<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">\n' + frag + '\n</html>\n')
     open(os.path.join(ROOT, 'dist', 'index.html'), 'w').write(full)
+    # the playable page also sits at the game root, where the arcade menu links and
+    # where a repo-wide 'dist' ignore rule can't drop it
+    open(os.path.join(ROOT, 'index.html'), 'w').write(full)
     print(f'dist/index.html {len(full) / 1024:.0f} KB, {len(tex)} textures, {len(spr["f"])} sprite frames')
 
 
