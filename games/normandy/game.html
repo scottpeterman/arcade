@@ -233,7 +233,7 @@ function vnoise(x, z){
 }
 const GAP = { x0: -8, x1: -4, z0: 90, z1: 104 };
 function inGap(x, z){ return x >= GAP.x0 && x <= GAP.x1 && z >= GAP.z0 && z <= GAP.z1; }
-function hfun(x, z){
+function beachH(x, z){
   if (inGap(x, z)) return 2.15 + (z - GAP.z0) / (GAP.z1 - GAP.z0) * 2.05;
   let h = profile(z);
   if (z > -20 && z < 88) h += vnoise(x / 9, z / 7) * 0.22 + Math.sin(x * 0.21 + z * 0.9) * 0.025;
@@ -241,16 +241,29 @@ function hfun(x, z){
   else if (z > 101.2 && z < 126) h += vnoise(x / 6, z / 6) * 0.12;
   return h;
 }
-const XS = [], ZS = [];
-for (let x = -160; x < -84; x += 8) XS.push(x);
-for (let x = -84; x <= 84; x += 4) XS.push(x);
-for (let x = 92; x <= 160; x += 8) XS.push(x);
-for (let z = -100; z < 86; z += 4) ZS.push(z);
-for (let z = 86; z < 118; z += 2){ ZS.push(z); if (z === 100) ZS.push(101.2); }
-for (let z = 118; z <= 184; z += 4) ZS.push(z);
-const NX = XS.length, NZ = ZS.length;
-const TH = new Float32Array(NX * NZ);
-for (let j = 0; j < NZ; j++) for (let i = 0; i < NX; i++) TH[j*NX + i] = hfun(XS[i], ZS[j]);
+function beachGrid(){
+  const xs = [], zs = [];
+  for (let x = -160; x < -84; x += 8) xs.push(x);
+  for (let x = -84; x <= 84; x += 4) xs.push(x);
+  for (let x = 92; x <= 160; x += 8) xs.push(x);
+  for (let z = -100; z < 86; z += 4) zs.push(z);
+  for (let z = 86; z < 118; z += 2){ zs.push(z); if (z === 100) zs.push(101.2); }
+  for (let z = 118; z <= 184; z += 4) zs.push(z);
+  return { xs, zs };
+}
+// the heightfield of the level being played: LV.grid() gives the columns and rows, LV.hfun
+// the heights. LV.shift(z), when a level has one, slides each row sideways so the columns
+// follow a winding feature (the draw's road); within a band between two rows the mapping
+// is affine, so the triangles stay planar and terrainAt matches what is drawn.
+let XS = [], ZS = [], SH = new Float32Array(0), NX = 0, NZ = 0, TH = new Float32Array(0);
+function buildTerrain(){
+  const gr = LV.grid();
+  XS = gr.xs; ZS = gr.zs; NX = XS.length; NZ = ZS.length;
+  SH = new Float32Array(NZ);
+  for (let j = 0; j < NZ; j++) SH[j] = LV.shift ? LV.shift(ZS[j]) : 0;
+  TH = new Float32Array(NX * NZ);
+  for (let j = 0; j < NZ; j++) for (let i = 0; i < NX; i++) TH[j*NX + i] = LV.hfun(XS[i] + SH[j], ZS[j]);
+}
 function bsearch(arr, v){
   let lo = 0, hi = arr.length - 2;
   if (v <= arr[0]) return 0;
@@ -259,8 +272,9 @@ function bsearch(arr, v){
   return lo;
 }
 function terrainAt(x, z){
-  const i = bsearch(XS, x), j = bsearch(ZS, z);
-  const fx = clamp((x - XS[i]) / (XS[i+1] - XS[i]), 0, 1), fz = clamp((z - ZS[j]) / (ZS[j+1] - ZS[j]), 0, 1);
+  const j = bsearch(ZS, z), fz = clamp((z - ZS[j]) / (ZS[j+1] - ZS[j]), 0, 1);
+  const u = x - (SH[j] + (SH[j+1] - SH[j]) * fz), i = bsearch(XS, u);
+  const fx = clamp((u - XS[i]) / (XS[i+1] - XS[i]), 0, 1);
   const h00 = TH[j*NX + i], h10 = TH[j*NX + i + 1], h01 = TH[(j+1)*NX + i], h11 = TH[(j+1)*NX + i + 1];
   return fx >= fz ? h00 + (h10 - h00)*fx + (h11 - h10)*fz : h00 + (h11 - h01)*fx + (h01 - h00)*fz;
 }
@@ -268,10 +282,11 @@ function terrainAt(x, z){
 // ===========================================================================
 // SHADOW MAP (DECKRUNNER) — S(x,z): height below which a point is in shadow
 // ===========================================================================
-const SG = (() => {
-  const res = 0.5, x0 = -96, z0 = -40, w = 384, h = 344;
+let SG = null;
+function makeSG(o){
+  const { res, x0, z0, w, h } = o;
   return { x0, z0, w, h, res, H: new Float32Array(w*h).fill(-1e9), T: new Float32Array(w*h), S: new Float32Array(w*h).fill(-1e9) };
-})();
+}
 function shStamp(x, z, y, r){
   const G = SG, i0 = Math.floor((x - r - G.x0) / G.res), i1 = Math.floor((x + r - G.x0) / G.res);
   const j0 = Math.floor((z - r - G.z0) / G.res), j1 = Math.floor((z + r - G.z0) / G.res);
@@ -310,7 +325,7 @@ function shadowAt(x, z){
 // ===========================================================================
 // GEOMETRY — DECKRUNNER's polygon format: [gx,gy,gz,u,v,mx,mz,y] per vertex
 // ===========================================================================
-const POLYS = [], WATERP = [], BUNKERP = [];
+const POLYS = [], WATERP = [];
 let dynPolys = [];
 function mkPoly(pts, tex, nrm, uvf, fl){
   fl = fl || {};
@@ -385,108 +400,77 @@ function oboxGeo(list, c, A, Bv, Cv, ha, hb, hc, tex){
 const BOXES = [];       // collision + line of sight: {x0,x1,y0,y1,z0,z1, los, move}
 const HEDGES = [];      // {x, z, yaw}
 const STAKES = [];      // {x, z}
-const BUNKER = { x0: 14, x1: 26, z0: 112, z1: 120, yb: 4.2, yt: 7.4, bev: 0.8,
-                 slit: { x0: 17, x1: 23, y0: 5.35, y1: 6.0, z: 112 }, door: { x0: 18.2, x1: 19.8, y1: 6.25 },
-                 mg: [20, 5.68, 111.55], alive: true };
+const TREES = [];       // {x, z, r, top}: trunks block movement and fire, crowns don't
+const EMPS = [];        // casemates and turrets of the level being played
+const MGS = [];         // machine guns of the level being played
+
+// A casemate faces seaward (-z): its firing slit is cut in the z0 face and the optional
+// rear door in the z1 face. The crew stand at slitPos (head and shoulders in the slit)
+// and, once a door opens, at doorPos.
+function mkCasemate(o){ return Object.assign({ kind: 'casemate', alive: true, doorOpen: false, takeT: 0, polys: [], recess: [], doorPoly: null, door: null }, o); }
+const BUNKER = mkCasemate({ x0: 14, x1: 26, z0: 112, z1: 120, yb: 4.2, yt: 7.4, bev: 0.8,
+                 slit: { x0: 17, x1: 23, y0: 5.35, y1: 6.0 }, door: { x0: 18.2, x1: 19.8, y1: 6.25 },
+                 mg: [20, 5.68, 111.55], slitPos: { gun: [20, 112.75], load: [21.4, 113.0] }, doorPos: { gun: [18.7, 119.35], load: [19.45, 118.75] },
+                 doorAt: [19, 121], smoke: [20, 6, 111.8], tex: 'bunker', silenced: 'STRONGPOINT SILENCED', taken: 'CASEMATE TAKEN' });
 const BOAT = { x0: -1.75, x1: 1.75, z0: -24, z1: -13, deck: 0.3, hinge: -13, rampLen: 1.95, ramp: Math.PI/2 };
+
+// machine gun: bursts and pauses; with the player in its arc and in sight it tracks him with
+// lag, otherwise it sweeps its field. face is the yaw it looks along, arc the half-width.
+function mkMG(o){
+  const m = Object.assign({ arc: 1.05, range: 170, rate: 15, burst: [2, 3], idle: [1.8, 2.7], track: 0.3, sweep: 0.85, reach: [30, 55], dmg: 9, manned: () => true }, o);
+  resetMG(m); return m;
+}
+function resetMG(m){ Object.assign(m, { yaw: m.face, pitch: -0.06, state: 'idle', t: 0, sweepT: 0, sees: false, fireAcc: 0, burstN: 0, lastSeen: -9 }); }
 
 function rngSeed(s){ return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; }; }
 
-function buildWorld(){
-  const R = rngSeed(1944);
-  // terrain triangles
-  for (let j = 0; j < NZ - 1; j++) for (let i = 0; i < NX - 1; i++){
-    const P = (ii, jj) => [XS[ii], TH[jj*NX + ii], ZS[jj]];
-    const v00 = P(i, j), v10 = P(i + 1, j), v01 = P(i, j + 1), v11 = P(i + 1, j + 1);
-    for (const tri of [[v00, v11, v10], [v00, v01, v11]]){
-      const my = Math.max(tri[0][1], tri[1][1], tri[2][1]);
-      if (my < -0.3) continue;
-      let n = nrmOf(tri[0], tri[1], tri[2]); if (n[1] < 0) n = [-n[0], -n[1], -n[2]];
-      const cx = (tri[0][0] + tri[1][0] + tri[2][0]) / 3, cz = (tri[0][2] + tri[1][2] + tri[2][2]) / 3, cy = (tri[0][1] + tri[1][1] + tri[2][1]) / 3;
-      let tex;
-      if (inGap(cx, cz) && cz > 92) tex = 'shingle';
-      else if (cz >= 128) tex = 'grass';
-      else if (cz >= 101.2) tex = 'turf';
-      else if (cz >= 87) tex = 'shingle';
-      else tex = cy < 0.55 ? 'wetsand' : 'sand';
-      POLYS.push(mkPoly(tri, tex, n, uvGround));
-    }
-  }
-  // sea: near grid, then far plates out to the horizon
-  for (let z = -100; z < 30; z += 10) for (let x = -160; x < 160; x += 16){
-    const p = mkPoly([[x, 0, z], [x + 16, 0, z], [x + 16, 0, z + 10], [x, 0, z + 10]], 'water0', [0, 1, 0], (x, y, z) => [x * 12, z * 12]);
-    p.water = true; POLYS.push(p); WATERP.push(p);
-  }
-  for (const [x0, x1, z0, z1] of [[-520, 520, -520, -100], [-520, -160, -100, 60], [160, 520, -100, 60]]){
-    const p = mkPoly([[x0, 0, z0], [x1, 0, z0], [x1, 0, z1], [x0, 0, z1]], 'water0', [0, 1, 0], (x, y, z) => [x * 12, z * 12]);
-    p.water = true; POLYS.push(p); WATERP.push(p);
-  }
-  // seawall, bevel-topped, with the exit gap at x -8..-4
-  for (const [x0, x1] of [[-160, GAP.x0], [GAP.x1, 160]]){
-    boxGeo(POLYS, x0, 1.2, 100, x1, 5.0, 101.2, 'seawall', 'roof', { bev: 0.35 });
-    BOXES.push({ x0, x1, y0: 1.2, y1: 5.0, z0: 100, z1: 101.2, los: true, move: true, kind: 'concrete' });
-  }
-  // the casemate: front face built round the firing slit, recess, rear door
-  {
-    const B = BUNKER, s = B.slit, list = [];
-    boxGeo(list, B.x0, B.yb, B.z0, B.x1, B.yt, B.z1, 'bunker', 'roof', { bev: B.bev, skip: { f: true, b: true } });
-    const yw = B.yt - B.bev, z = B.z0;
-    const fwall = (x0, x1, y0, y1) => wall(list, x0, z, x1, z, y0, y1, 'bunker');
-    fwall(B.x0, B.x1, B.yb, s.y0);
-    fwall(B.x0, B.x1, s.y1, yw);
-    fwall(B.x0, s.x0, s.y0, s.y1);
-    fwall(s.x1, B.x1, s.y0, s.y1);
-    const dz = 1.1;
-    hrect(list, s.x0, z, s.x1, z + dz, s.y0, 'bunker', { inner: true });                 // sill
-    hrect(list, s.x0, z, s.x1, z + dz, s.y1, 'bunker', { inner: true, dark: true }, true);  // lintel
-    wall(list, s.x0, z + dz, s.x0, z, s.y0, s.y1, 'bunker', { inner: true, dark: true });
-    wall(list, s.x1, z, s.x1, z + dz, s.y0, s.y1, 'bunker', { inner: true, dark: true });
-    wall(list, s.x0, z + dz, s.x1, z + dz, s.y0, s.y1, 'dark', { inner: true, dark: true });
-    // MG barrel in the slit
-    oboxGeo(list, [B.mg[0], B.mg[1], z + 0.15], [0, 0, 1], [0, 1, 0], [1, 0, 0], 0.55, 0.05, 0.05, 'dark');
+// the casemate: front face built round the firing slit, recess, optional rear door
+function buildCasemate(B){
+  const s = B.slit, list = [], T = B.tex;
+  B.polys = []; B.recess = []; B.doorPoly = null;
+  boxGeo(list, B.x0, B.yb, B.z0, B.x1, B.yt, B.z1, T, 'roof', { bev: B.bev, skip: { f: true, b: !!B.door } });
+  const yw = B.yt - B.bev, z = B.z0;
+  const fwall = (x0, x1, y0, y1) => wall(list, x0, z, x1, z, y0, y1, T);
+  fwall(B.x0, B.x1, B.yb, s.y0);
+  fwall(B.x0, B.x1, s.y1, yw);
+  fwall(B.x0, s.x0, s.y0, s.y1);
+  fwall(s.x1, B.x1, s.y0, s.y1);
+  const dz = 1.1;
+  hrect(list, s.x0, z, s.x1, z + dz, s.y0, T, { inner: true });                 // sill
+  hrect(list, s.x0, z, s.x1, z + dz, s.y1, T, { inner: true, dark: true }, true);  // lintel
+  wall(list, s.x0, z + dz, s.x0, z, s.y0, s.y1, T, { inner: true, dark: true });
+  wall(list, s.x1, z, s.x1, z + dz, s.y0, s.y1, T, { inner: true, dark: true });
+  wall(list, s.x0, z + dz, s.x1, z + dz, s.y0, s.y1, 'dark', { inner: true, dark: true });
+  // MG barrel in the slit
+  oboxGeo(list, [B.mg[0], B.mg[1], z + 0.15], [0, 0, 1], [0, 1, 0], [1, 0, 0], 0.55, 0.05, 0.05, 'dark');
+  if (B.door){
     const d = B.door, z1 = B.z1, DR = 1.7, zr = z1 - DR;
     // rear wall built round the doorway
-    wall(list, B.x1, z1, d.x1, z1, B.yb, yw, 'bunker');
-    wall(list, d.x0, z1, B.x0, z1, B.yb, yw, 'bunker');
-    wall(list, d.x1, z1, d.x0, z1, d.y1, yw, 'bunker');
+    wall(list, B.x1, z1, d.x1, z1, B.yb, yw, T);
+    wall(list, d.x0, z1, B.x0, z1, B.yb, yw, T);
+    wall(list, d.x1, z1, d.x0, z1, d.y1, yw, T);
     // the door leaf: steel, shut until you walk up to it
     quad(list, [d.x1, B.yb, z1 + 0.02], [d.x0, B.yb, z1 + 0.02], [d.x0, d.y1, z1 + 0.02], [d.x1, d.y1, z1 + 0.02], 'steel', [0, 0, 1], uvWallX(d.y1));
     B.doorPoly = list[list.length - 1];
     // the passage behind it, drawn only once the door is open
     const rec = [];
-    hrect(rec, d.x0, zr, d.x1, z1, B.yb, 'bunker', { inner: true, dark: true });
-    hrect(rec, d.x0, zr, d.x1, z1, d.y1, 'bunker', { inner: true, dark: true }, true);
-    wall(rec, d.x0, zr, d.x0, z1, B.yb, d.y1, 'bunker', { inner: true, dark: true });
-    wall(rec, d.x1, z1, d.x1, zr, B.yb, d.y1, 'bunker', { inner: true, dark: true });
+    hrect(rec, d.x0, zr, d.x1, z1, B.yb, T, { inner: true, dark: true });
+    hrect(rec, d.x0, zr, d.x1, z1, d.y1, T, { inner: true, dark: true }, true);
+    wall(rec, d.x0, zr, d.x0, z1, B.yb, d.y1, T, { inner: true, dark: true });
+    wall(rec, d.x1, z1, d.x1, zr, B.yb, d.y1, T, { inner: true, dark: true });
     wall(rec, d.x1, zr, d.x0, zr, B.yb, d.y1, 'dark', { inner: true, dark: true });
     for (const p of rec){ p.hidden = true; list.push(p); }
     B.recess = rec;
-    for (const p of list){ POLYS.push(p); BUNKERP.push(p); }
-    BOXES.push({ x0: B.x0, x1: B.x1, y0: B.yb - 1, y1: B.yt, z0: B.z0, z1: B.z1, los: true, move: true, kind: 'concrete', bunker: true });
   }
-  // landing craft (LCVP): hull walls, deck, coxswain's stand; the ramp is dynamic
-  {
-    const b = BOAT;
-    boxGeo(POLYS, b.x0, -0.6, b.z0, b.x0 + 0.14, 2.0, b.z1, 'hull', 'steel');
-    boxGeo(POLYS, b.x1 - 0.14, -0.6, b.z0, b.x1, 2.0, b.z1, 'hull', 'steel');
-    boxGeo(POLYS, b.x0, -0.6, b.z0 - 0.14, b.x1, 2.0, b.z0, 'hull', 'steel');
-    boxGeo(POLYS, 0.7, b.deck, b.z0, b.x1 - 0.14, 2.35, b.z0 + 1.6, 'hull', 'steel');
-    hrect(POLYS, b.x0 + 0.14, b.z0, b.x1 - 0.14, b.z1, b.deck, 'deck');
-    BOXES.push({ x0: b.x0, x1: b.x0 + 0.14, y0: -0.6, y1: 2.0, z0: b.z0, z1: b.z1, los: true, move: true, kind: 'steel' });
-    BOXES.push({ x0: b.x1 - 0.14, x1: b.x1, y0: -0.6, y1: 2.0, z0: b.z0, z1: b.z1, los: true, move: true, kind: 'steel' });
-    BOXES.push({ x0: b.x0, x1: b.x1, y0: -0.6, y1: 2.0, z0: b.z0 - 0.14, z1: b.z0, los: true, move: true, kind: 'steel' });
-    BOXES.push({ x0: 0.7, x1: b.x1, y0: b.deck, y1: 2.35, z0: b.z0, z1: b.z0 + 1.6, los: true, move: true, kind: 'steel' });
-  }
-  // Czech hedgehogs: three beams, the (1,1,1) diagonal stood upright, on staggered rows
+  for (const p of list){ POLYS.push(p); B.polys.push(p); }
+  BOXES.push({ x0: B.x0, x1: B.x1, y0: B.yb - 1, y1: B.yt, z0: B.z0, z1: B.z1, los: true, move: true, kind: 'concrete', bunker: true });
+  EMPS.push(B);
+}
+
+// Czech hedgehogs: three beams, the (1,1,1) diagonal stood upright
+function buildHedgehogs(){
   const up = [1/Math.sqrt(3), 1/Math.sqrt(3), 1/Math.sqrt(3)], a = [Math.SQRT1_2, -Math.SQRT1_2, 0];
   const b2 = [up[1]*a[2] - up[2]*a[1], up[2]*a[0] - up[0]*a[2], up[0]*a[1] - up[1]*a[0]];
-  const rows = [[16, 9], [30, 8], [44, 9], [58, 8], [72, 7], [84, 6]];
-  for (const [rz, n] of rows) for (let k = 0; k < n; k++){
-    const x = -46 + (k + 0.5) * 92 / n + (R() - 0.5) * 7, z = rz + (R() - 0.5) * 6;
-    if (Math.abs(x) < 3 && rz < 20) continue;
-    HEDGES.push({ x, z, yaw: R() * TAU });
-  }
-  HEDGES.push({ x: 2.5, z: 15.5, yaw: 0.7 });            // first cover straight off the ramp
   const L = 2.6, hl = L / 2, cy = hl * Math.sin(Math.asin(1/Math.sqrt(3)));
   for (const hdg of HEDGES){
     const cyw = Math.cos(hdg.yaw), syw = Math.sin(hdg.yaw), gy = terrainAt(hdg.x, hdg.z);
@@ -500,6 +484,90 @@ function buildWorld(){
     }
     hdg.top = gy + cy * 2;
   }
+}
+
+let builtLv = null;
+function buildWorld(){
+  for (const a of [POLYS, WATERP, BOXES, HEDGES, STAKES, TREES, MEDS, AMMOS, EMPS, MGS]) a.length = 0;
+  buildTerrain();
+  SG = makeSG(LV.sg);
+  const R = rngSeed(LV.seed);
+  // terrain triangles
+  for (let j = 0; j < NZ - 1; j++) for (let i = 0; i < NX - 1; i++){
+    const P = (ii, jj) => [XS[ii] + SH[jj], TH[jj*NX + ii], ZS[jj]];
+    const v00 = P(i, j), v10 = P(i + 1, j), v01 = P(i, j + 1), v11 = P(i + 1, j + 1);
+    for (const tri of [[v00, v11, v10], [v00, v01, v11]]){
+      const my = Math.max(tri[0][1], tri[1][1], tri[2][1]);
+      if (my < -0.3) continue;
+      let n = nrmOf(tri[0], tri[1], tri[2]); if (n[1] < 0) n = [-n[0], -n[1], -n[2]];
+      const cx = (tri[0][0] + tri[1][0] + tri[2][0]) / 3, cz = (tri[0][2] + tri[1][2] + tri[2][2]) / 3, cy = (tri[0][1] + tri[1][1] + tri[2][1]) / 3;
+      POLYS.push(mkPoly(tri, LV.groundTex(cx, cy, cz, n), n, uvGround));
+    }
+  }
+  // sea: near grid, then far plates out to the horizon
+  const S = LV.sea;
+  for (let z = S.z0; z < S.z1; z += 10) for (let x = S.x0; x < S.x1; x += 16){
+    const p = mkPoly([[x, 0, z], [x + 16, 0, z], [x + 16, 0, z + 10], [x, 0, z + 10]], 'water0', [0, 1, 0], (x, y, z) => [x * 12, z * 12]);
+    p.water = true; POLYS.push(p); WATERP.push(p);
+  }
+  for (const [x0, x1, z0, z1] of [[-520, 520, -520, S.z0], [-520, S.x0, S.z0, S.zf], [S.x1, 520, S.z0, S.zf]]){
+    const p = mkPoly([[x0, 0, z0], [x1, 0, z0], [x1, 0, z1], [x0, 0, z1]], 'water0', [0, 1, 0], (x, y, z) => [x * 12, z * 12]);
+    p.water = true; POLYS.push(p); WATERP.push(p);
+  }
+  LV.build(R);
+  for (const m of MEDS) m.gy = Math.max(terrainAt(m.x, m.z), 0.02);
+  for (const m of AMMOS) m.gy = Math.max(terrainAt(m.x, m.z), 0.02);
+  // shadow heights: terrain everywhere, boxes on top
+  const G = SG;
+  for (let j = 0; j < G.h; j++) for (let i = 0; i < G.w; i++){
+    const k = j*G.w + i, t = terrainAt(G.x0 + (i + 0.5)*G.res, G.z0 + (j + 0.5)*G.res);
+    G.T[k] = t; if (t > G.H[k]) G.H[k] = t;
+  }
+  for (const b of BOXES) if (!b.noShadow) shBox(b);
+  shMarch();
+  for (const B of EMPS) for (const p of B.polys) p.amb0 = p.amb;
+  POLYS.sort((p, q) => p.cz - q.cz);
+  builtLv = LV;
+}
+
+// ---- level 1: Dog Green
+function beachTex(cx, cy, cz){
+  if (inGap(cx, cz) && cz > 92) return 'shingle';
+  if (cz >= 128) return 'grass';
+  if (cz >= 101.2) return 'turf';
+  if (cz >= 87) return 'shingle';
+  return cy < 0.55 ? 'wetsand' : 'sand';
+}
+function buildBeach(R){
+  // seawall, bevel-topped, with the exit gap at x -8..-4
+  for (const [x0, x1] of [[-160, GAP.x0], [GAP.x1, 160]]){
+    boxGeo(POLYS, x0, 1.2, 100, x1, 5.0, 101.2, 'seawall', 'roof', { bev: 0.35 });
+    BOXES.push({ x0, x1, y0: 1.2, y1: 5.0, z0: 100, z1: 101.2, los: true, move: true, kind: 'concrete' });
+  }
+  buildCasemate(BUNKER);
+  MGS.push(mkMG({ o: BUNKER.mg, face: Math.PI, emp: BUNKER, manned: () => gunManned(BUNKER) }));
+  // landing craft (LCVP): hull walls, deck, coxswain's stand; the ramp is dynamic
+  {
+    const b = BOAT;
+    boxGeo(POLYS, b.x0, -0.6, b.z0, b.x0 + 0.14, 2.0, b.z1, 'hull', 'steel');
+    boxGeo(POLYS, b.x1 - 0.14, -0.6, b.z0, b.x1, 2.0, b.z1, 'hull', 'steel');
+    boxGeo(POLYS, b.x0, -0.6, b.z0 - 0.14, b.x1, 2.0, b.z0, 'hull', 'steel');
+    boxGeo(POLYS, 0.7, b.deck, b.z0, b.x1 - 0.14, 2.35, b.z0 + 1.6, 'hull', 'steel');
+    hrect(POLYS, b.x0 + 0.14, b.z0, b.x1 - 0.14, b.z1, b.deck, 'deck');
+    BOXES.push({ x0: b.x0, x1: b.x0 + 0.14, y0: -0.6, y1: 2.0, z0: b.z0, z1: b.z1, los: true, move: true, kind: 'steel' });
+    BOXES.push({ x0: b.x1 - 0.14, x1: b.x1, y0: -0.6, y1: 2.0, z0: b.z0, z1: b.z1, los: true, move: true, kind: 'steel' });
+    BOXES.push({ x0: b.x0, x1: b.x1, y0: -0.6, y1: 2.0, z0: b.z0 - 0.14, z1: b.z0, los: true, move: true, kind: 'steel' });
+    BOXES.push({ x0: 0.7, x1: b.x1, y0: b.deck, y1: 2.35, z0: b.z0, z1: b.z0 + 1.6, los: true, move: true, kind: 'steel' });
+  }
+  // Czech hedgehogs on staggered rows
+  const rows = [[16, 9], [30, 8], [44, 9], [58, 8], [72, 7], [84, 6]];
+  for (const [rz, n] of rows) for (let k = 0; k < n; k++){
+    const x = -46 + (k + 0.5) * 92 / n + (R() - 0.5) * 7, z = rz + (R() - 0.5) * 6;
+    if (Math.abs(x) < 3 && rz < 20) continue;
+    HEDGES.push({ x, z, yaw: R() * TAU });
+  }
+  HEDGES.push({ x: 2.5, z: 15.5, yaw: 0.7 });            // first cover straight off the ramp
+  buildHedgehogs();
   // timber stakes leaning seaward
   for (let k = 0; k < 12; k++){
     const x = -50 + k * 9 + (R() - 0.5) * 4, z = 22 + R() * 50, gy = terrainAt(x, z), tilt = 0.5;
@@ -516,7 +584,6 @@ function buildWorld(){
     MEDS.push({ x: best.x - dx / L * 1.35, z: best.z - dz / L * 1.35 });
   }
   for (const [x, z] of [[-14, 98.4], [24, 98.4], [-40, 98.4], [-22, 107.5]]) MEDS.push({ x, z });
-  for (const m of MEDS) m.gy = Math.max(terrainAt(m.x, m.z), 0.02);
   // ammo cans: behind hedgehogs on the rows the first-aid packs skip sides on, then the wall
   for (const [tx, tz] of [[22, 30], [-28, 45], [26, 59], [-12, 73]]){
     let best = null, bd = 1e9;
@@ -525,16 +592,6 @@ function buildWorld(){
     AMMOS.push({ x: best.x - dx / L * 1.35 + 0.6, z: best.z - dz / L * 1.35 });
   }
   for (const [x, z] of [[-11, 98.4], [32, 98.4], [-14, 106.8], [4, 110.5], [23, 123.2]]) AMMOS.push({ x, z });
-  for (const m of AMMOS) m.gy = Math.max(terrainAt(m.x, m.z), 0.02);
-  // shadow heights: terrain everywhere, boxes on top
-  const G = SG;
-  for (let j = 0; j < G.h; j++) for (let i = 0; i < G.w; i++){
-    const k = j*G.w + i, t = terrainAt(G.x0 + (i + 0.5)*G.res, G.z0 + (j + 0.5)*G.res);
-    G.T[k] = t; if (t > G.H[k]) G.H[k] = t;
-  }
-  for (const b of BOXES) shBox(b);
-  shMarch();
-  POLYS.sort((p, q) => p.cz - q.cz);
 }
 
 // ramp: an oriented slab hinged at the bow
@@ -553,8 +610,9 @@ function rampTopAt(z){
   if (z < b.hinge || z > b.hinge + run) return null;
   return b.deck + (z - b.hinge) * Math.tan(th) + 0.12;
 }
-function foamPolys(t){
-  const z0 = 13.2 + Math.sin(t * 0.55) * 1.1, list = [];
+// the surf line, swelling up and down the sand about zc
+function foamPolys(t, zc){
+  const z0 = zc + Math.sin(t * 0.55) * 1.1, list = [];
   for (let x = -160; x < 160; x += 32){
     const p = mkPoly([[x, 0.05, z0], [x + 32, 0.05, z0], [x + 32, 0.05, z0 + 2.2], [x, 0.05, z0 + 2.2]], 'foam', [0, 1, 0],
                      (x, y, z) => [x * 10 + t * 18, (z - z0) * 29]);
@@ -869,6 +927,7 @@ const SDEF = {
   splash:  [0.45, .2, 400, .01, .05, .25, 4, 1, 0, 0, 0, 0, 0, 3, 0, 0, 0, .5, .05, 0, 2400],
   click:   [0.4, 0, 900, 0, .01, .03, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, .5, 0, 0, 0],
   toss:    [0.3, .1, 300, .01, .03, .1, 4, 1, 4, 0, 0, 0, 0, 1, 0, 0, 0, .6, .03, 0, 1200],
+  whistle: [0.32, 0, 1350, .3, .8, .15, 0, 1, -.5, 0, 0, 0, 0, 0, 0, 0, 0, .85, .05, 0, 0],
 };
 function initAudio(){
   if (AC) return;
@@ -919,36 +978,37 @@ function toggleSnd(){ sndOn = !sndOn; if (master) master.gain.value = sndOn ? 0.
 // ===========================================================================
 // GAME STATE
 // ===========================================================================
+let LV = null;            // the level being played (LEVELS, at the end of the level sections)
 const game = { mode: 'loading', t: 0, modeT: 0, msgs: [], enemies: [], bullets: [], parts: [], grenades: [],
                paused: false, score: 0, surf: null };
 const pl = { x: 0, z: -21, yaw: 0, pitch: 0.02, hp: 100, crouch: false, eye: EYE, vy: 0, fy: 0.3, bob: 0, moving: 0,
              clip: 8, clips: 10, nades: 4, reloadT: 0, fireT: 0, recoil: 0, lungeT: 0, bayo: false, flashT: 0, hurtT: 0, safeT: 0, shake: 0, expo: 0, kills: 0 };
 const ENEMY_POS = [[-34, 105.4], [-18, 105.6], [3, 105.5], [30, 105.4], [44, 105.8], [10, 114.5], [30, 116.5], [-26, 109]];
-const mg = { yaw: Math.PI, pitch: -0.06, state: 'idle', t: 0, sweepT: 0, sees: false, fireAcc: 0, burstN: 0, lastSeen: -9 };
 
 // the casemate's crew: a gunner on the MG42 and a loader beside him, both seen head and
 // shoulders in the slit. Open the rear door and they leave the gun to hold the doorway.
-const SLIT_POS = { gun: [20, 112.75], load: [21.4, 113.0] }, DOOR_POS = { gun: [18.7, 119.35], load: [19.45, 118.75] };
-function mkCrew(i, role){
-  const [x, z] = SLIT_POS[role];
-  return Object.assign(mkEnemy(i, x, z), { crew: true, role, gy: BUNKER.yb, post: 'slit', fireT: rnd(1, 2) });
+function mkCrew(i, B, role){
+  const [x, z] = B.slitPos[role];
+  return Object.assign(mkEnemy(i, x, z), { crew: true, emp: B, role, gy: B.yb, post: 'slit', fireT: rnd(1, 2) });
 }
-function mkEnemy(i, x, z){
-  return { id: i, x, z, hx: x, hz: z, gy: terrainAt(x, z), yaw: Math.PI, state: 'idle', st: 0, fireT: rnd(1.5, 4), shots: 0,
-           frame: 'stand_0', alert: false, tx: x, gait: null, pauseT: rnd(0.5, 3), phase: rnd(0, 1), bob: 0, kick: 0 };
+// riflemen hold a line through (hx, hz) along (ax, az), up to `span` metres either side,
+// and look along `look` while nothing has alerted them
+function mkEnemy(i, x, z, o){
+  return Object.assign({ id: i, x, z, hx: x, hz: z, ax: 1, az: 0, span: 9, look: Math.PI, gy: terrainAt(x, z), yaw: Math.PI, state: 'idle', st: 0, fireT: rnd(1.5, 4), shots: 0,
+           frame: 'stand_0', alert: false, tx: x, tz: z, gait: null, pauseT: rnd(0.5, 3), phase: rnd(0, 1), bob: 0, kick: 0 }, o || {});
 }
 function flash(text, dur = 2, rgb = PHOS){ game.msgs.push({ text, until: game.t + dur, dur, rgb }); if (game.msgs.length > 3) game.msgs.shift(); }
 
-// Stages for testing and practice: a later stage drops you in with the ramp already down.
-// Pick one with ?stage=N or ?stage=name, #stageN or #name in the address, the number keys
-// on the title screen, or by tapping the STAGE line on a phone.
+// Stages for testing and practice, numbered across both levels: a later stage drops you in
+// partway. Pick one with ?stage=N or ?stage=name, #stageN or #name in the address, the number
+// keys on the title screen, or by tapping the STAGE line on a phone.
 const STAGES = [
-  { name: 'boat',    label: 'IN THE BOAT' },
-  { name: 'beach',   label: 'OFF THE RAMP',    at: [0, -9.5],    yaw: 0 },
-  { name: 'mid',     label: 'MID BEACH',       at: [-6.6, 29.6], yaw: 0, crouch: true },
-  { name: 'seawall', label: 'THE SEAWALL',     at: [-9, 98.4],   yaw: 0, crouch: true, cp: true },
-  { name: 'gap',     label: 'THROUGH THE GAP', at: [-6, 103.2],  yaw: 0.9, cp: true },
-  { name: 'bunker',  label: 'THE CASEMATE',    at: [8, 109],     yaw: 1.35, cp: true },
+  { lv: 0, name: 'boat',    label: 'IN THE BOAT' },
+  { lv: 0, name: 'beach',   label: 'OFF THE RAMP',    at: [0, -9.5],    yaw: 0 },
+  { lv: 0, name: 'mid',     label: 'MID BEACH',       at: [-6.6, 29.6], yaw: 0, crouch: true },
+  { lv: 0, name: 'seawall', label: 'THE SEAWALL',     at: [-9, 98.4],   yaw: 0, crouch: true, cp: true },
+  { lv: 0, name: 'gap',     label: 'THROUGH THE GAP', at: [-6, 103.2],  yaw: 0.9, cp: true },
+  { lv: 0, name: 'bunker',  label: 'THE CASEMATE',    at: [8, 109],     yaw: 1.35, cp: true },
 ];
 let stageNo = 0;
 function stageFromHash(){
@@ -959,58 +1019,81 @@ function stageIndex(want){
   const n = /^\d+$/.test(want) ? +want : STAGES.findIndex(s => s.name === want);
   return n >= 0 && n < STAGES.length ? n : -1;
 }
-(() => {
-  let want = null;
-  try { want = new URLSearchParams(location.search).get('stage'); } catch (err) {}
-  const n = stageIndex(want != null ? want : stageFromHash());
+function stageFromURL(){
+  let want = null, lvl = null;
+  try { const q = new URLSearchParams(location.search); want = q.get('stage'); lvl = q.get('level'); } catch (err) {}
+  let n = stageIndex(want != null ? want : stageFromHash());
+  if (n < 0 && lvl != null && /^\d+$/.test(lvl)) n = STAGES.findIndex(s => s.lv === +lvl - 1);
   if (n >= 0) stageNo = n;
-})();
+}
 addEventListener('hashchange', () => {
   const n = stageIndex(stageFromHash());
   if (n < 0) return;
   stageNo = n;
   if (game.mode !== 'loading'){ newGame(); }
 });
-function setStage(n){ stageNo = (n + STAGES.length) % STAGES.length; flash('STAGE ' + stageNo + '  \u00b7  ' + STAGES[stageNo].label, 1.6, LBL); }
+function setStage(n){ stageNo = (n + STAGES.length) % STAGES.length; game.picked = true; flash('STAGE ' + stageNo + '  ·  ' + STAGES[stageNo].label, 1.6, LBL); }
 function __place(x, z, yaw, pitch, crouch){ pl.x = x; pl.z = z; pl.fy = groundAt(x, z); pl.yaw = yaw; pl.pitch = pitch; pl.crouch = crouch; pl.eye = crouch ? EYE_C : EYE; }
 function applyStage(){
   const S = STAGES[stageNo];
   if (!S.at) return;
   setMode('play');
-  BOAT.ramp = -0.16;
   game.msgs = [];
+  if (LV.stage) LV.stage(S);
   __place(S.at[0], S.at[1], S.yaw, 0.04, !!S.crouch);
-  if (S.cp) game.checkpoint = { x: -9, z: 98.4 };
-  flash('STAGE ' + stageNo + '  \u00b7  ' + S.label, 2.2, PHOS);
+  if (S.cp) game.checkpoint = Object.assign({}, typeof S.cp === 'object' ? S.cp : LV.checkpoint);
+  flash('STAGE ' + stageNo + '  ·  ' + S.label, 2.2, PHOS);
 }
-function newGame(){
-  Object.assign(pl, { x: 0, z: -21.2, yaw: 0, pitch: 0.02, hp: 100, crouch: false, eye: EYE, fy: BOAT.deck, bob: 0, moving: 0,
+function levelOf(n){ return LEVELS[STAGES[n].lv]; }
+// carry: what you bring from the level before (score, kills, time, clips, grenades)
+function newGame(carry){
+  LV = levelOf(stageNo);
+  if (builtLv !== LV) buildWorld();
+  Object.assign(pl, { x: 0, z: 0, yaw: 0, pitch: 0.02, hp: 100, crouch: false, eye: EYE, fy: 0, bob: 0, moving: 0,
                       clip: 8, clips: 10, nades: 4, reloadT: 0, fireT: 0, recoil: 0, lungeT: 0, bayo: false, flashT: 0, hurtT: 0, safeT: 0, shake: 0, expo: 0, kills: 0 });
-  BOAT.ramp = Math.PI / 2;
-  BUNKER.alive = true; BUNKER.doorOpen = false; BUNKER.takeT = 0; game.hintCase = false;
-  if (BUNKER.doorPoly){ BUNKER.doorPoly.hidden = false; for (const p of BUNKER.recess) p.hidden = true; }
-  for (const p of BUNKERP){ if (p.amb0 == null) p.amb0 = p.amb; p.amb = p.amb0; }
-  game.enemies = ENEMY_POS.map(([x, z], i) => mkEnemy(i, x, z)).concat([mkCrew(8, 'gun'), mkCrew(9, 'load')]);
+  game.carry = carry || null;
+  if (carry) Object.assign(pl, { clips: carry.clips, nades: carry.nades, kills: carry.kills });
+  for (const B of EMPS){
+    B.alive = true; B.doorOpen = false; B.takeT = 0;
+    if (B.doorPoly){ B.doorPoly.hidden = false; for (const p of B.recess) p.hidden = true; }
+    for (const p of B.polys) p.amb = p.amb0;
+  }
+  for (const m of MGS) resetMG(m);
   game.bullets = []; game.parts = []; game.grenades = []; game.msgs = [];
   for (const m of MEDS) m.taken = false;
   for (const m of AMMOS) m.taken = false;
-  game.score = 0; game.clock = 0; game.smokeT = 0; game.checkpoint = null;
-  Object.assign(mg, { yaw: Math.PI, pitch: -0.06, state: 'idle', t: 0, sweepT: 0, sees: false, fireAcc: 0, burstN: 0, lastSeen: -9 });
-  setMode('boat');
-  flash('DOG GREEN  ·  H-HOUR 0630', 3.2, PHOS);
-  flash('RAMP GOES DOWN ON THE COUNT', 3.2, LBL);
+  game.score = carry ? carry.score : 0; game.clock = carry ? carry.clock : 0;
+  game.smokeT = 0; game.checkpoint = null; game.wonAt = 0; game.picked = false; game.hints = {};
+  game.enemies = LV.spawn();
+  LV.reset();
+  pl.fy = groundAt(pl.x, pl.z);
   applyStage();
 }
+// on to the next level with what you carry
+function nextLevel(){
+  const carry = { score: game.score, kills: pl.kills, clock: game.clock, clips: Math.max(pl.clips, 6), nades: Math.max(pl.nades, 3) };
+  const k = LEVELS.indexOf(LV) + 1;
+  stageNo = STAGES.findIndex(s => s.lv === k);
+  newGame(carry);
+}
+function lastLevel(){ return LEVELS.indexOf(LV) === LEVELS.length - 1; }
 function setMode(m){ game.mode = m; game.modeT = 0; }
-
 // ===========================================================================
 // COLLISION / LINE OF SIGHT
 // ===========================================================================
-function groundAt(x, z){
+function groundAt(x, z){ return LV.ground ? LV.ground(x, z) : terrainAt(x, z); }
+function beachGround(x, z){
   const b = BOAT;
   if (x > b.x0 && x < b.x1 && z > b.z0 && z < b.z1) return b.deck;
   if (Math.abs(x) < b.x1){ const r = rampTopAt(z); if (r != null) return Math.max(r, terrainAt(x, z)); }
   return terrainAt(x, z);
+}
+// tree trunks: a vertical cylinder from the ground to t.top
+function segTree(ax, ay, az, bx, by, bz, t, r){
+  const dx = bx - ax, dz = bz - az, L2 = dx*dx + dz*dz || 1e-9;
+  const u = clamp(((t.x - ax)*dx + (t.z - az)*dz) / L2, 0, 1);
+  if (Math.hypot(ax + dx*u - t.x, az + dz*u - t.z) > r) return -1;
+  return (ay + (by - ay)*u) < t.top ? u : -1;
 }
 function segBox(ax, ay, az, bx, by, bz, b){
   let t0 = 0, t1 = 1;
@@ -1041,6 +1124,7 @@ function trace(ax, ay, az, bx, by, bz, hedgeR){
   }
   for (const b of BOXES){ if (!b.los) continue; const t = segBox(ax, ay, az, bx, by, bz, b); if (t >= 0 && t < best){ best = t; kind = b.kind; } }
   for (const h of HEDGES){ const t = segHedge(ax, ay, az, bx, by, bz, h, hedgeR || 0.62); if (t >= 0 && t < best){ best = t; kind = 'hedge'; } }
+  for (const tr of TREES){ const t = segTree(ax, ay, az, bx, by, bz, tr, tr.r * 0.8); if (t >= 0 && t < best){ best = t; kind = 'wood'; } }
   return kind ? { t: best, kind } : null;
 }
 function playerChest(){ return [pl.x, pl.fy + (pl.crouch ? 0.82 : 1.28), pl.z]; }
@@ -1059,16 +1143,25 @@ function moveCircle(x, z, nx, nz, r, fy){
         }
       }
     }
-    if (BOAT.ramp > 0.6 && Math.abs(X) < BOAT.x1 + r && Z > BOAT.hinge - r - 0.15 && Z < BOAT.hinge + 0.6 && z < BOAT.hinge) Z = BOAT.hinge - r - 0.15;
+    if (LV.collide) Z = LV.collide(X, Z, z, r);
     for (const h of HEDGES){ const dx = X - h.x, dz = Z - h.z, d = Math.hypot(dx, dz), rr = 0.78 + r; if (d < rr && d > 1e-6){ X = h.x + dx / d * rr; Z = h.z + dz / d * rr; } }
     for (const s of STAKES){ const dx = X - s.x, dz = Z - s.z, d = Math.hypot(dx, dz), rr = 0.3 + r; if (d < rr && d > 1e-6){ X = s.x + dx / d * rr; Z = s.z + dz / d * rr; } }
+    for (const s of TREES){ const dx = X - s.x, dz = Z - s.z, d = Math.hypot(dx, dz), rr = s.r + r; if (d < rr && d > 1e-6){ X = s.x + dx / d * rr; Z = s.z + dz / d * rr; } }
     for (const e of game.enemies){ if (e.state === 'dead') continue; const dx = X - e.x, dz = Z - e.z, d = Math.hypot(dx, dz), rr = 0.35 + r; if (d < rr && d > 1e-6){ X = e.x + dx / d * rr; Z = e.z + dz / d * rr; } }
   }
-  X = clamp(X, -62, 62); Z = clamp(Z, -26, 125.5);
-  // the bluff past the casemate is too steep to climb
-  const gy = groundAt(X, Z);
-  if (gy - fy > 0.9){ return [x, z]; }
-  return [X, Z];
+  const bd = LV.bounds;
+  X = clamp(X, bd.x0, bd.x1); Z = clamp(Z, bd.z0, bd.z1);
+  // a step up of more than 0.9 m stops you (the bluff past the casemate); where the level sets
+  // maxSlope, so does ground steeper than that, and you slide along it instead
+  const g0 = groundAt(x, z), ms = LV.maxSlope;
+  const ok = (X_, Z_) => {
+    const gy = groundAt(X_, Z_);
+    if (gy - fy > 0.9) return false;
+    return !ms || gy - g0 <= Math.hypot(X_ - x, Z_ - z) * ms + 0.004;
+  };
+  if (ok(X, Z)) return [X, Z];
+  if (ms){ if (ok(X, z)) return [X, z]; if (ok(x, Z)) return [x, Z]; }
+  return [x, z];
 }
 
 // ===========================================================================
@@ -1191,10 +1284,6 @@ function updatePlayer(dt){
     sfx('click', { vol: 0.9 }); sfx('click', { vol: 0.6, rate: 0.8 });
     flash(`AMMO  +${pl.clips - c0} CLIPS  +${pl.nades - n0} NADES`, 1.6, PHOS);
   }
-  if (!game.checkpoint && pl.z > 95.5 && game.mode === 'play'){
-    game.checkpoint = { x: pl.x, z: Math.min(pl.z, 98.6) };
-    flash('CHECKPOINT \u2014 SEAWALL', 2, PHOS);
-  }
   pl.safeT += dt;
   if (pl.expo < 0.05 && pl.safeT > 3 && pl.hp < 100) pl.hp = Math.min(100, pl.hp + dt * 6);
 }
@@ -1257,7 +1346,6 @@ function throwGrenade(){
   sfx('toss', { vol: 0.8 });
 }
 function updateGrenades(dt){
-  const B = BUNKER, s = B.slit, d = B.door;
   for (const gr of game.grenades){
     gr.fuse -= dt;
     if (!gr.inside){
@@ -1265,9 +1353,14 @@ function updateGrenades(dt){
       for (let k = 0; k < steps; k++){
         gr.vy -= 9.8 * h;
         const nx = gr.x + gr.vx*h, ny = gr.y + gr.vy*h, nz = gr.z + gr.vz*h;
-        // into the slit or the rear door
-        if (B.alive && nx > s.x0 - 0.15 && nx < s.x1 + 0.15 && ny > s.y0 - 0.12 && ny < s.y1 + 0.12 && nz > B.z0 - 0.3 && nz < B.z0 + 1.2){ gr.inside = true; gr.fuse = Math.min(gr.fuse, 1.1); sfx('click', { at: [nx, ny, nz], vol: 1 }); flash('IN THE SLIT', 1.2, PHOS); break; }
-        if (B.alive && nx > d.x0 - 0.5 && nx < d.x1 + 0.5 && ny < d.y1 + 0.3 && ny > B.yb - 0.2 && nz < B.z1 + 0.6 && nz > B.z1 - 0.6){ gr.inside = true; gr.fuse = Math.min(gr.fuse, 1.1); flash('IN THE DOOR', 1.2, PHOS); break; }
+        // into a casemate's slit or its open-able rear door
+        for (const B of EMPS){
+          if (!B.alive || B.kind !== 'casemate') continue;
+          const s = B.slit, d = B.door;
+          if (nx > s.x0 - 0.15 && nx < s.x1 + 0.15 && ny > s.y0 - 0.12 && ny < s.y1 + 0.12 && nz > B.z0 - 0.3 && nz < B.z0 + 1.2){ gr.inside = B; gr.fuse = Math.min(gr.fuse, 1.1); sfx('click', { at: [nx, ny, nz], vol: 1 }); flash('IN THE SLIT', 1.2, PHOS); break; }
+          if (d && nx > d.x0 - 0.5 && nx < d.x1 + 0.5 && ny < d.y1 + 0.3 && ny > B.yb - 0.2 && nz < B.z1 + 0.6 && nz > B.z1 - 0.6){ gr.inside = B; gr.fuse = Math.min(gr.fuse, 1.1); flash('IN THE DOOR', 1.2, PHOS); break; }
+        }
+        if (gr.inside) break;
         let hitBox = null;
         for (const b of BOXES) if (nx > b.x0 && nx < b.x1 && ny > b.y0 && ny < b.y1 && nz > b.z0 && nz < b.z1){ hitBox = b; break; }
         if (hitBox){
@@ -1282,6 +1375,7 @@ function updateGrenades(dt){
         }
         let hitH = null;
         for (const hh of HEDGES){ if (Math.hypot(nx - hh.x, nz - hh.z) < 0.5 && ny < hh.top){ hitH = hh; break; } }
+        if (!hitH) for (const tr of TREES){ if (Math.hypot(nx - tr.x, nz - tr.z) < tr.r && ny < tr.top){ hitH = tr; break; } }
         if (hitH){ const dx = gr.x - hitH.x, dz = gr.z - hitH.z, L = Math.hypot(dx, dz) || 1; const vn = (gr.vx*dx + gr.vz*dz) / L; gr.vx -= 1.6*vn*dx/L; gr.vz -= 1.6*vn*dz/L; gr.vx *= 0.6; gr.vz *= 0.6; continue; }
         const gy = groundAt(nx, nz) + 0.06;
         if (ny < gy){
@@ -1293,67 +1387,73 @@ function updateGrenades(dt){
     }
     if (gr.fuse <= 0){
       gr.dead = true;
-      if (gr.inside && BUNKER.alive) destroyBunker();
-      else explode(gr.x, gr.y, gr.z, false);
+      if (gr.inside && gr.inside.alive) destroyEmp(gr.inside);
+      else { explode(gr.x, gr.y, gr.z, false); if (LV.onBlast) LV.onBlast(gr.x, gr.y, gr.z); }
     }
   }
   game.grenades = game.grenades.filter(gr => !gr.dead);
 }
-function destroyBunker(){
-  const B = BUNKER;
+function empCentre(B){ return [(B.x0 + B.x1) / 2, (B.z0 + B.z1) / 2]; }
+function destroyEmp(B){
   B.alive = false;
   explode(B.mg[0], B.mg[1] - 0.3, B.mg[2] + 0.6, true);
-  for (const p of BUNKERP) p.amb = p.amb0 * 0.62;
-  for (const e of game.enemies) if (e.state !== 'dead' && Math.hypot(e.x - 20, e.z - 116) < 8) killEnemy(e);
+  for (const p of B.polys) p.amb = p.amb0 * 0.62;
+  const [cx, cz] = empCentre(B);
+  for (const e of game.enemies) if (e.state !== 'dead' && Math.hypot(e.x - cx, e.z - cz) < 8) killEnemy(e);
   game.score += 1000;
-  flash('STRONGPOINT SILENCED', 3.5, PHOS);
-  game.wonAt = game.t + 2.4;
+  flash(B.silenced, 3.5, PHOS);
+  if (LV.onEmp) LV.onEmp(B, 'destroyed');
 }
 
 // ===========================================================================
-// MG42 IN THE CASEMATE
+// MACHINE GUNS
 // ===========================================================================
-function updateMG(dt){
-  if (!BUNKER.alive || game.mode !== 'play') return;
-  if (!gunManned()){ mg.sees = false; mg.state = 'idle'; return; }
-  const m = mg, o = BUNKER.mg, ox = o[0], oy = o[1], oz = o[2];
+function updateMGs(dt){
+  for (const m of MGS){
+    if (game.mode !== 'play' || (m.emp && !m.emp.alive)){ m.sees = false; continue; }
+    if (!m.manned()){ m.sees = false; m.state = 'idle'; continue; }
+    updateMG(m, dt);
+  }
+}
+function updateMG(m, dt){
+  const o = m.o, ox = o[0], oy = o[1], oz = o[2];
   const ch = playerChest(), hd = playerHead();
   const dx = ch[0] - ox, dz = ch[2] - oz, dist = Math.hypot(dx, dz);
-  const yawTo = Math.atan2(dx, dz);                                       // pi faces the sea
-  const off = wrapA(yawTo - Math.PI);
-  const inArc = Math.abs(off) < 1.05 && dist < 170;
+  const yawTo = Math.atan2(dx, dz);
+  const off = wrapA(yawTo - m.face);
+  const inArc = Math.abs(off) < m.arc && dist < m.range;
   m.sees = inArc && (!trace(ox, oy, oz, hd[0], hd[1], hd[2]) || !trace(ox, oy, oz, ch[0], ch[1], ch[2]));
   if (m.sees) m.lastSeen = game.t;
   m.t -= dt;
-  if (m.state === 'idle' && m.t <= 0){ m.state = 'burst'; m.t = rnd(2.0, 3.0); m.burstN++; }
-  else if (m.state === 'burst' && m.t <= 0){ m.state = 'idle'; m.t = rnd(1.8, 2.7); }
-  // aim: track the player with lag while he is in sight, otherwise sweep the beach
+  if (m.state === 'idle' && m.t <= 0){ m.state = 'burst'; m.t = rnd(m.burst[0], m.burst[1]); m.burstN++; }
+  else if (m.state === 'burst' && m.t <= 0){ m.state = 'idle'; m.t = rnd(m.idle[0], m.idle[1]); }
+  // aim: track the player with lag while he is in sight, otherwise sweep the field
   let ty, tp;
   if (game.t - m.lastSeen < 1.2 && inArc){
     ty = yawTo; tp = Math.atan2(ch[1] - oy, dist);
-    const rate = 0.3 * dt, dy = wrapA(ty - m.yaw);
+    const rate = m.track * dt, dy = wrapA(ty - m.yaw);
     m.yaw = wrapA(m.yaw + clamp(dy, -rate, rate));
     m.pitch += clamp(tp - m.pitch, -rate, rate);
   } else {
     m.sweepT += dt * 0.5;
-    ty = Math.PI + Math.sin(m.sweepT) * 0.85;
-    const reach = 30 + 25 * (0.5 + 0.5 * Math.sin(m.sweepT * 0.37 + 1));
+    ty = m.face + Math.sin(m.sweepT) * m.sweep;
+    const reach = m.reach[0] + (m.reach[1] - m.reach[0]) * (0.5 + 0.5 * Math.sin(m.sweepT * 0.37 + 1));
     tp = Math.atan2(terrainAt(ox + Math.sin(ty)*reach, oz + Math.cos(ty)*reach) + 0.9 - oy, reach);
     const rate = 0.9 * dt;
     m.yaw = wrapA(m.yaw + clamp(wrapA(ty - m.yaw), -rate, rate));
     m.pitch += clamp(tp - m.pitch, -rate, rate);
   }
-  m.yaw = Math.PI + clamp(wrapA(m.yaw - Math.PI), -1.05, 1.05);
+  if (m.arc < Math.PI) m.yaw = m.face + clamp(wrapA(m.yaw - m.face), -m.arc, m.arc);
   if (m.state === 'burst'){
-    m.fireAcc += dt * 15;
+    m.fireAcc += dt * m.rate;
     while (m.fireAcc >= 1){
       m.fireAcc -= 1;
       const yy = m.yaw + rnd(-1, 1) * 0.016, pp = m.pitch + rnd(-1, 1) * 0.011, sp = 380;
-      const cp = Math.cos(pp);
-      game.bullets.push({ x: ox + Math.sin(yy)*0.6, y: oy, z: oz + Math.cos(yy)*0.6, vx: Math.sin(yy)*cp*sp, vy: Math.sin(pp)*sp, vz: Math.cos(yy)*cp*sp,
-                          life: 0.9, tracer: (m.burstN * 7 + game.bullets.length) % 3 === 0, near: false });
+      const cp = Math.cos(pp), mo = m.muzzle || 0.6;
+      game.bullets.push({ x: ox + Math.sin(yy)*mo, y: oy, z: oz + Math.cos(yy)*mo, vx: Math.sin(yy)*cp*sp, vy: Math.sin(pp)*sp, vz: Math.cos(yy)*cp*sp,
+                          life: 0.9, tracer: (m.burstN * 7 + game.bullets.length) % 3 === 0, near: false, dmg: m.dmg });
       sfx('mg', { at: o, range: 70, cap: 5, vol: 0.9 });
-      part({ x: ox + Math.sin(yy)*0.75, y: oy, z: oz + Math.cos(yy)*0.75, vx: 0, vy: 0, vz: 0, grav: 0, size: 0.5, col: [255, 200, 110], max: 0.05, add: true });
+      part({ x: ox + Math.sin(yy)*(mo + 0.15), y: oy, z: oz + Math.cos(yy)*(mo + 0.15), vx: 0, vy: 0, vz: 0, grav: 0, size: 0.5, col: [255, 200, 110], max: 0.05, add: true });
     }
   }
 }
@@ -1370,7 +1470,7 @@ function updateBullets(dt){
       const dd = Math.hypot(qx - pl.x, qy - yc, qz - pl.z);
       if (dd < 0.27){
         const blk = trace(ax, ay, az, qx, qy, qz);
-        if (!blk){ hurt(9); b.life = 0; continue; }
+        if (!blk){ hurt(b.dmg || 9); b.life = 0; continue; }
       } else if (dd < 2.2 && !b.near){ b.near = true; sfx('zip', { vol: 0.5, cap: 3 }); }
     }
     const hit = trace(ax, ay, az, bx, by, bz, 0.4);
@@ -1395,25 +1495,26 @@ function updateBullets(dt){
 // face where they go, so the side and back columns of the sheet get used.
 // The sheet has one drawing per state and direction, so gaits alternate two drawings:
 // walk = walk/stand, run = run/walk, with a small bob on the footfall.
-function freeSpot(e, x){
-  const z = e.hz;
-  if (Math.abs(x - e.hx) > 9 || x < -60 || x > 60) return false;
-  for (const b of BOXES) if (x > b.x0 - 0.6 && x < b.x1 + 0.6 && z > b.z0 - 0.6 && z < b.z1 + 0.6) return false;
-  for (const o of game.enemies) if (o !== e && o.state !== 'dead' && Math.abs(o.z - z) < 1.5 && Math.abs((o.gait ? o.tx : o.x) - x) < 1.4) return false;
-  return Math.abs(terrainAt(x, z) - terrainAt(e.hx, e.hz)) < 0.7;
+function freeSpot(e, x, z){
+  const t = (x - e.hx) * e.ax + (z - e.hz) * e.az, bd = LV.bounds;
+  if (Math.abs(t) > e.span || x < bd.x0 + 2 || x > bd.x1 - 2 || z < bd.z0 || z > bd.z1) return false;
+  for (const b of BOXES) if (b.move && x > b.x0 - 0.6 && x < b.x1 + 0.6 && z > b.z0 - 0.6 && z < b.z1 + 0.6 && b.y1 > terrainAt(x, z) + 0.45) return false;
+  for (const o of game.enemies) if (o !== e && o.state !== 'dead' && Math.hypot((o.gait ? o.tx : o.x) - x, (o.gait ? o.tz : o.z) - z) < 1.4) return false;
+  return Math.abs(terrainAt(x, z) - terrainAt(e.hx, e.hz)) < (e.rise || 0.7);
 }
 function pickMove(e, lo, hi){
+  if (e.fixed) return null;
   for (let k = 0; k < 6; k++){
-    const x = e.x + (Math.random() < 0.5 ? -1 : 1) * rnd(lo, hi);
-    if (freeSpot(e, x)) return x;
+    const d = (Math.random() < 0.5 ? -1 : 1) * rnd(lo, hi), x = e.x + e.ax * d, z = e.z + e.az * d;
+    if (freeSpot(e, x, z)) return [x, z];
   }
   return null;
 }
 function stepEnemy(e, dt){
-  const dx = e.tx - e.x, sp = e.gait === 'run' ? 3.6 : 1.3;
-  e.yaw = wrapA(e.yaw + clamp(wrapA(Math.atan2(dx, 0.0001) - e.yaw), -6 * dt, 6 * dt));
-  if (Math.abs(dx) <= sp * dt){ e.x = e.tx; e.gait = null; return true; }
-  e.x += Math.sign(dx) * sp * dt;
+  const dx = e.tx - e.x, dz = e.tz - e.z, L = Math.hypot(dx, dz), sp = e.gait === 'run' ? 3.6 : 1.3;
+  e.yaw = wrapA(e.yaw + clamp(wrapA(Math.atan2(dx, dz + (L < 1e-6 ? 1e-4 : 0)) - e.yaw), -6 * dt, 6 * dt));
+  if (L <= sp * dt){ e.x = e.tx; e.z = e.tz; e.gait = null; e.gy = terrainAt(e.x, e.z); return true; }
+  e.x += dx / L * sp * dt; e.z += dz / L * sp * dt;
   e.gy = terrainAt(e.x, e.z);
   e.phase += dt * (e.gait === 'run' ? 6 : 3.4);
   return false;
@@ -1430,42 +1531,40 @@ function bodyFrame(e, kind){
   const sx = Math.sin(e.yaw) * cam.r[0] + Math.cos(e.yaw) * cam.r[2];
   return kind + (sx < 0 ? '_m' : '');
 }
-function crewAlive(){ return game.enemies.filter(e => e.crew && e.state !== 'dead' && e.state !== 'hit'); }
-function gunManned(){ return BUNKER.alive && !BUNKER.doorOpen && game.enemies.some(e => e.crew && e.role === 'gun' && e.post === 'slit' && e.state !== 'dead' && e.state !== 'hit'); }
-function openDoor(){
-  const B = BUNKER;
+function crewAlive(B){ return game.enemies.filter(e => e.crew && e.emp === B && e.state !== 'dead' && e.state !== 'hit'); }
+function gunManned(B){ return B.alive && !B.doorOpen && game.enemies.some(e => e.crew && e.emp === B && e.role === 'gun' && e.post === 'slit' && e.state !== 'dead' && e.state !== 'hit'); }
+function openDoor(B){
   B.doorOpen = true; B.doorPoly.hidden = true;
   for (const p of B.recess) p.hidden = false;
-  sfx('clang', { at: [19, 5, 120], vol: 1 });
-  flash('REAR DOOR OPEN \u2014 THE CREW IS COMING', 2.4, PHOS);
-  for (const e of crewAlive()){ e.post = 'moving'; e.st = 0; }
+  sfx('clang', { at: [B.doorAt[0], B.yb + 0.8, B.z1], vol: 1 });
+  flash('REAR DOOR OPEN — THE CREW IS COMING', 2.4, PHOS);
+  for (const e of crewAlive(B)){ e.post = 'moving'; e.st = 0; }
 }
-function takeCasemate(){
-  const B = BUNKER;
+function takeCasemate(B){
   if (!B.alive) return;
   B.alive = false;
   game.score += 1000;
-  flash('CASEMATE TAKEN', 3.5, PHOS);
-  game.wonAt = game.t + 2.4;
+  flash(B.taken, 3.5, PHOS);
+  if (LV.onEmp) LV.onEmp(B, 'taken');
 }
 // returns how exposed the player is to this crewman (0..1)
 function updateCrew(e, dt){
-  const B = BUNKER;
+  const B = e.emp;
   if (!B.alive){ e.frame = 'stand_' + spriteFrame(e); return 0; }
   if (e.post === 'slit'){
     // the loader steps onto the gun when the gunner falls
-    if (e.role === 'load' && !game.enemies.some(o => o.crew && o.role === 'gun' && o.state !== 'dead' && o.state !== 'hit')){
+    if (e.role === 'load' && !game.enemies.some(o => o.crew && o.emp === B && o.role === 'gun' && o.state !== 'dead' && o.state !== 'hit')){
       B.takeT += dt;
-      if (B.takeT > 3){ e.role = 'gun'; e.x = SLIT_POS.gun[0]; e.z = SLIT_POS.gun[1]; flash('LOADER TAKES THE GUN', 1.6, WARN); }
+      if (B.takeT > 3){ e.role = 'gun'; e.x = B.slitPos.gun[0]; e.z = B.slitPos.gun[1]; flash('LOADER TAKES THE GUN', 1.6, WARN); }
     }
     e.yaw = Math.PI;
-    e.frame = (e.role === 'gun' ? (mg.state === 'burst' && ((game.t * 15) | 0) % 2 ? 'fire_' : 'aim_') : 'reload_') + spriteFrame(e);
+    e.frame = (e.role === 'gun' ? (B.mgo && B.mgo.state === 'burst' && ((game.t * 15) | 0) % 2 ? 'fire_' : 'aim_') : 'reload_') + spriteFrame(e);
     return 0;
   }
   if (e.post === 'moving'){
     e.frame = 'stand_' + spriteFrame(e);
     if (e.st > (e.role === 'gun' ? 1.1 : 0.7)){
-      const [x, z] = DOOR_POS[e.role];
+      const [x, z] = B.doorPos[e.role];
       e.x = x; e.z = z; e.post = 'door'; e.yaw = 0; e.fireT = rnd(0.5, 1.2); e.state = 'aim'; e.st = 0;
     }
     return 0;
@@ -1487,7 +1586,7 @@ function updateCrew(e, dt){
 }
 function updateEnemies(dt){
   const hd = playerHead(), ch = playerChest();
-  let expo = mg.sees ? 1 : 0;
+  let expo = MGS.some(m => m.sees) ? 1 : 0;
   for (const e of game.enemies){
     e.st += dt;
     e.kick = Math.max(0, e.kick - dt * 8);
@@ -1498,11 +1597,12 @@ function updateEnemies(dt){
       if (e.st > 0.5) e.state = 'dead';
       continue;
     }
-    if (game.mode !== 'play'){ e.bob = 0; e.frame = (e.crew ? (e.role === 'gun' ? 'aim_' : 'reload_') : 'stand_') + spriteFrame(e); continue; }
+    if (game.mode !== 'play'){ e.bob = 0; e.frame = (e.crew ? (e.role === 'gun' ? 'aim_' : 'reload_') : e.pose ? e.pose + '_' : 'stand_') + spriteFrame(e); continue; }
     if (e.crew){ expo = Math.max(expo, updateCrew(e, dt)); continue; }
+    if (e.custom){ expo = Math.max(expo, e.custom(e, dt) || 0); continue; }
     const eye = [e.x, e.gy + 1.55, e.z];
     const dist = Math.hypot(pl.x - e.x, pl.z - e.z);
-    const sees = dist < 120 && (!trace(eye[0], eye[1], eye[2], hd[0], hd[1], hd[2]) || !trace(eye[0], eye[1], eye[2], ch[0], ch[1], ch[2]));
+    const sees = dist < (e.sight || 120) && (!trace(eye[0], eye[1], eye[2], hd[0], hd[1], hd[2]) || !trace(eye[0], eye[1], eye[2], ch[0], ch[1], ch[2]));
     if (sees && !e.alert){ e.alert = true; e.gait = null; e.state = 'aim'; e.st = 0; e.fireT = rnd(0.8, 1.8); }
     if (sees) expo = Math.max(expo, clamp(1.2 - dist / 120, 0.35, 1));
 
@@ -1510,11 +1610,11 @@ function updateEnemies(dt){
       // patrol: walk a few metres, look out to sea, walk back
       if (e.gait){ if (stepEnemy(e, dt)){ e.pauseT = rnd(1.5, 4); } }
       else {
-        e.yaw = wrapA(e.yaw + clamp(wrapA(Math.PI - e.yaw), -2 * dt, 2 * dt));
+        e.yaw = wrapA(e.yaw + clamp(wrapA(e.look - e.yaw), -2 * dt, 2 * dt));
         e.pauseT -= dt;
-        if (e.pauseT <= 0){ const x = pickMove(e, 2, 5); if (x != null){ e.tx = x; e.gait = 'walk'; } else e.pauseT = 1; }
+        if (e.pauseT <= 0){ const p = pickMove(e, 2, 5); if (p){ e.tx = p[0]; e.tz = p[1]; e.gait = 'walk'; } else e.pauseT = 1; }
       }
-      e.frame = gaitFrame(e, spriteFrame(e));
+      e.frame = e.pose && !e.gait ? e.pose + '_' + spriteFrame(e) : gaitFrame(e, spriteFrame(e));
       continue;
     }
 
@@ -1526,7 +1626,7 @@ function updateEnemies(dt){
     // facing the player while engaged
     const want = Math.atan2(pl.x - e.x, pl.z - e.z);
     e.yaw = wrapA(e.yaw + clamp(wrapA(want - e.yaw), -2.4 * dt, 2.4 * dt));
-    const relocate = lo => { const x = pickMove(e, lo, lo + 4); if (x != null){ e.tx = x; e.gait = 'run'; e.state = 'move'; e.st = 0; return true; } return false; };
+    const relocate = lo => { const p = pickMove(e, lo, lo + 4); if (p){ e.tx = p[0]; e.tz = p[1]; e.gait = 'run'; e.state = 'move'; e.st = 0; return true; } return false; };
     if (e.state === 'reload'){
       if (e.st > 2.4){ e.shots = 0; if (!(Math.random() < 0.6 && relocate(3))){ e.state = 'aim'; e.st = 0; } }
     }
@@ -1552,47 +1652,42 @@ function updateEnemies(dt){
     e.frame = (e.state === 'fire' ? 'fire_' : e.state === 'reload' ? 'reload_' : 'aim_') + fr;
   }
   pl.expo = lerp(pl.expo, expo, clamp(dt * 5, 0, 1));
-  if (game.mode === 'play' && BUNKER.alive){
-    if (!crewAlive().length && game.enemies.some(e => e.crew)) takeCasemate();
-    if (!BUNKER.doorOpen && Math.hypot(pl.x - 19, pl.z - 121) < 2.3) openDoor();
-    if (!game.hintCase && pl.z > 101.5){
-      game.hintCase = true;
-      flash('CASEMATE: GRENADE THE SLIT, SHOOT THE CREW IN IT,', 4, LBL);
-      flash('OR GO ROUND AND TAKE THE REAR DOOR', 4, LBL);
+  if (game.mode === 'play'){
+    for (const B of EMPS){
+      if (!B.alive || B.kind !== 'casemate') continue;
+      if (!crewAlive(B).length && game.enemies.some(e => e.crew && e.emp === B)) takeCasemate(B);
+      else if (B.door && !B.doorOpen && Math.hypot(pl.x - B.doorAt[0], pl.z - B.doorAt[1]) < 2.3) openDoor(B);
     }
+    LV.tick(dt);
   }
 }
-
 // ===========================================================================
 // UPDATE
 // ===========================================================================
 function update(dt){
   game.t += dt; game.modeT += dt;
   rFlash = Math.max(0, rFlash - dt * 2.5);
-  if (game.mode === 'loading' || game.mode === 'title'){ pl.yaw = Math.sin(game.t * 0.12) * 0.35; return; }
+  if (game.mode === 'loading' || game.mode === 'title'){ pl.yaw = (game.titleYaw || 0) + Math.sin(game.t * 0.12) * 0.35; return; }
   if (game.paused) return;
+  if (game.mode === 'brief'){ if (LV.update) LV.update(dt); return; }
   if (game.mode === 'boat'){
-    const left = 4.5 - game.modeT;
-    if (left > 0 && Math.ceil(left) !== game.lastCount && left < 3.5){ game.lastCount = Math.ceil(left); flash(String(game.lastCount), 0.8, PHOS); sfx('click', { vol: 0.5 }); }
-    if (left <= 0){ setMode('play'); sfx('clang', { vol: 1.2 }); flash('RAMP DOWN — GO GO GO', 2.2, PHOS); flash('GET TO THE SEAWALL. SILENCE THE CASEMATE.', 4, LBL); game.rampT = 0; }
+    if (LV.boat) LV.boat(dt);
     updatePlayer(dt);
   } else if (game.mode === 'play' || game.mode === 'down' || game.mode === 'won'){
     if (game.mode === 'play'){ game.clock += dt; updatePlayer(dt); }
-    updateMG(dt); updateBullets(dt); updateEnemies(dt); updateGrenades(dt);
+    updateMGs(dt); updateBullets(dt); updateEnemies(dt); updateGrenades(dt);
     if (game.wonAt && game.t > game.wonAt && game.mode === 'play'){ game.wonAt = 0; setMode('won'); }
   }
-  // ramp
-  const target = game.mode === 'boat' || game.mode === 'loading' || game.mode === 'title' ? Math.PI / 2 : -0.16;
-  if (BOAT.ramp !== target){
-    BOAT.rampV = (BOAT.rampV || 0) + (BOAT.ramp > target ? -1 : 1) * dt * 5;
-    BOAT.ramp += BOAT.rampV * dt;
-    if (BOAT.ramp < target){ BOAT.ramp = target; if (Math.abs(BOAT.rampV) > 0.6){ sfx('splash', { vol: 1 }); for (let i = 0; i < 20; i++) puff(rnd(-1.6, 1.6), 0.05, BOAT.hinge + 1.9, 'water'); } BOAT.rampV = 0; }
-  }
-  // burning casemate
-  if (!BUNKER.alive){
-    game.smokeT -= dt;
-    if (game.smokeT <= 0){ game.smokeT = 0.12;
-      part({ x: 20 + rnd(-2, 2), y: 6, z: 111.8, vx: rnd(-0.2, 0.2), vy: rnd(1, 2), vz: rnd(-0.5, 0), grav: 0, drag: 0.2, size: rnd(1.2, 2.2), col: [58, 58, 56], max: rnd(3, 5), alpha: 0.5, fadeIn: true }); }
+  if (LV.update) LV.update(dt);
+  // burning casemates
+  game.smokeT -= dt;
+  if (game.smokeT <= 0){
+    game.smokeT = 0.12;
+    for (const B of EMPS){
+      if (B.alive || !B.smoke) continue;
+      const s = B.smoke;
+      part({ x: s[0] + rnd(-2, 2), y: s[1], z: s[2], vx: rnd(-0.2, 0.2), vy: rnd(1, 2), vz: rnd(-0.5, 0), grav: 0, drag: 0.2, size: rnd(1.2, 2.2), col: [58, 58, 56], max: rnd(3, 5), alpha: 0.5, fadeIn: true });
+    }
   }
   for (const p of game.parts){
     p.t += dt; p.vy += p.grav * dt;
@@ -1606,6 +1701,652 @@ function update(dt){
   const wf = 'water' + (((game.t * 5) | 0) & 3);
   if (TEXREADY) for (const p of WATERP) p.tex = TX[wf];
 }
+
+// ===========================================================================
+// LEVEL 1 — DOG GREEN
+// ===========================================================================
+const L1 = {
+  name: 'DOG GREEN', sub: 'OMAHA  ·  DOG GREEN  ·  6 JUNE 1944', tap: 'TAP TO HIT THE BEACH',
+  tip: 'CROUCH BEHIND THE STEEL. FIRST AID AND AMMO WAIT IN COVER.',
+  down: 'DOWN ON THE SAND', won: 'SECTOR CLEAR', next: 'FOR D-1, THE VIERVILLE DRAW',
+  seed: 1944,
+  sg: { res: 0.5, x0: -96, z0: -40, w: 384, h: 344 },
+  sea: { x0: -160, x1: 160, z0: -100, z1: 30, zf: 60 },
+  bounds: { x0: -62, x1: 62, z0: -26, z1: 125.5 },
+  checkpoint: { x: -9, z: 98.4, yaw: 0, name: 'THE SEAWALL' },
+  grid: beachGrid, hfun: beachH, groundTex: beachTex, build: buildBeach, ground: beachGround, map: beachMap,
+  collide(X, Z, z, r){ const b = BOAT; return b.ramp > 0.6 && Math.abs(X) < b.x1 + r && Z > b.hinge - r - 0.15 && Z < b.hinge + 0.6 && z < b.hinge ? b.hinge - r - 0.15 : Z; },
+  spawn(){ return ENEMY_POS.map(([x, z], i) => mkEnemy(i, x, z)).concat([mkCrew(8, BUNKER, 'gun'), mkCrew(9, BUNKER, 'load')]); },
+  reset(){
+    Object.assign(pl, { x: 0, z: -21.2 });
+    BOAT.ramp = Math.PI / 2;
+    setMode('boat');
+    flash('DOG GREEN  ·  H-HOUR 0630', 3.2, PHOS);
+    flash('RAMP GOES DOWN ON THE COUNT', 3.2, LBL);
+  },
+  stage(){ BOAT.ramp = -0.16; },
+  go(){ BOAT.ramp = -0.16; },
+  boat(){
+    const left = 4.5 - game.modeT;
+    if (left > 0 && Math.ceil(left) !== game.lastCount && left < 3.5){ game.lastCount = Math.ceil(left); flash(String(game.lastCount), 0.8, PHOS); sfx('click', { vol: 0.5 }); }
+    if (left <= 0){ setMode('play'); sfx('clang', { vol: 1.2 }); flash('RAMP DOWN — GO GO GO', 2.2, PHOS); flash('GET TO THE SEAWALL. SILENCE THE CASEMATE.', 4, LBL); game.rampT = 0; }
+  },
+  update(dt){
+    // the ramp
+    const target = game.mode === 'boat' ? Math.PI / 2 : -0.16;
+    if (BOAT.ramp !== target){
+      BOAT.rampV = (BOAT.rampV || 0) + (BOAT.ramp > target ? -1 : 1) * dt * 5;
+      BOAT.ramp += BOAT.rampV * dt;
+      if (BOAT.ramp < target){ BOAT.ramp = target; if (Math.abs(BOAT.rampV) > 0.6){ sfx('splash', { vol: 1 }); for (let i = 0; i < 20; i++) puff(rnd(-1.6, 1.6), 0.05, BOAT.hinge + 1.9, 'water'); } BOAT.rampV = 0; }
+    }
+  },
+  dyn(t){ return rampPolys().concat(foamPolys(t, 13.2)); },
+  tick(){
+    if (!game.checkpoint && pl.z > 95.5){
+      game.checkpoint = { x: pl.x, z: Math.min(pl.z, 98.6), yaw: 0, name: 'THE SEAWALL' };
+      flash('CHECKPOINT — SEAWALL', 2, PHOS);
+    }
+    if (BUNKER.alive && !game.hints.cas && pl.z > 101.5){
+      game.hints.cas = true;
+      flash('CASEMATE: GRENADE THE SLIT, SHOOT THE CREW IN IT,', 4, LBL);
+      flash('OR GO ROUND AND TAKE THE REAR DOOR', 4, LBL);
+    }
+  },
+  onEmp(){ game.wonAt = game.t + 2.4; },
+};
+
+// ===========================================================================
+// LEVEL 2 — D-1, THE VIERVILLE DRAW
+// ===========================================================================
+// Early afternoon, D-Day. The Texas has shelled the draw and WN72's 88 at the mouth is out,
+// but the anti-tank wall still closes the only paved road off Omaha. An MG nest dug into the
+// west bluff and an R35 turret on a Tobruk still cover the beach flat, and the garrison is
+// coming back into the positions up the draw through its tunnels. The 121st Engineers'
+// TNT is at the foot of the wall: set the fuse, get clear, then fight up the draw to the
+// Vierville crossroads. Mortars on the west rim shell whoever stands still.
+//
+// Same world frame as the beach: +z inland (south), +x east, sea level 0. The beach flat
+// and its promenade sit at y 3; the wall stands across the road at z 35, and the road climbs
+// about 30 m to the village at z 255.
+function pw(T, z){
+  if (z <= T[0][0]) return T[0][1];
+  for (let i = 1; i < T.length; i++) if (z <= T[i][0]){ const a = T[i-1], b = T[i]; return a[1] + (b[1] - a[1]) * (z - a[0]) / (b[0] - a[0]); }
+  return T[T.length - 1][1];
+}
+const sstep = t => { t = clamp(t, 0, 1); return t*t*(3 - 2*t); };
+const DR = {
+  BEACH: [[-200, -3.2], [-70, -2.2], [-40, -0.8], [-16, 1.0], [-6, 2.3], [-4.6, 2.5]],
+  FLOOR: [[-60, 3.0], [24, 3.2], [60, 6.2], [120, 13.2], [180, 21.2], [226, 29], [256, 33.6], [400, 35.5]],
+  PLAT:  [[-60, 30], [80, 33], [200, 36.5], [400, 37.5]],
+  GRAD:  [[-60, 1.9], [70, 1.9], [150, 1.15], [230, 0.6], [400, 0.5]],
+  HALF:  [[-60, 7], [60, 7], [100, 9], [400, 9.5]],
+  // benches cut into the sides for the firing trenches and the mortar pit. side: -1 west,
+  // +1 east; s0: metres out from the floor edge; W: width
+  BENCH: [{ side: -1, z0: 66, z1: 84, s0: 1.5, W: 3.5 }, { side: 1, z0: 96, z1: 116, s0: 1.5, W: 3.5 },
+          { side: -1, z0: 138, z1: 158, s0: 1.2, W: 3.5 }, { side: 1, z0: 172, z1: 190, s0: 1.0, W: 3.5 },
+          { side: -1, z0: 194, z1: 208, s0: 4.5, W: 7, pit: true }],
+  WALLZ: [34, 36.2],
+  NEST: { x: -15, z0: 21.5, z1: 26.5, hw: 2 },
+  TURRET: [-6.5, 9],
+  TUNNEL: { z: 128, hw: 0.8 },
+};
+// the road's centre line, the floor's height and half width
+function drC(z){ return 2 + 7 * Math.sin(Math.max(0, z - 20) / 70) * sstep((z - 20) / 40); }
+function drFloor(z){ return pw(DR.FLOOR, z); }
+function drHalf(z){ return pw(DR.HALF, z); }
+// height above the floor at s metres out from the floor edge on one side, benches cut in
+function drRise(side, z, s){
+  const gr = pw(DR.GRAD, z);
+  let r = s * gr;
+  for (const b of DR.BENCH){
+    if (b.side !== side || z < b.z0 - 6 || z > b.z1 + 6) continue;
+    const k = sstep((z - b.z0 + 6) / 6) * sstep((b.z1 + 6 - z) / 6);
+    const rb = s < b.s0 ? s * gr : s < b.s0 + b.W ? b.s0 * gr : (s - b.W) * gr;
+    r = lerp(r, rb, k);
+  }
+  return r;
+}
+function benchY(b, z){ return drFloor(z) + b.s0 * pw(DR.GRAD, z); }
+function drawH0(x, z){
+  if (z < -3.4) return pw(DR.BEACH, z) + (z > -40 ? vnoise(x / 9, z / 7) * 0.15 : 0);
+  const flat = 3.0 + vnoise(x / 7, z / 7) * 0.1;
+  if (z < 14) return flat;
+  const P = pw(DR.PLAT, z) + vnoise(x / 13, z / 11) * 1.6;
+  // the bluff face rises over about 28 m from a foot that wanders 0..4 m inland, gullied
+  const f = clamp((z - 14 - (vnoise(x / 18, 1.3) + 0.5) * 4) / 28, 0, 1);
+  const bluff = lerp(flat, P, sstep(f)) + vnoise(x / 6, z / 5) * 1.6 * Math.sin(Math.PI * f);
+  const c = drC(z), dx = x - c, s = Math.abs(dx) - drHalf(z), fl = drFloor(z);
+  const cut = s > 0 ? fl + drRise(Math.sign(dx), z, s) + vnoise(x / 4, z / 5) * 0.35 * clamp(s / 3, 0, 1) : fl + vnoise(x / 5, z / 5) * 0.06;
+  return Math.max(flat, Math.min(bluff, cut));
+}
+// the nest stands on a pad levelled into the bluff face
+let _nestY = null;
+function nestY(){ if (_nestY == null){ const N = DR.NEST; _nestY = Math.max(drawH0(N.x - N.hw, N.z0 - 0.2), drawH0(N.x + N.hw, N.z0 - 0.2)) + 0.05; } return _nestY; }
+// and the tunnel's mouth is cut back to the road's level, so men walk out of it on the flat
+function drawH(x, z){
+  const h = drawH0(x, z), N = DR.NEST, T = DR.TUNNEL;
+  if (x > N.x - N.hw - 1 && x < N.x + N.hw + 1 && z > N.z0 - 1.2 && z < N.z1 + 1) return Math.min(h, nestY());
+  if (Math.abs(z - T.z) < 1.4){ const x0 = drC(T.z) + drHalf(T.z) + 0.3; if (x > x0 - 0.5 && x < x0 + 2) return Math.min(h, drFloor(z) + 0.02); }
+  return h;
+}
+function drawGrid(){
+  const xs = [], zs = [];
+  for (let x = -200; x < -46; x += 14) xs.push(x);
+  for (let x = -46; x < -20; x += 4) xs.push(x);
+  for (let x = -20; x <= 24; x += 2){ if (x === -2) xs.push(-1.1); else if (x === 6) xs.push(5.1, 6); else xs.push(x); }
+  for (let x = 28; x <= 46; x += 4) xs.push(x);
+  for (let x = 58; x <= 202; x += 12) xs.push(x);
+  for (let z = -200; z < -40; z += 10) zs.push(z);
+  for (let z = -40; z < -6; z += 4) zs.push(z);
+  zs.push(-6, -4.6, -3.4);
+  for (let z = -2; z < 20; z += 2){ zs.push(z); if (z === 2) zs.push(3.2); }
+  for (let z = 20; z < 262; z += 3) zs.push(z);
+  for (let z = 262; z <= 340; z += 6) zs.push(z);
+  return { xs, zs };
+}
+function drawTex(cx, cy, cz, n){
+  if (cz < -3.4) return cy < 0.55 ? 'wetsand' : 'sand';
+  if (cz < 3.2) return 'road';                                        // the promenade
+  if (Math.abs(cx - drC(cz)) < 3.1 && cz < 262) return 'road';         // D-1, the paved road
+  if (n[1] < 0.6) return 'rock';
+  if (cz < 15) return 'turf';
+  return n[1] < 0.86 ? 'grass' : 'meadow';
+}
+
+// roofless shell: thin walls broken off at random heights, a doorway in the front (z0)
+// wall, a window in each side
+function ruin(x0, z0, x1, z1, h, tex, R){
+  const t = 0.35, gy = Math.min(terrainAt(x0, z0), terrainAt(x1, z0), terrainAt(x0, z1), terrainAt(x1, z1)) - 0.8;
+  const piece = (ax0, az0, ax1, az1, y0, y1) => {
+    if (y1 - y0 < 0.2 || ax1 - ax0 < 0.05 || az1 - az0 < 0.05) return;
+    boxGeo(POLYS, ax0, y0, az0, ax1, y1, az1, tex, tex);
+    BOXES.push({ x0: ax0, x1: ax1, y0, y1, z0: az0, z1: az1, los: true, move: true, kind: 'concrete' });
+  };
+  // a run along one axis from a to b, broken into chunks; gaps: [from, to, sill]
+  const run = (a, b, along, at, gaps) => {
+    let u = a;
+    while (u < b - 0.05){
+      const gap = gaps.find(gp => u >= gp[0] - 0.01 && u < gp[1]);
+      let v, top;
+      if (gap){ v = gap[1]; top = gy + 0.8 + gap[2]; if (gap[2] <= 0){ u = v; continue; } }
+      else {
+        const next = gaps.filter(gp => gp[0] > u).reduce((m, gp) => Math.min(m, gp[0]), b);
+        v = Math.min(next, u + 1.2 + R() * 1.6);
+        top = gy + 0.8 + h * (R() < 0.3 ? 0.35 + R() * 0.3 : 0.75 + R() * 0.25);
+      }
+      if (along === 'x') piece(u, at, v, at + t, gy, top); else piece(at, u, at + t, v, gy, top);
+      u = v;
+    }
+  };
+  const dw = 1.4, dx0 = x0 + 1 + R() * (x1 - x0 - 2 - dw), wl = 1.3;
+  const wz0 = z0 + 1.2 + R() * (z1 - z0 - 2.4 - wl), wz1 = z0 + 1.2 + R() * (z1 - z0 - 2.4 - wl);
+  run(x0, x1, 'x', z0, [[dx0, dx0 + dw, 0]]);
+  run(x0, x1, 'x', z1 - t, [[x0 + (x1 - x0) * 0.4, x0 + (x1 - x0) * 0.4 + wl, 1.0]]);
+  run(z0 + t, z1 - t, 'z', x0, [[wz0, wz0 + wl, 1.0]]);
+  run(z0 + t, z1 - t, 'z', x1 - t, [[wz1, wz1 + wl, 1.0]]);
+}
+// a tree: trunk, and a crown of two chamfered blocks
+function tree(x, z, R){
+  const gy = terrainAt(x, z) - 0.2, h = 2.3 + R() * 1.3, tr = 0.2 + R() * 0.08, cs = 1.2 + R() * 0.6;
+  boxGeo(POLYS, x - tr, gy, z - tr, x + tr, gy + h, z + tr, 'timber', null);
+  const cy = gy + h - 0.5;
+  boxGeo(POLYS, x - cs, cy, z - cs, x + cs, cy + cs * 1.5, z + cs, 'leaves', 'leaves', { bev: cs * 0.45 });
+  const c2 = cs * 0.7, ox = (R() - 0.5) * cs, oz = (R() - 0.5) * cs;
+  boxGeo(POLYS, x + ox - c2, cy + cs * 1.1, z + oz - c2, x + ox + c2, cy + cs * 1.1 + c2 * 1.4, z + oz + c2, 'leaves', 'leaves', { bev: c2 * 0.45 });
+  shStamp(x, z, cy + cs * 1.5, cs * 0.9);
+  shStamp(x, z, gy + h, tr + 0.1);
+  TREES.push({ x, z, r: tr + 0.08, top: gy + h });
+}
+
+const NEST = mkCasemate({ tex: 'bunker', silenced: 'NEST SILENCED', taken: 'NEST SILENCED' });
+const TURRET = { kind: 'turret', alive: true, polys: [], silenced: 'TURRET SILENCED' };
+// level state that the blast, the tunnel and the mortars change
+const D2 = {
+  wall: { polys: [], rubble: [], boxes: [], rubbleBoxes: [], blown: false, set: false, prog: 0, fuse: 0, sx: 0, sz: 0, cx: 0, y: 0 },
+  tunnel: { polys: [], rubble: [], alive: true, t: 0, spawned: 0, mx: 0, mz: 0, x0: 0, fy: 0 },
+  mortar: { t: 4, r: 13, lx: 0, lz: 0, inbound: [], px: 0, pz: 0, py: 0, done: false },
+  zone: 0,
+};
+
+function buildDraw(R){
+  const fl35 = drFloor(35), c35 = drC(35);
+  // the promenade wall along the top of the beach
+  boxGeo(POLYS, -140, 1.2, -4.6, 140, 3.9, -3.4, 'seawall', 'roof', { bev: 0.25 });
+  BOXES.push({ x0: -140, x1: 140, y0: 1.2, y1: 3.9, z0: -4.6, z1: -3.4, los: true, move: true, kind: 'concrete' });
+  // hedgehogs still standing on the beach below it
+  for (let k = 0; k < 14; k++) HEDGES.push({ x: -60 + k * 9 + (R() - 0.5) * 5, z: -14 - R() * 16, yaw: R() * TAU });
+  buildHedgehogs();
+  // summer villas behind the promenade, gutted
+  for (const [x0, z0, x1, z1, h] of [[24, 4.5, 31.5, 12, 5.6], [35, 5, 42, 12.5, 6.2], [46, 4.5, 54, 11.5, 5.2],
+                                       [-31, 4.5, -24, 12, 5.4], [-42, 5, -35, 12.5, 6], [-54, 4.5, -46, 11.5, 5]]) ruin(x0, z0, x1, z1, h, 'stucco', R);
+  // WN72: the H677 casemate east of the road, its 88 knocked out, embrasure facing east down
+  // the beach behind a flank wall
+  {
+    const list = [], x0 = 9, x1 = 18, z0 = 17, z1 = 26, yb = 2.4, yt = 7.0;
+    boxGeo(list, x0, yb, z0, x1, yt, z1, 'bunker', 'roof', { bev: 0.6, skip: { r: true } });
+    const yw = yt - 0.6, e0 = 20.3, e1 = 22.7, ey0 = 3.9, ey1 = 5.3, X = x1;
+    wall(list, X, z0, X, e0, yb, yw, 'bunker'); wall(list, X, e1, X, z1, yb, yw, 'bunker');
+    wall(list, X, e0, X, e1, yb, ey0, 'bunker'); wall(list, X, e0, X, e1, ey1, yw, 'bunker');
+    wall(list, X - 1.2, e0, X - 1.2, e1, ey0, ey1, 'dark', { inner: true, dark: true });
+    wall(list, X, e0, X - 1.2, e0, ey0, ey1, 'bunker', { inner: true, dark: true });
+    wall(list, X - 1.2, e1, X, e1, ey0, ey1, 'bunker', { inner: true, dark: true });
+    hrect(list, X - 1.2, e0, X, e1, ey0, 'bunker', { inner: true });
+    const tl = -0.16, A = [Math.cos(tl), Math.sin(tl), 0];
+    oboxGeo(list, [X + 0.9, 4.45, 21.5], A, [0, 0, 1], [-Math.sin(tl), Math.cos(tl), 0], 2.2, 0.11, 0.11, 'dark');
+    boxGeo(list, 18, yb, 16.3, 20.6, 6.3, 17.0, 'bunker', 'roof', { bev: 0.2 });
+    for (const p of list){ p.amb = 0.72; POLYS.push(p); }
+    BOXES.push({ x0, x1, y0: yb - 1, y1: yt, z0, z1, los: true, move: true, kind: 'concrete' });
+    BOXES.push({ x0: 18, x1: 20.6, y0: yb, y1: 6.3, z0: 16.3, z1: 17.0, los: true, move: true, kind: 'concrete' });
+  }
+  // the anti-tank wall across the road, the engineers' TNT at its foot, and the rubble it
+  // leaves (drawn once it has gone up)
+  {
+    const W = D2.wall, list = [], [wz0, wz1] = DR.WALLZ, yb = fl35 - 1.5, yt = fl35 + 3.4;
+    W.cx = c35; W.y = fl35; W.polys = []; W.rubble = [];
+    boxGeo(list, c35 - 13, yb, wz0, c35 + 13, yt, wz1, 'bunker', 'roof', { bev: 0.25 });
+    const box = { x0: c35 - 13, x1: c35 + 13, y0: yb, y1: yt, z0: wz0, z1: wz1, los: true, move: true, kind: 'concrete', noShadow: true };
+    const cx = c35 + 3.6, cz = wz0 - 0.75;
+    boxGeo(list, cx - 0.9, fl35 - 0.2, cz - 0.4, cx - 0.1, fl35 + 0.55, cz + 0.4, 'crate', 'crate');
+    boxGeo(list, cx, fl35 - 0.2, cz - 0.45, cx + 0.8, fl35 + 0.55, cz + 0.35, 'crate', 'crate');
+    boxGeo(list, cx - 0.5, fl35 + 0.55, cz - 0.35, cx + 0.3, fl35 + 1.2, cz + 0.4, 'crate', 'crate');
+    const crate = { x0: cx - 0.9, x1: cx + 0.8, y0: fl35 - 0.2, y1: fl35 + 1.2, z0: cz - 0.45, z1: cz + 0.4, los: true, move: true, kind: 'wood', noShadow: true };
+    W.sx = cx - 0.1; W.sz = cz - 1.1;
+    for (const p of list){ POLYS.push(p); W.polys.push(p); }
+    W.boxes = [box, crate];
+    BOXES.push(box, crate);
+    // the stumps either side of the breach, and broken slabs across it
+    const rub = [];
+    boxGeo(rub, c35 - 13, yb, wz0, c35 - 4.5, yt - 0.4, wz1, 'bunker', 'roof', { bev: 0.25 });
+    boxGeo(rub, c35 + 5, yb, wz0, c35 + 13, yt - 0.6, wz1, 'bunker', 'roof', { bev: 0.25 });
+    W.rubbleBoxes = [{ x0: c35 - 13, x1: c35 - 4.5, y0: yb, y1: yt - 0.4, z0: wz0, z1: wz1, los: true, move: true, kind: 'concrete' },
+                     { x0: c35 + 5, x1: c35 + 13, y0: yb, y1: yt - 0.6, z0: wz0, z1: wz1, los: true, move: true, kind: 'concrete' }];
+    for (let k = 0; k < 9; k++){
+      const x = c35 - 4 + R() * 8.5, z = wz0 - 2 + R() * 6, a = R() * TAU, tl = (R() - 0.5) * 0.8;
+      const A = [Math.cos(a) * Math.cos(tl), Math.sin(tl), Math.sin(a) * Math.cos(tl)], Cv = [-Math.sin(a), 0, Math.cos(a)];
+      const Bv = [A[1]*Cv[2] - A[2]*Cv[1], A[2]*Cv[0] - A[0]*Cv[2], A[0]*Cv[1] - A[1]*Cv[0]];
+      const s = 0.3 + R() * 0.5;
+      oboxGeo(rub, [x, drFloor(z) + s * 0.6, z], A, Bv, Cv, s * 1.6, s * 0.7, s, 'bunker');
+    }
+    const lo = { x0: c35 - 3.5, x1: c35 - 1.6, y0: fl35 - 0.3, y1: fl35 + 0.9, z0: wz0 + 0.4, z1: wz0 + 1.6, los: true, move: true, kind: 'concrete' };
+    boxGeo(rub, lo.x0, lo.y0, lo.z0, lo.x1, lo.y1, lo.z1, 'bunker', 'roof', { bev: 0.15 });
+    W.rubbleBoxes.push(lo);
+    for (const p of rub){ p.hidden = true; POLYS.push(p); W.rubble.push(p); }
+  }
+  // WN71's nest, dug into the bluff west of the mouth, its slit looking out over the flat
+  {
+    const N = DR.NEST, yb = nestY();
+    Object.assign(NEST, { x0: N.x - N.hw, x1: N.x + N.hw, z0: N.z0, z1: N.z1, yb, yt: yb + 3.0, bev: 0.5,
+      slit: { x0: N.x - 1.25, x1: N.x + 1.25, y0: yb + 1.15, y1: yb + 1.8 }, mg: [N.x, yb + 1.48, N.z0 - 0.45],
+      slitPos: { gun: [N.x, N.z0 + 0.75], load: [N.x + 1.0, N.z0 + 1.0] }, smoke: [N.x, yb + 2.4, N.z0 - 0.2] });
+    boxGeo(POLYS, NEST.x0 - 0.3, yb - 6, NEST.z0, NEST.x1 + 0.3, yb + 0.02, NEST.z1, 'bunker', null);
+    buildCasemate(NEST);
+    NEST.mgo = mkMG({ o: NEST.mg, face: Math.PI - 0.42, arc: 1.12, emp: NEST, manned: () => gunManned(NEST), reach: [22, 60] });
+    MGS.push(NEST.mgo);
+  }
+  // the R35 turret on its Tobruk: a concrete ring sunk in the flat, the turret on top
+  {
+    const [tx, tz] = DR.TURRET, gy = terrainAt(tx, tz), list = [];
+    boxGeo(list, tx - 1.3, gy - 0.6, tz - 1.3, tx + 1.3, gy + 0.55, tz + 1.3, 'bunker', 'roof', { bev: 0.2 });
+    for (const p of list) POLYS.push(p);
+    Object.assign(TURRET, { x0: tx - 1.3, x1: tx + 1.3, z0: tz - 1.3, z1: tz + 1.3, gy, polys: list, mg: [tx, gy + 1.05, tz], smoke: [tx, gy + 1.3, tz] });
+    BOXES.push({ x0: tx - 1.3, x1: tx + 1.3, y0: gy - 0.6, y1: gy + 0.55, z0: tz - 1.3, z1: tz + 1.3, los: true, move: true, kind: 'concrete' });
+    EMPS.push(TURRET);
+    TURRET.mgo = mkMG({ o: TURRET.mg, face: 0, arc: Math.PI, range: 95, rate: 11, burst: [1.0, 1.8], idle: [2.0, 3.2], track: 0.5, sweep: Math.PI, reach: [12, 35], emp: TURRET, muzzle: 0.95 });
+    MGS.push(TURRET.mgo);
+  }
+  // firing trenches along the foot of the bluff either side of the mouth
+  for (const [x0, x1] of [[-27, -13], [20, 33]]){
+    const y = terrainAt((x0 + x1) / 2, 15);
+    boxGeo(POLYS, x0, y - 0.5, 14.7, x1, y + 1.0, 15.2, 'timber', 'turf');
+    BOXES.push({ x0, x1, y0: y - 0.5, y1: y + 1.0, z0: 14.7, z1: 15.2, los: true, move: true, kind: 'wood' });
+  }
+  // parapets on the benches up the draw, in short straight runs that follow the curve
+  for (const b of DR.BENCH){
+    if (b.pit) continue;
+    for (let z = b.z0 + 0.5; z < b.z1 - 0.5; z += 3){
+      const zm = z + 1.5, x = drC(zm) + b.side * (drHalf(zm) + b.s0 + 0.3), y1 = benchY(b, zm) + 0.95;
+      const y0 = Math.min(terrainAt(x, z), terrainAt(x, z + 3)) - 0.6;
+      boxGeo(POLYS, x - 0.25, y0, z, x + 0.25, y1, z + 3, 'timber', 'turf');
+      BOXES.push({ x0: x - 0.25, x1: x + 0.25, y0, y1, z0: z, z1: z + 3, los: true, move: true, kind: 'wood' });
+    }
+  }
+  // the mortar pit on the west rim: a ring of sandbags round two 8 cm tubes
+  {
+    const b = DR.BENCH[4], pz = (b.z0 + b.z1) / 2, px = drC(pz) - (drHalf(pz) + b.s0 + b.W / 2), py = terrainAt(px, pz);
+    Object.assign(D2.mortar, { px, pz, py });
+    for (let k = 0; k < 8; k++){
+      const a = k / 8 * TAU, x = px + Math.sin(a) * 2.3, z = pz + Math.cos(a) * 2.3;
+      if (k === 2) continue;                                     // the way in, from the rim side
+      const A = [Math.cos(a), 0, -Math.sin(a)], gy = terrainAt(x, z);
+      oboxGeo(POLYS, [x, gy + 0.3, z], A, [0, 1, 0], [Math.sin(a), 0, Math.cos(a)], 0.85, 0.42, 0.32, 'turf');
+      BOXES.push({ x0: x - 0.6, x1: x + 0.6, y0: gy - 0.2, y1: gy + 0.72, z0: z - 0.6, z1: z + 0.6, los: true, move: true, kind: 'sand' });
+    }
+    for (const ox of [-0.6, 0.7]){
+      const tl = 0.85, A = [0, Math.sin(tl), -Math.cos(tl)];
+      oboxGeo(POLYS, [px + ox, py + 0.45, pz - 0.1], A, [1, 0, 0], [0, Math.cos(tl), Math.sin(tl)], 0.55, 0.05, 0.05, 'dark');
+    }
+  }
+  // a tunnel mouth in the east side: men come back out of it into the draw
+  {
+    const T = D2.tunnel, z = DR.TUNNEL.z, c = drC(z), x0 = c + drHalf(z) + 0.3, fy = drFloor(z), list = [];
+    const z0 = z - 2.2, z1 = z + 2.2, y0 = fy - 0.6, y1 = fy + 3.0, o0 = z - DR.TUNNEL.hw, o1 = z + DR.TUNNEL.hw, oy = fy + 2.0;
+    boxGeo(list, x0, y0, z0, x0 + 3, y1, z1, 'bunker', 'roof', { bev: 0.3, skip: { l: true } });
+    const yw = y1 - 0.3;
+    wall(list, x0, z1, x0, o1, y0, yw, 'bunker'); wall(list, x0, o0, x0, z0, y0, yw, 'bunker'); wall(list, x0, o1, x0, o0, oy, yw, 'bunker');
+    const D = 1.6;
+    wall(list, x0 + D, o1, x0 + D, o0, fy - 0.1, oy, 'dark', { inner: true, dark: true });
+    wall(list, x0, o0, x0 + D, o0, fy - 0.1, oy, 'bunker', { inner: true, dark: true });
+    wall(list, x0 + D, o1, x0, o1, fy - 0.1, oy, 'bunker', { inner: true, dark: true });
+    hrect(list, x0, o0, x0 + D, o1, oy, 'bunker', { inner: true, dark: true }, true);
+    for (const p of list){ POLYS.push(p); T.polys.push(p); p.amb0 = p.amb; }
+    BOXES.push({ x0: x0 + 0.05, x1: x0 + 3, y0, y1, z0, z1, los: true, move: true, kind: 'concrete' });
+    const rub = [];
+    for (let k = 0; k < 5; k++){
+      const s = 0.35 + R() * 0.3, yy = fy + 0.2 + k * 0.32, zz = z + (R() - 0.5) * 0.8;
+      oboxGeo(rub, [x0 + 0.5, yy, zz], [0, 0, 1], [0, 1, 0], [1, 0, 0], 0.75, s * 0.7, s, 'bunker');
+    }
+    for (const p of rub){ p.hidden = true; POLYS.push(p); T.rubble.push(p); }
+    Object.assign(T, { x0, mx: x0 - 0.3, mz: z, fy });
+  }
+  // trees on the wooded sides and along the rim
+  for (let k = 0, n = 0; k < 400 && n < 74; k++){
+    const z = 52 + R() * 205, side = R() < 0.5 ? -1 : 1, s = 1.6 + R() * 12, c = drC(z), x = c + side * (drHalf(z) + s);
+    if (Math.abs(x) > 44) continue;
+    if (DR.BENCH.some(b => b.side === side && z > b.z0 - 4 && z < b.z1 + 4 && s < b.s0 + b.W + 1.5)) continue;
+    if (side > 0 && Math.abs(z - DR.TUNNEL.z) < 6 && s < 6) continue;
+    if (z > 222 && s < 9) continue;
+    tree(x, z, R); n++;
+  }
+  for (const [x, z] of [[-40, 30], [-33, 44], [38, 36], [30, 50], [-44, 58], [42, 62]]) tree(x, z, R);
+  // Vierville's first houses where the draw comes out, shelled
+  for (const [side, za, zb, d, w, h] of [[-1, 228, 236, 3, 7, 5.2], [1, 236, 245, 2.5, 7.5, 5.8], [-1, 244, 253, 3.5, 8, 4.6], [1, 252, 259, 3, 6.5, 5]]){
+    const zm = (za + zb) / 2, e = drC(zm) + side * (drHalf(zm) + d), x0 = side < 0 ? e - w : e, x1 = side < 0 ? e : e + w;
+    ruin(x0, za, x1, zb, h, 'stone', R);
+  }
+  // the village beyond the crossroads, and the church of Saint-André with its tower shot off
+  for (const [x0, z0, x1, z1, h] of [[-44, 266, -32, 276, 7], [14, 266, 26, 275, 7.5], [28, 270, 40, 280, 6.5], [-10, 278, -2, 290, 7]]){
+    const gy = Math.min(terrainAt(x0, z0), terrainAt(x1, z1)) - 0.8, R2 = R() * 0.6;
+    boxGeo(POLYS, x0, gy, z0, x1, gy + h, z1, 'stone', null);
+    const mz = (z0 + z1) / 2, rh = 2.6 + R2, S2 = Math.SQRT1_2;
+    quad(POLYS, [x0, gy + h, z0], [x1, gy + h, z0], [x1, gy + h + rh, mz], [x0, gy + h + rh, mz], 'roof', [0, S2, -S2], uvTop);
+    quad(POLYS, [x1, gy + h, z1], [x0, gy + h, z1], [x0, gy + h + rh, mz], [x1, gy + h + rh, mz], 'roof', [0, S2, S2], uvTop);
+    POLYS.push(mkPoly([[x0, gy + h, z1], [x0, gy + h, z0], [x0, gy + h + rh, mz]], 'stone', [-1, 0, 0], uvWallZ(gy + h + rh)));
+    POLYS.push(mkPoly([[x1, gy + h, z0], [x1, gy + h, z1], [x1, gy + h + rh, mz]], 'stone', [1, 0, 0], uvWallZ(gy + h + rh)));
+    BOXES.push({ x0, x1, y0: gy, y1: gy + h + rh, z0, z1, los: true, move: true, kind: 'concrete' });
+  }
+  {
+    const x0 = -30, x1 = -21, z0 = 284, z1 = 302, gy = terrainAt(-25, 290) - 1, h = 8.5, rh = 4.2, mx = (x0 + x1) / 2, S2 = Math.SQRT1_2;
+    boxGeo(POLYS, x0, gy, z0, x1, gy + h, z1, 'stone', null);
+    quad(POLYS, [x0, gy + h, z1], [x0, gy + h, z0], [mx, gy + h + rh, z0], [mx, gy + h + rh, z1], 'roof', [-S2, S2, 0], uvTop);
+    quad(POLYS, [x1, gy + h, z0], [x1, gy + h, z1], [mx, gy + h + rh, z1], [mx, gy + h + rh, z0], 'roof', [S2, S2, 0], uvTop);
+    POLYS.push(mkPoly([[x1, gy + h, z0], [x0, gy + h, z0], [mx, gy + h + rh, z0]], 'stone', [0, 0, -1], uvWallX(gy + h + rh)));
+    POLYS.push(mkPoly([[x0, gy + h, z1], [x1, gy + h, z1], [mx, gy + h + rh, z1]], 'stone', [0, 0, 1], uvWallX(gy + h + rh)));
+    const tx0 = -28.2, tx1 = -22.8, tz0 = 278.6, tz1 = 284, th = 15.5;
+    boxGeo(POLYS, tx0, gy, tz0, tx1, gy + th, tz1, 'stone', 'roof');
+    for (const [a, b, c2, d, hh] of [[tx0, tz0, tx0 + 1.4, tz0 + 1.2, 2.4], [tx1 - 1.1, tz0, tx1, tz0 + 2.2, 1.6], [tx0, tz1 - 1.3, tx0 + 2.4, tz1, 1.1], [tx1 - 1.6, tz1 - 1.1, tx1, tz1, 2.9]])
+      boxGeo(POLYS, a, gy + th, b, c2, gy + th + hh, d, 'stone', 'roof');
+    BOXES.push({ x0, x1, y0: gy, y1: gy + h + rh, z0, z1, los: true, move: true, kind: 'concrete' });
+    BOXES.push({ x0: tx0, x1: tx1, y0: gy, y1: gy + th, z0: tz0, z1: tz1, los: true, move: true, kind: 'concrete' });
+  }
+  // first aid and ammunition
+  for (const [x, z] of [[33, 9.5], [11.5, 14.6], [-28, 8], [drC(45) + 5, 45], [drC(122) - 6, 122], [drC(166) + 6, 166], [drC(214) + 5.5, 214], [drC(240) - 4, 240]]) MEDS.push({ x, z });
+  for (const [x, z] of [[44, 9], [7.5, 13.5], [-38, 9], [drC(92) - 5.5, 92], [drC(134) - 6, 134], [drC(196) + 6.5, 196], [drC(232) + 4, 232]]) AMMOS.push({ x, z });
+}
+
+// the turret and its gun are redrawn each frame at the angle the gun is laid
+function turretPolys(){
+  const T = TURRET, m = T.mgo;
+  if (!m) return [];
+  const list = [], [x, y, z] = [T.mg[0], T.gy + 0.55, T.mg[2]], yaw = m.yaw, ca = Math.cos(yaw), sa = Math.sin(yaw);
+  const A = [sa, 0, ca], Cv = [ca, 0, -sa];
+  oboxGeo(list, [x, y + 0.42, z], A, [0, 1, 0], Cv, 0.75, 0.42, 0.62, 'steel');
+  oboxGeo(list, [x - sa * 0.08, y + 0.9, z - ca * 0.08], A, [0, 1, 0], Cv, 0.36, 0.08, 0.32, 'steel');
+  const p = m.pitch, F = [sa * Math.cos(p), Math.sin(p), ca * Math.cos(p)];
+  oboxGeo(list, [x + F[0] * 1.05, y + 0.5 + F[1] * 1.05, z + F[2] * 1.05], F, [0, 1, 0], Cv, 0.45, 0.045, 0.045, 'dark');
+  if (!T.alive) for (const q of list) q.amb = 0.55;
+  return list;
+}
+function blowWall(silent){
+  const W = D2.wall;
+  if (W.blown) return;
+  W.blown = true; W.set = false;
+  for (const p of W.polys) p.hidden = true;
+  for (const p of W.rubble) p.hidden = false;
+  for (const b of W.boxes){ const i = BOXES.indexOf(b); if (i >= 0) BOXES.splice(i, 1); }
+  for (const b of W.rubbleBoxes) BOXES.push(b);
+  if (silent) return;
+  const bx = W.sx, by = W.y + 0.8, bz = W.sz + 1;
+  explode(bx, by, bz, true);
+  rFlash = 1.1;
+  for (let i = 0; i < 70; i++){
+    const a = rnd(0, TAU), s = rnd(3, 16);
+    part({ x: bx + rnd(-4, 4), y: by + rnd(0, 2), z: bz + rnd(-1, 1), vx: Math.cos(a)*s*0.5, vy: rnd(5, 18), vz: Math.sin(a)*s*0.5, size: rnd(0.15, 0.4), col: [150, 146, 136], max: rnd(1.2, 2.2) });
+  }
+  for (let i = 0; i < 26; i++)
+    part({ x: bx + rnd(-6, 6), y: by + rnd(0, 4), z: bz + rnd(-2, 2), vx: rnd(-0.8, 0.8), vy: rnd(0.8, 2.6), vz: rnd(-0.8, 0.8), grav: 0, drag: 0.3,
+           size: rnd(2.5, 4.5), col: [120, 116, 108], max: rnd(4, 7), alpha: 0.6, fadeIn: true });
+  for (const e of game.enemies){
+    if (e.crew || e.state === 'dead' || e.state === 'hit') continue;
+    const d = Math.hypot(e.x - bx, e.z - bz);
+    if (d < 22 && !trace(bx, by + 0.6, bz, e.x, e.gy + 1.0, e.z)) killEnemy(e);
+  }
+  const d = Math.hypot(pl.x - bx, pl.z - bz);
+  if (d < 26 && !trace(bx, by + 0.6, bz, pl.x, pl.fy + 1.0, pl.z)) hurt(Math.round(170 * (1 - d / 26)));
+  pl.shake = Math.max(pl.shake, clamp(1.3 - d / 60, 0.3, 1.2));
+  sfx('boom', { vol: 1.6, rate: 0.55 }); sfx('boom', { vol: 1.2, rate: 0.75 });
+  game.score += 500;
+  flash('THE WALL IS DOWN — THE ROAD IS OPEN', 3.2, PHOS);
+  flash('UP THE DRAW TO VIERVILLE', 3.2, LBL);
+}
+function blowTunnel(){
+  const T = D2.tunnel;
+  T.alive = false;
+  for (const p of T.polys) p.amb = p.amb0 * 0.6;
+  for (const p of T.rubble) p.hidden = false;
+  game.score += 500;
+  flash('TUNNEL BLOWN', 2.4, PHOS);
+}
+function mortarCrew(){ return game.enemies.filter(e => e.mortar && e.state !== 'dead' && e.state !== 'hit'); }
+// mortar men work the tubes; they never pick up a rifle
+function mortarMan(e){
+  e.yaw = Math.PI; e.bob = 0;
+  e.frame = (game.t - (D2.mortar.firedAt || -9) < 0.4 ? 'aim_' : 'reload_') + spriteFrame(e);
+  return 0;
+}
+function silenceMouth(){
+  if (TURRET.alive){ TURRET.alive = false; for (const p of TURRET.polys) p.amb = p.amb0 * 0.62; }
+  if (NEST.alive){ NEST.alive = false; for (const p of NEST.polys) p.amb = p.amb0 * 0.62; }
+  for (const e of game.enemies) if (e.crew || e.z < 20) e.state = 'dead';
+}
+
+const L2 = {
+  name: 'D-1, THE VIERVILLE DRAW', sub: 'D-1  ·  THE VIERVILLE DRAW  ·  6 JUNE 1944', tap: 'TAP TO GO UP THE DRAW',
+  tip: 'BLOW THE WALL. KEEP MOVING UNDER THE MORTARS.',
+  down: 'DOWN IN THE DRAW', won: 'D-1 IS OPEN', next: '',
+  brief: {
+    title: 'D-1  ·  THE VIERVILLE DRAW',
+    sub: 'VIERVILLE-SUR-MER  ·  6 JUNE 1944  ·  1300',
+    lines: ['THE TEXAS HAS SHELLED THE DRAW. THE 88 IS OUT.', 'THE ANTI-TANK WALL STILL CLOSES THE ROAD.', 'THE ENGINEERS LEFT TNT AT ITS FOOT.',
+            'AN MG NEST ON THE WEST BLUFF AND A TURRET', 'ON A TOBRUK STILL COVER THE FLAT.', 'THEY ARE COMING BACK THROUGH THE TUNNELS.',
+            'BLOW THE WALL. TAKE THE DRAW TO VIERVILLE.'],
+  },
+  seed: 1300,
+  sg: { res: 0.6, x0: -60, z0: -36, w: 200, h: 560 },
+  sea: { x0: -200, x1: 202, z0: -200, z1: -28, zf: 40 },
+  bounds: { x0: -46, x1: 58, z0: -2.6, z1: 262 },
+  maxSlope: 0.75,
+  checkpoint: { x: 2, z: 40, yaw: 0, name: 'THE WALL' },
+  grid: drawGrid, hfun: drawH, groundTex: drawTex, build: buildDraw, shift: z => drC(z) - 2,
+  spawn(){
+    const E = []; let i = 0;
+    const add = (x, z, o) => { const e = mkEnemy(i++, x, z, o); E.push(e); return e; };
+    for (const x of [-24, -17, 23, 30]) add(x, 15.9, { span: 5 });
+    for (const [k, zs] of [[0, [70, 79]], [1, [99, 106, 113]], [2, [143, 152]], [3, [176, 185]]]){
+      const b = DR.BENCH[k];
+      for (const z of zs) add(drC(z) + b.side * (drHalf(z) + b.s0 + 1.7), z, { ax: 0, az: 1, span: 6, rise: 1.4, sight: 75 });
+    }
+    const M = D2.mortar;
+    add(M.px - 0.7, M.pz + 0.5, { fixed: true, mortar: true, pose: 'reload', custom: mortarMan, yaw: Math.PI });
+    add(M.px + 0.8, M.pz - 0.3, { fixed: true, mortar: true, pose: 'reload', custom: mortarMan, yaw: Math.PI });
+    for (const [dx, z] of [[-6.5, 233], [6, 241], [-1.5, 249]]) add(drC(z) + dx, z, { ax: 1, az: 0, span: 3, rise: 1.0, sight: 70 });
+    E.push(mkCrew(i++, NEST, 'gun'), mkCrew(i++, NEST, 'load'));
+    return E;
+  },
+  reset(){
+    const W = D2.wall, T = D2.tunnel, M = D2.mortar;
+    if (W.blown){
+      for (const p of W.polys) p.hidden = false;
+      for (const p of W.rubble) p.hidden = true;
+      for (const b of W.rubbleBoxes){ const i = BOXES.indexOf(b); if (i >= 0) BOXES.splice(i, 1); }
+      for (const b of W.boxes) if (BOXES.indexOf(b) < 0) BOXES.push(b);
+    }
+    Object.assign(W, { blown: false, set: false, prog: 0, fuse: 0 });
+    for (const p of T.polys) p.amb = p.amb0;
+    for (const p of T.rubble) p.hidden = true;
+    Object.assign(T, { alive: true, t: 3, spawned: 0 });
+    Object.assign(M, { t: 5, r: 13, lx: 0, lz: 0, inbound: [], done: false, firedAt: -9 });
+    D2.zone = 0;
+    Object.assign(pl, { x: 56, z: 0.6, yaw: -1.38, crouch: true, eye: EYE_C });
+    setMode('brief');
+  },
+  stage(S){
+    if (S.name === 'draw' || S.name === 'head'){ blowWall(true); silenceMouth(); D2.zone = 1; }
+    if (S.name === 'head'){ for (const e of game.enemies) if (e.z < 192 && !e.mortar) e.state = 'dead'; D2.zone = 2; }
+  },
+  go(){
+    flash('D-1  ·  1300', 3, PHOS);
+    flash('SET THE FUSE AT THE WALL. TAKE THE DRAW.', 4, LBL);
+  },
+  dyn(t){ return turretPolys().concat(foamPolys(t, -31)); },
+  onEmp(B){ if (B === NEST || B === TURRET) game.hints[B === NEST ? 'nestDone' : 'turDone'] = true; },
+  onBlast(x, y, z){
+    if (TURRET.alive && Math.hypot(x - TURRET.mg[0], z - TURRET.mg[2]) < 2.1 && y < TURRET.gy + 2.2) destroyEmp(TURRET);
+    const T = D2.tunnel;
+    if (T.alive && Math.hypot(x - T.mx, z - T.mz) < 3.2 && Math.abs(y - T.fy) < 3.5) blowTunnel();
+  },
+  tick(dt){
+    const W = D2.wall, T = D2.tunnel, M = D2.mortar, H = game.hints;
+    // hints the first time each gun finds you
+    if (TURRET.alive && TURRET.mgo.sees && !H.tur){ H.tur = true; flash('TURRET ON A TOBRUK — GRENADE INTO THE RING', 3.5, LBL); }
+    if (NEST.alive && NEST.mgo.sees && !H.nest){ H.nest = true; flash('MG NEST UP ON THE WEST BLUFF', 3.5, LBL); flash('SHOOT THE CREW IN THE SLIT', 3.5, LBL); }
+    // the wall: crouch beside the TNT to set the fuse, then get clear
+    if (!W.blown){
+      const near = Math.hypot(pl.x - W.sx, pl.z - W.sz) < 1.9;
+      if (!W.set){
+        if (near && !H.tnt){ H.tnt = true; flash('THE ENGINEERS’ TNT', 3, PHOS); flash('CROUCH HERE TO SET THE FUSE', 3, LBL); }
+        if (near && pl.crouch){
+          W.prog += dt;
+          if (W.prog >= 3){ W.set = true; W.fuse = 20; sfx('click', { vol: 0.9 }); flash('FUSE LIT — 20 SECONDS', 2.5, WARN); flash('GET BEHIND THE CASEMATE OR WELL BACK', 3.5, LBL); }
+        } else W.prog = Math.max(0, W.prog - dt * 2);
+      } else {
+        const before = Math.ceil(W.fuse);
+        W.fuse -= dt;
+        if (Math.ceil(W.fuse) !== before && W.fuse > 0 && W.fuse <= 10) sfx('click', { vol: 0.45, rate: 1.4 });
+        if (W.fuse <= 0) blowWall(false);
+      }
+    }
+    // checkpoints
+    if (W.blown && D2.zone < 1 && pl.z > 40){ D2.zone = 1; game.checkpoint = { x: drC(40), z: 40, yaw: 0, name: 'THE WALL' }; flash('CHECKPOINT — THE WALL', 2, PHOS); }
+    if (D2.zone < 2 && pl.z > 160){ D2.zone = 2; game.checkpoint = { x: drC(160), z: 160, yaw: 0, name: 'THE TRENCHES' }; flash('CHECKPOINT — THE TRENCHES', 2, PHOS); }
+    // the tunnel: while it stands, men keep coming out of it once you are near
+    if (T.alive && pl.z > 92 && pl.z < 170 && T.spawned < 5){
+      T.t -= dt;
+      const out = game.enemies.filter(e => e.tunnel && e.state !== 'dead' && e.state !== 'hit').length;
+      if (T.t <= 0 && out < 2){
+        T.t = rnd(9, 13); T.spawned++;
+        const z = T.mz + rnd(-0.4, 0.4), e = mkEnemy(1000 + T.spawned, T.x0 + 0.6, z, { tunnel: true, ax: 0, az: 1, span: 8, rise: 1.4, sight: 80, alert: true, yaw: -Math.PI / 2 });
+        e.tx = T.x0 - 2.2; e.tz = z + rnd(-3, 3); e.hx = e.tx; e.hz = e.tz; e.gait = 'run'; e.state = 'move';
+        e.gy = drFloor(z);
+        game.enemies.push(e);
+        sfx('clang', { at: [T.x0, T.fy + 1, T.mz], range: 25, vol: 0.5, rate: 1.4 });
+        if (!H.tun){ H.tun = true; flash('MEN COMING OUT OF A TUNNEL', 3.5, LBL); flash('GRENADE THE MOUTH', 3.5, LBL); }
+      }
+    }
+    // the mortars: rounds walk onto whoever stands still; moving on resets the bracket
+    const crew = mortarCrew();
+    if (!crew.length && !M.done){ M.done = true; game.score += 500; flash('MORTAR PIT SILENCED', 2.6, PHOS); }
+    if (crew.length && W.blown && pl.z > 44 && pl.z < 190){
+      M.t -= dt;
+      if (M.t <= 0){
+        M.t = rnd(6.5, 9);
+        const moved = Math.hypot(pl.x - M.lx, pl.z - M.lz);
+        M.r = moved > 8 ? 13 : Math.max(2.4, M.r * 0.6);
+        M.lx = pl.x; M.lz = pl.z;
+        const a = rnd(0, TAU), d = M.r * rnd(0.55, 1);
+        M.inbound.push({ x: pl.x + Math.sin(a) * d, z: pl.z + Math.cos(a) * d, t: 1.35 });
+        M.firedAt = game.t;
+        sfx('thud', { at: [M.px, M.py + 1, M.pz], range: 60, vol: 0.8, rate: 0.6 });
+        sfx('whistle', { vol: 0.7 });
+        if (!H.mort){ H.mort = true; flash('MORTARS — KEEP MOVING', 2.6, WARN); flash('THE PIT IS ON THE WEST RIM, UP THE DRAW', 3.2, LBL); }
+      }
+    }
+    for (const s of M.inbound){
+      s.t -= dt;
+      if (s.t <= 0){ s.done = true; explode(s.x, groundAt(s.x, s.z), s.z, false); }
+    }
+    M.inbound = M.inbound.filter(s => !s.done);
+    // the crossroads at the head of the draw
+    if (!H.won && pl.z > 251 && Math.abs(pl.x - drC(pl.z)) < 14){
+      H.won = true;
+      if (TURRET.alive || NEST.alive) flash('THE MOUTH STILL HOLDS OUT BEHIND YOU', 2.4, LBL);
+      if (!T.alive) flash('TUNNEL CLOSED  +500', 2.4, PHOS);
+      flash('VIERVILLE CROSSROADS — D-1 IS OPEN', 3, PHOS);
+      game.score += 1500;
+      game.wonAt = game.t + 2.6;
+    }
+  },
+  overlay(v){
+    const W = D2.wall, cx = v.x + v.w / 2;
+    if (W.set && !W.blown){
+      const big = Math.max(18, Math.min(v.h * 0.08, v.w * 0.09));
+      textGlow(String(Math.ceil(W.fuse)), cx, v.y + v.h * 0.32, big, W.fuse < 6 ? WARN : PHOS, 0.95);
+    } else if (!W.blown && W.prog > 0){
+      const bw = Math.min(220, v.w * 0.4), bh = Math.max(6, v.h * 0.016), y = v.y + v.h * 0.62;
+      g.fillStyle = 'rgba(5,8,10,0.55)'; g.fillRect(cx - bw / 2 - 2, y - 2, bw + 4, bh + 4);
+      g.fillStyle = `rgba(${PHOS},0.9)`; g.fillRect(cx - bw / 2, y, bw * clamp(W.prog / 3, 0, 1), bh);
+      textGlow('SETTING THE FUSE', cx, y - bh * 1.6, Math.max(10, bh * 1.6), LBL, 0.9);
+    }
+  },
+  // MAP: the draw turned on its side, the sea on the left and Vierville on the right
+  map(x, y, w, h){
+    const X0 = -46, X1 = 46, Z0 = -6, Z1 = 266;
+    const sz = wz => x + (wz - Z0) / (Z1 - Z0) * w, sx = wx => y + (wx - X0) / (X1 - X0) * h;
+    g.fillStyle = 'rgba(70,104,110,0.35)'; g.fillRect(x, y, sz(-4) - x, h);
+    g.fillStyle = `rgba(${CELL_B},0.10)`; g.fillRect(sz(-4), y, sz(16) - sz(-4), h);
+    g.fillStyle = `rgba(${CELL_B},0.22)`;
+    g.beginPath();
+    for (let z = 14; z <= 266; z += 6) g.lineTo(sz(z), sx(drC(z) - drHalf(z)));
+    for (let z = 266; z >= 14; z -= 6) g.lineTo(sz(z), sx(drC(z) + drHalf(z)));
+    g.closePath(); g.fill();
+    g.strokeStyle = `rgba(${CELL_B},0.6)`; g.lineWidth = 1; g.beginPath();
+    for (let z = -2; z <= 266; z += 6) g.lineTo(sz(z), sx(z < 4 ? 2 : drC(z)));
+    g.stroke();
+    const W = D2.wall, c35 = drC(35);
+    g.fillStyle = W.blown ? `rgba(${CELL_B},0.4)` : `rgba(${WARN},0.9)`;
+    g.fillRect(sz(34), sx(c35 - 9), Math.max(1.5, sz(36.2) - sz(34)), sx(c35 + 9) - sx(c35 - 9));
+    for (const B of [NEST, TURRET]){
+      g.fillStyle = B.alive ? `rgba(${WARN},0.9)` : `rgba(${CELL_B},0.4)`;
+      g.fillRect(sz(B.z0), sx(B.x0), Math.max(2, sz(B.z1) - sz(B.z0)), Math.max(2, sx(B.x1) - sx(B.x0)));
+    }
+    const M = D2.mortar, T = D2.tunnel;
+    g.fillStyle = mortarCrew().length ? `rgba(${WARN},0.9)` : `rgba(${CELL_B},0.4)`; g.beginPath(); g.arc(sz(M.pz), sx(M.px), 2.2, 0, 7); g.fill();
+    g.fillStyle = T.alive ? `rgba(${WARN},0.9)` : `rgba(${CELL_B},0.4)`; g.fillRect(sz(T.mz) - 1.5, sx(T.x0) - 1.5, 3, 3);
+    g.fillStyle = 'rgba(240,244,236,0.9)';
+    for (const m of MEDS) if (!m.taken){ const mx = sz(m.z), my = sx(m.x); g.fillRect(mx - 2, my - 0.6, 4, 1.2); g.fillRect(mx - 0.6, my - 2, 1.2, 4); }
+    g.fillStyle = `rgba(${CELL_B},0.95)`;
+    for (const m of AMMOS) if (!m.taken) g.fillRect(sz(m.z) - 1.1, sx(m.x) - 1.6, 2.2, 3.2);
+    for (const e of game.enemies){ if (!e.alert || e.state === 'dead') continue; g.fillStyle = `rgba(${WARN},0.95)`; g.beginPath(); g.arc(sz(e.z), sx(e.x), 1.8, 0, 7); g.fill(); }
+    mapPlayer(sz(pl.z), sx(pl.x), w, true);
+  },
+};
+
+const LEVELS = [L1, L2];
+STAGES.push(
+  { lv: 1, name: 'flat',  label: 'THE BEACH FLAT' },
+  { lv: 1, name: 'wall',  label: 'THE WALL',       at: [9, 28.5], yaw: -0.35 },
+  { lv: 1, name: 'draw',  label: 'UP THE DRAW',    at: [2.6, 42],   yaw: 0, cp: { x: 2.6, z: 40, yaw: 0, name: 'THE WALL' } },
+  { lv: 1, name: 'head',  label: 'THE HEAD OF THE DRAW', at: [3, 194], yaw: 0, cp: { x: 3, z: 192, yaw: 0, name: 'THE TRENCHES' } },
+);
 
 // ===========================================================================
 // HUD — Bounty Hunter's frame and instrument vocabulary
@@ -1713,9 +2454,22 @@ function textGlow(txt, x, y, size, rgb, alpha, align){
   g.fillStyle = 'rgba(5,8,10,' + (alpha * 0.55).toFixed(3) + ')'; g.fillText(txt, x + 1.5, y + 1.5);
   g.fillStyle = `rgba(${rgb},${alpha.toFixed(3)})`; g.fillText(txt, x, y);
 }
-// MAP: the beach from above, sea at the bottom
 function miniMap(x, y, w, h){
   g.save(); g.beginPath(); g.rect(x, y, w, h); g.clip();
+  if (builtLv) LV.map(x, y, w, h);
+  g.restore();
+}
+// player arrow on the map; rot: the map is turned so +z runs to the right instead of up
+function mapPlayer(px, py, w, rot){
+  const ang = rot ? pl.yaw : -pl.yaw - Math.PI/2, r = Math.max(4, w * 0.04);
+  g.fillStyle = `rgba(${NUM},0.98)`; g.beginPath();
+  g.moveTo(px + Math.cos(ang)*r, py + Math.sin(ang)*r);
+  g.lineTo(px + Math.cos(ang + 2.5)*r*0.7, py + Math.sin(ang + 2.5)*r*0.7);
+  g.lineTo(px + Math.cos(ang - 2.5)*r*0.7, py + Math.sin(ang - 2.5)*r*0.7);
+  g.closePath(); g.fill();
+}
+// MAP: the beach from above, sea at the bottom
+function beachMap(x, y, w, h){
   const X0 = -62, X1 = 62, Z0 = -26, Z1 = 128;
   const sx = wx => x + (wx - X0) / (X1 - X0) * w, sz = wz => y + h - (wz - Z0) / (Z1 - Z0) * h;
   g.fillStyle = 'rgba(70,104,110,0.35)'; g.fillRect(x, sz(14), w, y + h - sz(14));
@@ -1734,13 +2488,7 @@ function miniMap(x, y, w, h){
   g.fillStyle = `rgba(${CELL_B},0.95)`;
   for (const m of AMMOS) if (!m.taken) g.fillRect(sx(m.x) - 1.6, sz(m.z) - 1.1, 3.2, 2.2);
   for (const e of game.enemies){ if (!e.alert || e.state === 'dead') continue; g.fillStyle = `rgba(${WARN},0.95)`; g.beginPath(); g.arc(sx(e.x), sz(e.z), 1.8, 0, 7); g.fill(); }
-  const px = sx(pl.x), py = sz(pl.z), a = -pl.yaw - Math.PI/2, r = Math.max(4, w * 0.04);
-  g.fillStyle = `rgba(${NUM},0.98)`; g.beginPath();
-  g.moveTo(px + Math.cos(a)*r, py + Math.sin(a)*r);
-  g.lineTo(px + Math.cos(a + 2.5)*r*0.7, py + Math.sin(a + 2.5)*r*0.7);
-  g.lineTo(px + Math.cos(a - 2.5)*r*0.7, py + Math.sin(a - 2.5)*r*0.7);
-  g.closePath(); g.fill();
-  g.restore();
+  mapPlayer(sx(pl.x), sz(pl.z), w, false);
 }
 const SLOT_DEFS = {
   SCORE:  { wt: 1.5, body: (c, st) => blockDigits(c.cx, c.vy, c.ds, st.score, CELL_B, c.w*0.8, true) },
@@ -1933,6 +2681,15 @@ function drawTouch(v){
   }
 }
 
+// level skip: L (or a tap on the LEVEL line) between rounds picks the next level's first
+// stage; L while paused drops you straight into it
+function nextLevelIndex(){ return (STAGES[stageNo].lv + 1) % LEVELS.length; }
+function skipLevel(){
+  const k = nextLevelIndex();
+  stageNo = STAGES.findIndex(s => s.lv === k); game.picked = true;
+  flash('LEVEL ' + (k + 1) + '  \u00b7  ' + LEVELS[k].name, 1.6, LBL);
+}
+function levelLineY(v){ return stageLineY(v) + Math.max(10, Math.min(v.h*0.034, v.w*0.034)) * 1.5; }
 function stageLineY(v){
   const big = Math.max(20, Math.min(v.h*0.1, v.w*0.11)), mid = Math.max(10, Math.min(v.h*0.034, v.w*0.034));
   return v.y + v.h*0.4 + big*2.35 + mid*4.8;
@@ -1947,29 +2704,42 @@ function drawMessages(v){
   const big = Math.max(20, Math.min(v.h*0.1, v.w*0.11)), mid = Math.max(10, Math.min(v.h*0.034, v.w*0.034)), cx = v.x + v.w/2, cy = v.y + v.h*0.4;
   const blink = 0.55 + 0.45*Math.sin(game.t*4);
   const shade = a => { g.fillStyle = `rgba(5,8,10,${a})`; g.fillRect(v.x, v.y, v.w, v.h); };
+  const TL = levelOf(stageNo);
   if (game.mode === 'title' || game.mode === 'loading'){
     shade(0.45);
     textGlow('NORMANDY', cx, cy, big, PHOS, 0.96);
-    textGlow('OMAHA  ·  DOG GREEN  ·  6 JUNE 1944', cx, cy + big*0.85, mid, LBL, 0.9);
-    textGlow(game.mode === 'loading' ? 'LOADING…' : touch.on ? 'TAP TO HIT THE BEACH' : 'CLICK OR PRESS ENTER', cx, cy + big*1.65, mid, PHOS, game.mode === 'loading' ? 0.7 : blink);
+    textGlow(TL.sub, cx, cy + big*0.85, mid, LBL, 0.9);
+    textGlow(game.mode === 'loading' ? 'LOADING…' : touch.on ? TL.tap : 'CLICK OR PRESS ENTER', cx, cy + big*1.65, mid, PHOS, game.mode === 'loading' ? 0.7 : blink);
     const help = touch.on ? [stickRight ? 'RIGHT THUMB MOVES   LEFT THUMB LOOKS' : 'LEFT THUMB MOVES   RIGHT THUMB LOOKS', 'SWAP FLIPS THE SIDES'] :
       ['WASD MOVE   MOUSE OR Q/E LOOK   CLICK/SPACE FIRE', 'ALT/C CROUCH   G GRENADE   R RELOAD   M SOUND   P PAUSE'];
     help.forEach((h, i) => textGlow(h, cx, cy + big*2.35 + i*mid*1.4, mid*0.8, LBL, 0.8));
-    textGlow('CROUCH BEHIND THE STEEL. FIRST AID AND AMMO WAIT IN COVER.', cx, cy + big*2.35 + mid*3.2, mid*0.8, PHOS, 0.65);
+    textGlow(TL.tip, cx, cy + big*2.35 + mid*3.2, mid*0.8, PHOS, 0.65);
     if (game.mode === 'title')
-      textGlow('STAGE ' + stageNo + '  \u00b7  ' + STAGES[stageNo].label + (touch.on ? '   (TAP HERE TO CHANGE)' : '   (KEYS 0\u20135)'), cx, stageLineY(v), mid*0.85, NUM, 0.9);
+      textGlow('LEVEL ' + (STAGES[stageNo].lv + 1) + '  \u00b7  ' + TL.name + (touch.on ? '   (TAP HERE TO SKIP)' : '   (L TO SKIP)'), cx, levelLineY(v), mid*0.85, PHOS, 0.9);
+    if (game.mode === 'title')
+      textGlow('STAGE ' + stageNo + '  \u00b7  ' + STAGES[stageNo].label + (touch.on ? '   (TAP HERE TO CHANGE)' : '   (KEYS 0\u2013' + (STAGES.length - 1) + ')'), cx, stageLineY(v), mid*0.85, NUM, 0.9);
+  } else if (game.mode === 'brief' && LV.brief){
+    shade(0.62);
+    const B = LV.brief, y0 = v.y + v.h*0.2, fit = (s, txt) => Math.min(s, v.w * 0.94 / (txt.length * 0.61));
+    textGlow(B.title, cx, y0, fit(big*0.62, B.title), PHOS, 0.96);
+    textGlow(B.sub, cx, y0 + big*0.7, fit(mid, B.sub), LBL, 0.9);
+    B.lines.forEach((ln, i) => textGlow(ln, cx, y0 + big*1.45 + i*mid*1.55, fit(mid*0.86, ln), i === B.lines.length - 1 ? PHOS : NUM, 0.9));
+    textGlow(touch.on ? 'TAP TO GO' : 'CLICK OR PRESS ENTER', cx, y0 + big*1.45 + B.lines.length*mid*1.55 + mid*1.2, mid, PHOS, blink);
   } else if (game.mode === 'down'){
     shade(0.35 * clamp(game.modeT, 0, 1));
-    textGlow('DOWN ON THE SAND', cx, cy, big*0.7, WARN, 0.95);
-    textGlow((touch.on ? 'TAP' : 'PRESS ENTER') + (game.checkpoint ? ' TO GO AGAIN FROM THE SEAWALL' : ' TO GO AGAIN'), cx, cy + big*0.9, mid, PHOS, blink);
+    textGlow(LV.down, cx, cy, big*0.7, WARN, 0.95);
+    textGlow((touch.on ? 'TAP' : 'PRESS ENTER') + (game.checkpoint ? ' TO GO AGAIN FROM ' + game.checkpoint.name : ' TO GO AGAIN'), cx, cy + big*0.9, mid, PHOS, blink);
   } else if (game.mode === 'won'){
     shade(0.4);
-    const t = game.clock || 0;
-    textGlow('SECTOR CLEAR', cx, cy, big*0.8, PHOS, 0.96);
+    const t = game.clock || 0, more = !lastLevel() && !game.picked;
+    textGlow(LV.won, cx, cy, big*0.8, PHOS, 0.96);
     textGlow(`TIME ${(t/60)|0}:${String((t%60)|0).padStart(2, '0')}   RIFLEMEN ${pl.kills}   SCORE ${game.score}`, cx, cy + big*0.9, mid, LBL, 0.9);
-    textGlow(touch.on ? 'TAP TO LAND AGAIN' : 'PRESS ENTER TO LAND AGAIN', cx, cy + big*1.6, mid, PHOS, blink);
+    textGlow((touch.on ? 'TAP ' : 'PRESS ENTER ') + (more ? LV.next : game.picked ? 'TO PLAY STAGE ' + stageNo : 'TO LAND AGAIN'), cx, cy + big*1.6, mid, PHOS, blink);
   }
-  if (game.paused){ shade(0.4); textGlow('PAUSED', cx, cy, big*0.7, PHOS, 0.95); }
+  if (game.paused){
+    shade(0.4); textGlow('PAUSED', cx, cy, big*0.7, PHOS, 0.95);
+    textGlow('P TO GO ON   \u00b7   L TO SKIP TO ' + LEVELS[nextLevelIndex()].name, cx, cy + big*0.8, mid*0.85, LBL, 0.9);
+  }
 }
 
 // ===========================================================================
@@ -1995,34 +2765,41 @@ function frame(now){
 function render(){
   const v = viewportRect();
   g.fillStyle = '#0a0c0b'; g.fillRect(0, 0, W, H);
-  if (TEXREADY){
-    dynPolys = rampPolys().concat(foamPolys(game.t));
+  if (TEXREADY && builtLv){
+    dynPolys = LV.dyn ? LV.dyn(game.t) : [];
     setCamera();
     renderWorld(v);
     if (game.mode === 'play' || game.mode === 'boat'){ drawGun(v); drawCross(v); }
     post(v);
   }
   drawMessages(v);
+  if (builtLv && game.mode === 'play' && !game.paused && LV.overlay) LV.overlay(v);
   drawFrame(v);
-  if (TEXREADY) drawTouch(v);
+  if (builtLv) drawTouch(v);
 }
 
 // ===========================================================================
 // INPUT
 // ===========================================================================
-// back at the seawall: the beach stays as you left it, you come back whole
+// back at the checkpoint: the level stays as you left it, you come back whole
 function respawn(){
   const cp = game.checkpoint;
-  Object.assign(pl, { x: cp.x, z: cp.z, fy: groundAt(cp.x, cp.z), yaw: Math.PI * 0.0, pitch: 0.05, hp: 100, crouch: true, eye: EYE_C,
+  Object.assign(pl, { x: cp.x, z: cp.z, fy: groundAt(cp.x, cp.z), yaw: cp.yaw || 0, pitch: 0.05, hp: 100, crouch: true, eye: EYE_C,
                       clip: 8, clips: Math.max(pl.clips, 4), nades: Math.max(pl.nades, 2), reloadT: 0, hurtT: 0, shake: 0, expo: 0, safeT: 0 });
   game.bullets = []; game.grenades = [];
-  mg.state = 'idle'; mg.t = 2.5;
+  for (const m of MGS){ m.state = 'idle'; m.t = 2.5; }
   setMode('play');
-  flash('BACK AT THE SEAWALL', 2, PHOS);
+  flash('BACK AT ' + cp.name, 2, PHOS);
 }
+// Enter, a click or a tap between rounds: go on to the next level after a win, back to the
+// checkpoint (or the start of this level) after going down, or to the stage picked by number
 function startOrRestart(){
   initAudio(); if (AC && AC.state === 'suspended') AC.resume();
-  if (game.mode === 'down' && game.checkpoint) respawn();
+  if (game.mode === 'brief'){ setMode('play'); if (LV.go) LV.go(); return; }
+  if (game.mode === 'down' && game.checkpoint && !game.picked) respawn();
+  else if (game.mode === 'won' && !game.picked && !lastLevel()) nextLevel();
+  else if (game.mode === 'won' && !game.picked){ stageNo = 0; newGame(); }
+  else if (game.mode === 'down' && !game.picked){ newGame(game.carry); if (game.mode === 'brief'){ setMode('play'); if (LV.go) LV.go(); } }
   else if (game.mode === 'title' || game.mode === 'down' || game.mode === 'won') newGame();
 }
 addEventListener('keydown', e => {
@@ -2030,11 +2807,13 @@ addEventListener('keydown', e => {
   keys.add(e.code);
   if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'AltLeft', 'AltRight'].includes(e.code)) e.preventDefault();
   if (e.code === 'Enter') startOrRestart();
-  if (/^Digit[0-5]$/.test(e.code) && (game.mode === 'title' || game.mode === 'won' || game.mode === 'down')) setStage(+e.code.slice(5));
+  if (/^Digit[0-9]$/.test(e.code) && +e.code.slice(5) < STAGES.length && (game.mode === 'title' || game.mode === 'won' || game.mode === 'down')) setStage(+e.code.slice(5));
   if ((e.code === 'KeyC' || e.code === 'AltLeft' || e.code === 'AltRight') && !e.repeat) pl.crouch = !pl.crouch;
   if (e.code === 'KeyG') throwGrenade();
   if (e.code === 'KeyR' && !bayonet()) startReload();
   if (e.code === 'KeyM') toggleSnd();
+  if (e.code === 'KeyL' && (game.mode === 'title' || game.mode === 'won' || game.mode === 'down')) skipLevel();
+  if (e.code === 'KeyL' && game.paused){ game.paused = false; skipLevel(); game.picked = false; newGame(); }
   if (e.code === 'KeyP' || e.code === 'Escape') { if (game.mode === 'play' || game.mode === 'boat') game.paused = !game.paused; }
   if (e.code === 'KeyV') opt.post = !opt.post;
 });
@@ -2042,7 +2821,7 @@ addEventListener('keyup', e => { keys.delete(e.code); if (e.code === 'AltLeft' |
 addEventListener('blur', () => { keys.clear(); mouseDown = false; touch.fire = false; });
 c.addEventListener('mousedown', e => {
   c.focus();
-  if (game.mode === 'title' || game.mode === 'down' || game.mode === 'won'){ startOrRestart(); return; }
+  if (game.mode === 'title' || game.mode === 'down' || game.mode === 'won' || game.mode === 'brief'){ startOrRestart(); return; }
   initAudio();
   // pointer lock when the browser allows it; when it refuses (some embedded frames do),
   // the free-cursor steering below takes over and the click still fires
@@ -2089,8 +2868,9 @@ function onTouchStart(e){
   if (game.mode === 'title' && wasOn){
     const v = viewportRect(), rect = c.getBoundingClientRect(), t = e.changedTouches[0];
     if (t && Math.abs(t.clientY - rect.top - stageLineY(v)) < 22){ setStage(stageNo + 1); return; }
+    if (t && Math.abs(t.clientY - rect.top - levelLineY(v)) < 22){ skipLevel(); return; }
   }
-  if (game.mode === 'title' || game.mode === 'down' || game.mode === 'won'){ startOrRestart(); return; }
+  if (game.mode === 'title' || game.mode === 'down' || game.mode === 'won' || game.mode === 'brief'){ startOrRestart(); return; }
   initAudio(); if (AC && AC.state === 'suspended') AC.resume();
   const v = viewportRect(), rect = c.getBoundingClientRect();
   for (const t of e.changedTouches){
@@ -2139,7 +2919,9 @@ c.addEventListener('touchcancel', onTouchEnd, { passive: false });
 window.__qa = {
   frozen: false,
   start(){ newGame(); },
-  play(){ const s = stageNo; stageNo = 0; newGame(); stageNo = s; setMode('play'); BOAT.ramp = -0.16; },
+  play(){ const s = stageNo; stageNo = STAGES.findIndex(st => st.lv === STAGES[s].lv); newGame(); stageNo = s; setMode('play'); if (LV.go) LV.go(); },
+  level(n){ stageNo = STAGES.findIndex(st => st.lv === n - 1); newGame(); setMode('play'); if (LV.go) LV.go(); },
+  next(){ nextLevel(); },
   stage(n){ stageNo = n; newGame(); },
   place(x, z, yaw, pitch, crouch){ pl.x = x; pl.z = z; pl.fy = groundAt(x, z); if (yaw != null) pl.yaw = yaw; if (pitch != null) pl.pitch = pitch; if (crouch != null) pl.crouch = crouch; pl.eye = pl.crouch ? EYE_C : EYE; },
   advance(sec){ const n = Math.round(sec / 0.02); for (let i = 0; i < n; i++){ setCamera(); update(0.02); } },
@@ -2147,12 +2929,12 @@ window.__qa = {
   grenade(){ throwGrenade(); },
   fire(){ pl.fireT = 0; fireRifle(); },
   state(){ return { mode: game.mode, hp: pl.hp, expo: +pl.expo.toFixed(2), x: +pl.x.toFixed(2), z: +pl.z.toFixed(2), fy: +pl.fy.toFixed(2),
-    bunker: BUNKER.alive, mgSees: mg.sees, alive: game.enemies.filter(e => e.state !== 'dead').length, bullets: game.bullets.length, polys: VIS.length, nades: pl.nades }; },
-  los(){ const o = BUNKER.mg, h = playerHead(); return trace(o[0], o[1], o[2], h[0], h[1], h[2]); },
+    level: LEVELS.indexOf(LV) + 1, stage: stageNo, bunker: EMPS.length ? EMPS[0].alive : null, mgSees: MGS.some(m => m.sees), alive: game.enemies.filter(e => e.state !== 'dead').length, bullets: game.bullets.length, polys: VIS.length, nades: pl.nades }; },
+  los(i){ const o = MGS[i || 0].o, h = playerHead(); return trace(o[0], o[1], o[2], h[0], h[1], h[2]); },
   render(){ render(); },
   touchOn(){ touch.on = true; },
   pick(){ return aimPick ? (aimPick.tag.id + '@' + aimPick.z.toFixed(2)) : null; },
-  dbg(){ return { spriteFrame, AMMOS, MEDS, mg, game, trace, BUNKER, BOXES, HEDGES, pl, cam, setCamera, updateBasis }; },
+  dbg(){ return { spriteFrame, AMMOS, MEDS, MGS, EMPS, LV, game, trace, BUNKER, BOXES, HEDGES, pl, cam, setCamera, updateBasis }; },
 };
 
 (async () => {
@@ -2162,12 +2944,13 @@ window.__qa = {
 async function buildWorldWhenReady(){
   try {
     await loadAssets();
+    stageFromURL();
     const t0 = performance.now();
+    LV = levelOf(stageNo);
     buildWorld();
     window.__qa.buildMs = Math.round(performance.now() - t0);
-    for (const p of BUNKERP) p.amb0 = p.amb;
-    game.enemies = ENEMY_POS.map(([x, z], i) => mkEnemy(i, x, z)).concat([mkCrew(8, 'gun'), mkCrew(9, 'load')]);
-    pl.x = 0; pl.z = -21.2; pl.fy = BOAT.deck;
+    newGame();
+    game.msgs = []; game.titleYaw = pl.yaw;
     setMode('title');
     window.__qa.ready = true;
     // ?start=1 skips the title screen (used for the arcade thumbnail; sound stays off until a tap)

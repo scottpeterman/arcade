@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Headless screenshots and sim checks for Normandy.
 
-  python3 tools/shots.py OUTDIR [WIDTHxHEIGHT]
+  python3 tools/shots.py OUTDIR [WIDTHxHEIGHT] [beach|d1]
 """
 import sys, os, json
 from playwright.sync_api import sync_playwright
@@ -23,6 +23,21 @@ SCENES = [
     ('bunker', "__qa.play(); __qa.place(8,108,1.3,0.06); __qa.advance(0.6);"),
     ('lookback', "__qa.play(); __qa.place(18,110.5,3.3,-0.12); __qa.advance(0.6);"),
 ]
+# D-1: the flat, the wall, the blast (mouth silenced, fuse set, 0.4 s after it goes), the draw
+QUIET = "(() => { const d = __qa.dbg(); for (const B of d.EMPS) B.alive = false; })();"
+SCENES_D1 = [
+    ('d1_brief', "__qa.stage(6);"),
+    ('d1_flat', "__qa.level(2); __qa.advance(0.5);"),
+    ('d1_mouth', "__qa.level(2); __qa.place(14,13.5,-0.9,0.12,true); __qa.advance(0.6);"),
+    ('d1_wall', "__qa.stage(7); __qa.advance(0.6);"),
+    ('d1_blast', "__qa.stage(7); " + QUIET + " __qa.place(5.97,32.15,0,0,true); __qa.advance(3.4); __qa.place(2.2,3,0.02,0.12,true); __qa.advance(20.0);"),
+    ('d1_draw', "__qa.stage(8); __qa.place(3.2,62,0.03,0.05); __qa.advance(1.0);"),
+    ('d1_tunnel', "__qa.stage(8); __qa.place(5,124,1.2,0.0); __qa.advance(0.4);"),
+    ('d1_lookback', "__qa.stage(8); __qa.place(4,120,3.1,-0.02); __qa.advance(0.4);"),
+    ('d1_head', "__qa.stage(9); __qa.place(4.5,214,-0.02,0.05); __qa.advance(0.6);"),
+]
+if len(sys.argv) > 3 and sys.argv[3] == 'd1':
+    SCENES = SCENES_D1
 
 with sync_playwright() as p:
     b = p.chromium.launch(args=['--use-gl=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'])

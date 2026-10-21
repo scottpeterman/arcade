@@ -100,6 +100,14 @@ def textures(fd):
     t['ramp'] = ramp(W('GRAY4'), (58, 66, 58), (150, 158, 140), 1.1)
     t['timber'] = grade(W('WOOD9'), 0.7, (0.9, 0.85, 0.8))
     t['sky'] = grade(W('SKY1'), 0.55, (0.95, 0.98, 1.04))
+    # D-1: the paved road, the bluff faces, the wooded sides, the villas and Vierville's stone
+    t['road'] = ramp(flat(fd, 'flat5_4'), (54, 54, 52), (122, 120, 114), 1.6)
+    t['rock'] = ramp(W('ROCK5'), (72, 68, 58), (158, 150, 132), 1.15)
+    t['meadow'] = grade(flat(fd, 'grass1'), 0.8, (1.0, 1.0, 0.86))
+    t['leaves'] = grade(W('ZIMMER1'), 0.75, (0.8, 0.95, 0.72))
+    t['stucco'] = grade(W('STUCCO2'), 0.45, (1.12, 1.1, 1.04), (18, 18, 16))
+    t['stone'] = grade(W('STONEW1'), 0.5, (0.98, 0.96, 0.92))
+    t['crate'] = grade(W('CRATE1'), 0.8, (0.95, 0.9, 0.8))
     for k, v in t.items():
         w, h = v.size
         assert w & (w - 1) == 0 and h & (h - 1) == 0, (k, v.size)

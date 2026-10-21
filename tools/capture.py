@@ -429,11 +429,16 @@ SCENES["banrion"] = {
 # ---- Normandy: window.__qa stages the beach. Drop into a stage, place the camera, let the
 # sim run (MG bursts, riflemen, tracers), then freeze it so the frame renders clean.
 # __qa.advance() steps the sim without rendering; freeze(true) holds it while frames draw.
-def normandy(stage, place=None, run_s=1.5, door=False, hero_pose=None):
+# Stage 6 opens on D-1's briefing card, so play() drops into the level; pre runs any
+# staging script (the D-1 blast sets the fuse there) before the camera is placed.
+def normandy(stage, place=None, run_s=1.5, door=False, hero_pose=None, pre=None):
     def fn(t):
         t.open(f"games/normandy/index.html?stage={stage}&start=1", 300)
         t.page.wait_for_function("window.__qa && window.__qa.ready", timeout=120000)
+        t.js("(() => { if (__qa.state().mode === 'brief') __qa.play(); })()")
         t.js("(() => { const d = __qa.dbg(); d.pl.hp = 1e9; })()")     # stays alive while the sim runs
+        if pre:
+            t.js(pre)
         if place:
             x, z, yaw, pitch, crouch = place
             t.js(f"__qa.place({x}, {z}, {yaw}, {pitch}, {'true' if crouch else 'false'})")
@@ -454,6 +459,12 @@ SCENES["normandy"] = {
         ("seawall-approach", normandy(2, (-14, 84, 0.22, 0.07, False), run_s=1.6)),
         ("casemate-slit", normandy(4, (8, 108.2, 1.32, 0.05, False), run_s=1.0)),
         ("rear-door", normandy(5, (19.6, 122.4, 3.1, 0.0, False), run_s=2.0, door=True)),
+        ("d1-promenade", normandy(6, (22, 1.0, -0.72, 0.07, False), run_s=1.2)),
+        ("d1-wall", normandy(7, (9.5, 27.0, -0.5, 0.05, False), run_s=1.0)),
+        ("d1-blast", normandy(7, (2.2, 3.0, 0.02, 0.12, True), run_s=19.75,
+                              pre="(() => { const d = __qa.dbg(); for (const B of d.EMPS) B.alive = false; __qa.place(5.97, 32.15, 0, 0, true); __qa.advance(3.4); })()")),
+        ("d1-draw", normandy(8, (3.2, 62, 0.03, 0.05, False), run_s=1.5)),
+        ("d1-head", normandy(9, (4.5, 214, -0.02, 0.05, False), run_s=1.0)),
     ],
     "hero": normandy(2, (-6.4, 30.0, 0.22, 0.04, True), run_s=2.6),
 }

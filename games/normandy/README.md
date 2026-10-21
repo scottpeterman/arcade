@@ -1,6 +1,13 @@
 # NORMANDY
 
-First-person beach assault, Omaha · Dog Green, 6 June 1944. The ramp drops, you wade in, run hedgehog to hedgehog under a sweeping MG42, shelter at the seawall, go through the gap and take the casemate: grenade, rifle or bayonet.
+First-person assault on Omaha Beach, 6 June 1944, in two levels.
+
+1. **Dog Green.** The ramp drops, you wade in, run hedgehog to hedgehog under a sweeping MG42, shelter at the seawall, go through the gap and take the casemate: grenade, rifle or bayonet.
+2. **D-1, the Vierville draw.** Early afternoon. Silence the turret and the MG nest on the beach flat, set the fuse on the engineers' TNT at the anti-tank wall, get clear, then fight up the draw under mortar fire to the Vierville crossroads.
+
+Win the beach and Enter takes you straight up the draw with your score, kills and grenades. Your clips are topped up to at least six.
+
+### Dog Green
 
 <table>
   <tr>
@@ -16,24 +23,67 @@ First-person beach assault, Omaha · Dog Green, 6 June 1944. The ramp drops, you
   </tr>
 </table>
 
+### D-1, the Vierville draw
+
+<table>
+  <tr>
+    <td align="center"><img src="docs/screenshots/d1-promenade.png" width="400" alt="The beach flat from the promenade: the knocked-out H677, a firing trench, the bluff and the draw's mouth"><br>The beach flat</td>
+    <td align="center"><img src="docs/screenshots/d1-wall.png" width="400" alt="The anti-tank wall across the road, the engineers' TNT at its foot"><br>The wall and the TNT</td>
+  </tr>
+  <tr>
+    <td align="center"><img src="docs/screenshots/d1-blast.png" width="400" alt="The wall going up, seen from the flat, the MG nest's slit in the bluff to the left"><br>1,100 lb of TNT</td>
+    <td align="center"><img src="docs/screenshots/d1-draw.png" width="400" alt="Up the draw: the paved road between steep wooded sides, a firing trench on a bench"><br>Up the draw</td>
+  </tr>
+  <tr>
+    <td align="center" colspan="2"><img src="docs/screenshots/d1-head.png" width="400" alt="The head of the draw: shelled houses, riflemen in the road, Vierville's church with its tower shot off"><br>The head of the draw</td>
+  </tr>
+</table>
+
 One self-contained HTML file, built from `game.html` plus assets.
 
 ## Engine
 
-- **World:** DECKRUNNER's solid-hull software rasterizer: low-res z-buffer, perspective-correct mipped Freedoom textures, sun shading against a horizon-height shadow map. Fog goes to haze instead of black, and a cylinder sky sits behind it. The world is a triangulated heightfield beach (non-uniform grid, 2 m rows at the seawall), Czech hedgehogs built from three oriented beams, timber stakes, a bevel-top seawall with an exit gap, and a bevel-top casemate with a firing slit and rear door.
-- **Soldiers:** 8-direction billboards from the sprite sheet, drawn into the same z-buffer. The parapet hides their legs.
-- **HUD:** Bounty Hunter's frame, warmed to amber. LIFE and EXPO columns; SCORE · TIME · HEALTH · M1 (8-round en-bloc, pings on the last round) · NADES · KILLS · MAP. Phones in portrait get a thumb deck under the view.
-- **Sound:** ZzFX core, as in DECKRUNNER.
+- **World:** DECKRUNNER's solid-hull software rasterizer: low-res z-buffer, perspective-correct mipped Freedoom textures, sun shading against a horizon-height shadow map. Fog goes to haze instead of black, and a cylinder sky sits behind it. Each level is a triangulated heightfield on a non-uniform grid. The draw's grid rows slide sideways with the road (`LV.shift`), so the road edges and benches follow its curve. On that heightfield sit boxes, bevel-top concrete, oriented beams and roofless ruins.
+- **Levels:** each level is an entry in `LEVELS` that owns its grid, heights, ground textures, build, spawns, bounds, checkpoint, map and per-frame rules (`tick`). The engine rebuilds the world when you change level. Machine guns and casemates are objects (`MGS`, `EMPS`), so a level can have any number. Riflemen hold a patrol line in any direction, so they can stand along the beach or up the draw.
+- **Soldiers:** 8-direction billboards from the sprite sheet, drawn into the same z-buffer. Parapets hide their legs.
+- **HUD:** Bounty Hunter's frame, warmed to amber. LIFE and EXPO columns; SCORE · TIME · HEALTH · M1 (8-round en-bloc, pings on the last round) · NADES · KILLS · MAP. On D-1 the map is turned on its side: sea on the left, Vierville on the right. Phones in portrait get a thumb deck under the view.
+- **Sound:** ZzFX core, as in DECKRUNNER. D-1 adds the mortar whistle.
 
 ## Rules that matter
+
+Both levels:
+
+- Out of clips with the rifle empty, the bayonet goes on: fire becomes a lunge that takes the soldier in front of you within 2.4 m. The M1 slot reads BAY. Any ammo can puts you back on the rifle.
+- First-aid packs give +50 health. Ammo cans give +3 clips (max 12) and +2 grenades (max 6); you only pick one up if you need it.
+- Health regenerates once nothing has seen you for 3 seconds.
+- A casemate falls to a grenade through its slit, or to shooting both crew in it (the loader takes the gun 3 s after the gunner falls).
+
+Dog Green:
 
 - The MG42 bursts and pauses. With you in its arc and in sight, it tracks you with lag; otherwise it sweeps the beach. Its arc is ±60° about seaward.
 - A crouched player behind a hedgehog is covered from the MG. Standing behind one is not.
 - The seawall base is dead ground for the MG, and for the riflemen if you crouch.
-- The casemate has a gunner and a loader, seen head and shoulders in the slit. Three ways in: a grenade through the slit (or the open rear door) destroys it; shooting both crew through the slit silences it (the loader takes the gun 3 s after the gunner falls); or walk round to the rear door, which opens as you reach it and brings both crew to the doorway to fight.
-- Out of clips with the rifle empty, the bayonet goes on: fire becomes a lunge that takes the soldier in front of you within 2.4 m. The M1 slot reads BAY. Any ammo can puts you back on the rifle.
-- First-aid packs give +50 health. Ammo cans give +3 clips (max 12) and +2 grenades (max 6); you only pick one up if you need it.
-- Health regenerates once nothing has seen you for 3 seconds.
+- The casemate has a gunner and a loader, seen head and shoulders in the slit. The third way in is the rear door: it opens as you reach it and brings both crew to the doorway to fight.
+
+D-1:
+
+- The R35 turret on its Tobruk turns all the way round and covers the wall's foot. It has no crew you can see: a grenade landing within 2 m of it kills it, and a flat throw that rolls in is enough.
+- The MG nest is dug into the bluff west of the mouth and looks out over the flat, not back at the wall. Shoot its crew through the slit from the road.
+- The TNT sits at the wall's foot. Crouch beside it for 3 seconds to set a 20-second fuse. The blast hurts anything within 26 m that it can see. The lee of the H677 or the promenade is safe; open ground 12 m out leaves you on single figures.
+- Once the wall is down, the mortars on the west rim drop a round near you every 7 or 8 seconds. Each one lands closer while you stay put, and moving 8 m resets the bracket. Kill the two men in the pit to stop them.
+- The draw's sides are too steep to climb. Riflemen hold benches behind timber parapets.
+- A tunnel mouth in the east side keeps sending men out (two at a time, five in all) while you are near it. A grenade at the mouth closes it.
+- Checkpoints: the wall, once it is down, and the trenches at mid-draw. The level ends at the crossroads at the head of the draw.
+
+## History
+
+D-1 follows the record with the distances compressed: the real road from the wall to the village is several times longer.
+
+- **Kept from the record:** D-1 was the only paved exit off Omaha, climbing a small wooded valley to Vierville-sur-Mer. A minefield and a concrete anti-tank wall blocked its mouth. WN72 held the exit with an 88 mm Pak 43/41 in an H677 casemate firing along the beach, MG casemates and an R35 turret on a Tobruk. WN71 sat on the west heights with an SK twin-MG casemate and two 8 cm mortars.
+- **The timeline:** naval fire, the Texas's 14-inch guns among it, silenced the strongpoint between 1200 and 1300. Defenders still came back into positions thought neutralized, through tunnels that ran inland. The 121st Engineer Combat Battalion blew the wall with 1,100 lb of TNT (one veteran's account credits the 147th), and the road was open to Vierville around 1700. German spotters used Vierville's church steeple, and the destroyer USS Harding shot it off during the first two days.
+- **Invented for play:** the turret on the flat, the tunnel mouth in the draw, the benches and the mortar pit's place on the west rim are all positioned for gameplay.
+
+Sources: [WN72](https://www.dday-overlord.com/en/d-day/atlantic-wall/strongpoints/wn-72) and [WN71](https://www.dday-overlord.com/en/?p=136053) (D-Day Overlord); [Omaha Beachhead](https://www.ibiblio.org/hyperwar/USA/USA-A-Omaha/USA-A-Omaha-5.html), ch. 5 (US Army, American Forces in Action); [121st Engineer Combat Battalion after-action report](https://www.dday-overlord.com/?p=140802); [Exit D-1 at Vierville](https://strijdbewijs.nl/normandie7/Vierville-s-M.htm) (Strijdbewijs); [USS Harding and the Vierville steeple](https://www.defensemedianetwork.com/stories/d-day-horace-flack-margaret-flack-and-the-uss-harding/3/) (Defense Media Network).
 
 ## Build
 
@@ -52,29 +102,36 @@ This writes `index.html` (the playable page, also copied to `dist/index.html`) a
 ```
 python3 tools/shots.py build/shots 1280x800
 python3 tools/shots.py build/shots_p 412x880
+python3 tools/shots.py build/shots_d1 1280x800 d1
 ```
 
-`window.__qa` exposes `play()`, `place(x, z, yaw, pitch, crouch)`, `advance(sec)`, `freeze(bool)`, `grenade()`, `fire()` and `state()`.
+`window.__qa` exposes `play()`, `level(n)`, `stage(n)`, `next()`, `place(x, z, yaw, pitch, crouch)`, `advance(sec)`, `freeze(bool)`, `grenade()`, `fire()`, `pick()` and `state()`; `dbg()` hands back the live lists (`MGS`, `EMPS`, `game`, `pl`).
 
 ## Stages
 
-Skip ahead for testing or practice. Later stages start with the ramp down; stage 3 and up set the seawall checkpoint.
+Skip ahead for testing or practice. Stages are numbered across both levels.
 
-| # | name | start |
-|---|---|---|
-| 0 | boat | in the LCVP, ramp up |
-| 1 | beach | off the ramp in the shallows |
-| 2 | mid | crouched behind a second-row hedgehog |
-| 3 | seawall | crouched at the seawall base |
-| 4 | gap | through the gap, riflemen to your left |
-| 5 | bunker | beside the casemate |
+| # | name | level | start |
+|---|---|---|---|
+| 0 | boat | Dog Green | in the LCVP, ramp up |
+| 1 | beach | Dog Green | off the ramp in the shallows |
+| 2 | mid | Dog Green | crouched behind a second-row hedgehog |
+| 3 | seawall | Dog Green | crouched at the seawall base (checkpoint set) |
+| 4 | gap | Dog Green | through the gap, riflemen to your left |
+| 5 | bunker | Dog Green | beside the casemate |
+| 6 | flat | D-1 | the briefing, then the promenade |
+| 7 | wall | D-1 | in front of the wall, the turret and nest still firing |
+| 8 | draw | D-1 | through the breach, the mouth silenced (checkpoint set) |
+| 9 | head | D-1 | under the mortar pit, near the head of the draw |
 
-Choose with `?stage=4` or `?stage=gap` (local file, GitHub Pages), `#stage4` or `#gap` (also works for the Claude artifact link), the 0–5 keys on the title screen, or by tapping the STAGE line on a phone. Add `&start=1` (or `?start=1`) to skip the title screen.
+Choose with `?stage=8` or `?stage=draw` (local file, GitHub Pages), `?level=2` for the start of D-1, `#stage8` or `#draw` (also works for the Claude artifact link), the 0–9 keys on the title screen, or by tapping the STAGE line on a phone. Add `&start=1` (or `?start=1`) to skip the title screen.
+
+Level skip: L on the title, win or down screen (or a tap on the LEVEL line on a phone) picks the next level's first stage; L while paused (P) drops you straight into the next level.
 
 ## Controls
 
-WASD move · mouse, Q/E or arrows look (mouse works without pointer lock: move to look, rest at the view's edge to keep turning) · click / Space fire · Alt or C crouch · G (or right-click) grenade · R reload · M sound · P pause · V post pass.
-Touch: left thumb moves, right thumb looks; FIRE / NADE / DUCK.
+WASD move · mouse, Q/E or arrows look (mouse works without pointer lock: move to look, rest at the view's edge to keep turning) · click / Space fire · Alt or C crouch (crouch at the TNT to set the fuse) · G (or right-click) grenade · R reload · M sound · P pause · V post pass.
+Touch: left thumb moves, right thumb looks; FIRE / NADE / DUCK. SWAP flips the sides for left-handers.
 
 ## Credits
 
