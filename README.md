@@ -23,9 +23,24 @@ Wireframe and vector games for the browser. Each game is a single self-contained
     <td align="center"><img src="games/normandy/docs/screenshots/hedgehog-cover.png" width="400" alt="Normandy: crouched behind a Czech hedgehog on Omaha Beach, the seawall ahead"><br><b>Normandy</b> · Dog Green, hedgehog cover</td>
     <td align="center"><img src="lab/tauri-reach/docs/screenshots/station-overview.png" width="400" alt="Tauri Reach: the spindle station over the young star's jets"><br><b>Tauri Reach</b> (lab) · the station</td>
   </tr>
+  <tr>
+    <td align="center" colspan="2"><img src="games/phosphor-field/docs/screenshots/wave-02-saucer.png" width="400" alt="Phosphor Field wave 2: the large saucer firing across a glowing vector rock field"><br><b><a href="games/phosphor-field/">Phosphor Field</a></b> · wave 2, the large saucer</td>
+  </tr>
 </table>
 
 More per game in each `docs/screenshots/` folder.
+
+## Games
+
+| Game | What it is |
+|---|---|
+| [Banrion](games/banrion/) | 3D wireframe chess, online or against the engine |
+| [Deckrunner](games/deckrunner/) | Capital-ship trench assault, seven waves then the starbase |
+| [Bounty Hunter](games/bounty-hunter/) | Tower crawler: mutants, then robots |
+| [Normandy](games/normandy/) | Omaha Beach, Dog Green and the D-1 draw |
+| [Vector Command](games/vector-command/) | Defense console against incoming waves |
+| [Phosphor Field](games/phosphor-field/) | Vector rock shooter with a simulated XY-monitor phosphor; V flips to an LCD |
+| [Puppis Echo](games/puppis-echo/) | WebGL flight and combat in deep space |
 
 ## Layout
 

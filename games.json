@@ -65,6 +65,18 @@
       "shelf": "featured"
     },
     {
+      "slug": "phosphor-field",
+      "title": "Phosphor Field",
+      "tagline": "Rock-field shooter on a simulated XY monitor: phosphor glow, beam dwell, true black. Press V to see it on an LCD.",
+      "path": "games/phosphor-field/",
+      "thumb": "games/phosphor-field/thumb.webp",
+      "tags": ["shooter", "arcade", "webgl"],
+      "input": ["keyboard", "touch"],
+      "players": "1",
+      "shelf": "featured",
+      "readme": "games/phosphor-field/README.md"
+    },
+    {
       "slug": "puppis-echo",
       "title": "Puppis Echo",
       "tagline": "WebGL flight and combat in deep space.",
