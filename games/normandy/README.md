@@ -90,6 +90,7 @@ Sources: [WN72](https://www.dday-overlord.com/en/d-day/atlantic-wall/strongpoint
 ```
 git clone --depth 1 https://github.com/freedoom/freedoom.git ../freedoom
 python3 tools/slice_sprites.py src/1000011203.png build/soldier_blue --add down=src/down.png:150 --add fall=src/fall.png:150 --debug build/dbg_blue.png
+python3 tools/slice_sprites.py src/1000011203.png build/soldier_blue_hi --px 1 --add down=src/down.png:150 --add fall=src/fall.png:150
 python3 tools/build.py ../freedoom
 ```
 
@@ -130,7 +131,7 @@ Level skip: L on the title, win or down screen (or a tap on the LEVEL line on a 
 
 ## Controls
 
-WASD move · mouse, Q/E or arrows look (mouse works without pointer lock: move to look, rest at the view's edge to keep turning) · click / Space fire · Alt or C crouch (crouch at the TNT to set the fuse) · G (or right-click) grenade · R reload · M sound · P pause · V post pass.
+WASD move · mouse, Q/E or arrows look (mouse works without pointer lock: move to look, rest at the view's edge to keep turning) · click / Space fire · Alt or C crouch (crouch at the TNT to set the fuse) · G (or right-click) grenade · R reload · M sound · P pause · V post pass · F detail (LO/MED/HI render resolution, remembered; `?q=hi` in the URL sets it).
 Touch: left thumb moves, right thumb looks; FIRE / NADE / DUCK. SWAP flips the sides for left-handers.
 
 ## Credits

@@ -3,6 +3,7 @@
 
   git clone --depth 1 https://github.com/freedoom/freedoom.git
   python3 tools/slice_sprites.py src/1000011203.png build/soldier_blue --add down=src/down.png:150 --add fall=src/fall.png:150
+  python3 tools/slice_sprites.py src/1000011203.png build/soldier_blue_hi --px 1 --add down=src/down.png:150 --add fall=src/fall.png:150
   python3 tools/build.py FREEDOOM_DIR
 
 Reads game.html, replaces the /*@ASSETS@*/ marker with the texture and sprite
@@ -76,8 +77,27 @@ def grade(im, sat=1.0, mul=(1, 1, 1), add=(0, 0, 0)):
 
 def uri(im, fmt='PNG'):
     b = io.BytesIO()
-    im.save(b, fmt, optimize=True)
+    if fmt == 'WEBP':
+        im.save(b, fmt, quality=88, method=6)
+    else:
+        im.save(b, fmt, optimize=True)
     return f'data:image/{fmt.lower()};base64,' + base64.b64encode(b.getvalue()).decode()
+
+
+UP = 4   # texture upscale: the game samples UP texels per base texel (NM_TEXUP)
+
+
+def upscale(im, k):
+    """Tile-safe upscale: wrap-pad, Lanczos, crop, light unsharp. The seams still meet,
+    so the wrap masks hold."""
+    from PIL import ImageFilter
+    a = np.asarray(im.convert('RGB'))
+    h, w = a.shape[:2]
+    p = 8
+    big = Image.fromarray(np.pad(a, ((p, p), (p, p), (0, 0)), mode='wrap'))
+    big = big.resize(((w + 2 * p) * k, (h + 2 * p) * k), Image.LANCZOS)
+    big = big.crop((p * k, p * k, (p + w) * k, (p + h) * k))
+    return big.filter(ImageFilter.UnsharpMask(radius=1.2 * k / 2, percent=60, threshold=2))
 
 
 def textures(fd):
@@ -111,20 +131,28 @@ def textures(fd):
     for k, v in t.items():
         w, h = v.size
         assert w & (w - 1) == 0 and h & (h - 1) == 0, (k, v.size)
-    return {k: uri(v.convert('RGB')) for k, v in t.items()}
+    if UP > 1:
+        t = {k: upscale(v, UP) for k, v in t.items()}
+    return {k: uri(v.convert('RGB'), 'WEBP') for k, v in t.items()}
 
 
 def sprites(prefix):
     table = json.load(open(prefix + '.json'))
     keep = {k: v for k, v in table.items() if re.match(r'^[a-z]+_\d$', k) or re.match(r'^(down|fall)(_m)?$', k)}
-    return {'img': uri(Image.open(prefix + '.png')), 'f': keep}
+    out = {'img': uri(Image.open(prefix + '.png')), 'f': keep}
+    if os.path.exists(prefix + '_hi.png'):
+        hi = json.load(open(prefix + '_hi.json'))
+        out['hi'] = {'img': uri(Image.open(prefix + '_hi.png')),
+                     'f': {k: v for k, v in hi.items() if k in keep}}
+    return out
 
 
 def main():
     fd = sys.argv[1] if len(sys.argv) > 1 else os.path.join(ROOT, '..', 'freedoom')
     tex = textures(fd)
     spr = sprites(os.path.join(ROOT, 'build', 'soldier_blue'))
-    assets = 'const NM_TEX = ' + json.dumps(tex) + ';\nconst NM_SPR = ' + json.dumps(spr) + ';'
+    assets = ('const NM_TEX = ' + json.dumps(tex) + ';\nconst NM_TEXUP = ' + json.dumps({k: UP for k in tex}) +
+              ';\nconst NM_SPR = ' + json.dumps(spr) + ';')
     src = open(os.path.join(ROOT, 'game.html')).read()
     assert '/*@ASSETS@*/' in src
     zz = open(os.path.join(ROOT, 'zzfx.js')).read()
@@ -138,7 +166,8 @@ def main():
     # the playable page also sits at the game root, where the arcade menu links and
     # where a repo-wide 'dist' ignore rule can't drop it
     open(os.path.join(ROOT, 'index.html'), 'w').write(full)
-    print(f'dist/index.html {len(full) / 1024:.0f} KB, {len(tex)} textures, {len(spr["f"])} sprite frames')
+    print(f'dist/index.html {len(full) / 1024:.0f} KB, {len(tex)} textures x{UP}, {len(spr["f"])} sprite frames'
+          + (' + full-res set' if 'hi' in spr else ''))
 
 
 if __name__ == '__main__':

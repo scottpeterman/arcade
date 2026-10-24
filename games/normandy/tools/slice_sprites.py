@@ -3,6 +3,9 @@
 
   python3 tools/slice_sprites.py SHEET.png OUT_PREFIX [--debug DEBUG.png] [--add NAME=PATH:WIDTH ...]
 
+--px N sets the crisp pass's downscale (default 2). --px 1 keeps the sheet's full
+resolution; Normandy ships both, the full one for close range.
+
 --add takes a single loose drawing on a white or transparent background (a body on
 the ground, say), mattes it, scales it to WIDTH sheet pixels and adds it as frame NAME
 plus a mirrored NAME_m. Anchor: centre of the bottom edge.
@@ -178,7 +181,7 @@ def main():
     # crisp pass: the sheet is soft AI pixel art with no true grid. Box-filter each frame
     # down by PX, cut it to a small shared palette, and ring it with a dark outline, so it
     # renders as hard-edged pixels at any range. Anchors scale with it.
-    PX = 2
+    PX = int(sys.argv[sys.argv.index('--px') + 1]) if '--px' in sys.argv else 2
     if '--soft' not in sys.argv:
         allpx = np.concatenate([f['img'][f['img'][..., 3] > 0][:, :3] for f in frames])
         flash = np.array([[255, 236, 120], [255, 196, 64], [255, 140, 30], [255, 252, 220]] * 4000, np.uint8)

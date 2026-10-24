@@ -53,6 +53,17 @@ const STEEL  = '#8d9686', WELL = '#070c11';
 const MUST   = '#c19a33', MUST_D = '#8b6d1e', MUST_L = '#dcb84e';
 const STENCIL= '38,28,8';
 const opt = { post:true, bloom:true };
+// render detail: d/dn divide the view width (desktop/phone) into the rasterizer's width,
+// cap bounds it; gun is the in-hand rifle's drawing scale
+const QUAL = [{ n: 'LO', d: 3.0, dn: 2.4, cap: 560, gun: 1 }, { n: 'MED', d: 2.0, dn: 1.7, cap: 960, gun: 2 }, { n: 'HI', d: 1.4, dn: 1.2, cap: 1400, gun: 4 }];
+let qual = (matchMedia && matchMedia('(pointer: coarse)').matches) ? 0 : 1;
+try { const q = localStorage.getItem('normandy_qual'); if (q !== null && QUAL[+q]) qual = +q; } catch (err) {}
+{ const q = (new URLSearchParams(location.search).get('q') || '').toUpperCase(), i = QUAL.findIndex(e => e.n === q); if (i >= 0) qual = i; }
+function cycleQual(){
+  qual = (qual + 1) % QUAL.length;
+  try { localStorage.setItem('normandy_qual', String(qual)); } catch (err) {}
+  flash('DETAIL ' + QUAL[qual].n, 1.4, LBL);
+}
 
 let W = 0, H = 0, DPR = 1;
 function resize(){
@@ -200,6 +211,7 @@ async function loadAssets(){
   for (const [k, src] of Object.entries(NM_TEX)){
     const im = await loadImg(src);
     TX[k] = texMips(im.width, im.height, imgPixels(im));
+    TX[k].up = (typeof NM_TEXUP !== 'undefined' && NM_TEXUP[k]) || 1;
     if (k === 'sky') TX.skyRaw = { w: im.width, h: im.height, px: TX[k][0].px };
   }
   TX.foam = makeTex(64, 64, (x, y) => {
@@ -211,6 +223,11 @@ async function loadAssets(){
   const im = await loadImg(NM_SPR.img);
   SPR.px = imgPixels(im); SPR.w = im.width; SPR.h = im.height; SPR.f = NM_SPR.f;
   SPR.mpp = 1.78 / SPR.f.stand_0[5];
+  if (NM_SPR.hi){
+    const hi = await loadImg(NM_SPR.hi.img);
+    SPR.hi = { px: imgPixels(hi), w: hi.width, h: hi.height, f: NM_SPR.hi.f };
+    SPR.hi.mpp = 1.78 / SPR.hi.f.stand_0[5];
+  }
   TEXREADY = true;
 }
 
@@ -626,7 +643,7 @@ function foamPolys(t, zc){
 // ===========================================================================
 let RB = null;
 function rbEnsure(v){
-  const w = clamp(Math.round(v.w / (narrow() ? 2.4 : 3.0)), 160, 560), h = Math.max(90, Math.round(w * v.h / v.w));
+  const Q = QUAL[qual], w = clamp(Math.round(v.w / (narrow() ? Q.dn : Q.d)), 160, Q.cap), h = Math.max(90, Math.round(w * v.h / v.w));
   if (!RB || RB.w !== w || RB.h !== h){
     const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
     const gg = cv.getContext('2d'), img = gg.createImageData(w, h);
@@ -672,7 +689,7 @@ function drawPoly(p){
   if (xmax < 0 || xmin > RW || ymax < 0 || ymin > RH) return;
   const v0 = p.p0;
   const dpl = Math.abs(p.nx*(cam.x - v0[0]) + p.ny*(cam.y - v0[1]) + p.nz*(cam.z - v0[2])) + 0.05;
-  const mips = p.tex, nm = mips.length - 1;
+  const mips = p.tex, nm = mips.length - 1, up = mips.up || 1, ul = up === 1 ? 0 : Math.log2(up);
   const fl = 1 + rFlash;
   const ar = AMB[0]*p.amb*fl, ag = AMB[1]*p.amb*fl, ab = AMB[2]*p.amb*fl;
   const sr = SUNC[0]*p.lam*fl, sg = SUNC[1]*p.lam*fl, sb = SUNC[2]*p.lam*fl;
@@ -705,9 +722,9 @@ function drawPoly(p){
     const pre = x0 + 0.5 - xl;
     let iz = lz + dz*pre, uz = lu + du*pre, vz = lv + dv*pre, mxz = lmx + dmx*pre, mzz = lmz + dmz*pre, yz = ly + dy*pre;
     const zm = 2 / (lz + rz), cosA = Math.min(1, dpl / zm);
-    let lod = Math.log2(zm * lodK) + 0.35 * Math.log2(1 / Math.max(cosA, 0.06)) - 0.45;
+    let lod = Math.log2(zm * lodK) + 0.35 * Math.log2(1 / Math.max(cosA, 0.06)) - 0.45 + ul;
     const lv_ = lod <= 0 ? 0 : lod >= nm ? nm : Math.round(lod);
-    const T = mips[lv_], tp = T.px, wm = T.wm, hm = T.hm, sh = T.sh, ms = 1 / (1 << lv_);
+    const T = mips[lv_], tp = T.px, wm = T.wm, hm = T.hm, sh = T.sh, ms = up / (1 << lv_);
     const row = y * RW;
     for (let x = x0; x < x1; x++){
       const z = 1 / iz, zi = row + x;
@@ -767,10 +784,14 @@ function spriteFrame(e){
   return (Math.round(ang / (Math.PI / 4)) + 8) % 8;
 }
 function drawSprite(name, wx, wy, wz, tag, lit, src){
-  const S_ = src || SPR, fr = S_.f[name]; if (!fr) return;
+  let S_ = src || SPR, fr = S_.f[name]; if (!fr) return;
   toCam(wx, wy, wz, XF);
   const cz = XF[2]; if (cz < 0.4 || cz > FAR) return;
-  const iz = 1 / cz, ax = rcx + XF[0]*iz*rFx, ay = rcy - XF[1]*iz*rFy, s = S_.mpp * iz * rFy;
+  const iz = 1 / cz, ax = rcx + XF[0]*iz*rFx, ay = rcy - XF[1]*iz*rFy;
+  // the full-resolution sheet once each of its pixels covers most of a screen pixel;
+  // further out the crisp half-resolution sheet, which nearest sampling keeps stable
+  if (S_ === SPR && SPR.hi && SPR.hi.f[name] && SPR.hi.mpp * iz * rFy >= 0.7){ S_ = SPR.hi; fr = S_.f[name]; }
+  const s = S_.mpp * iz * rFy;
   const [fx, fy, fw, fh, fax, fay] = fr;
   const left = ax - fax * s, top = ay - fay * s;
   const x0 = Math.max(0, Math.floor(left)), x1 = Math.min(RB.w, Math.ceil(left + fw * s));
@@ -2572,11 +2593,12 @@ function drawFrame(v){
 }
 
 // ---- rifle in hand: low-res pixel drawing scaled up
-let _gunCv = null;
+let _gunCv = null, _gunK = 0;
 function gunCanvas(){
-  if (_gunCv) return _gunCv;
-  const cv = document.createElement('canvas'); cv.width = 120; cv.height = 70;
-  const o = cv.getContext('2d');
+  const k = QUAL[qual].gun;
+  if (_gunCv && _gunK === k) return _gunCv;
+  const cv = document.createElement('canvas'); cv.width = 120 * k; cv.height = 70 * k;
+  const o = cv.getContext('2d'); o.scale(k, k);
   const poly = (pts, col) => { o.fillStyle = col; o.beginPath(); o.moveTo(pts[0][0], pts[0][1]); for (const p of pts.slice(1)) o.lineTo(p[0], p[1]); o.closePath(); o.fill(); };
   poly([[120, 70], [96, 70], [62, 30], [70, 26]], '#4a2e18');            // stock and wrist
   poly([[118, 70], [104, 70], [70, 30], [74, 28]], '#6b4424');
@@ -2586,7 +2608,7 @@ function gunCanvas(){
   poly([[70, 27], [66, 26], [63, 21], [67, 22]], '#222');                 // rear sight
   poly([[37, 4], [36, 2], [38, 0], [39, 2]], '#111');                     // front sight
   poly([[84, 46], [78, 44], [72, 36], [80, 38]], '#2e3330');              // receiver
-  _gunCv = cv; return cv;
+  _gunCv = cv; _gunK = k; return cv;
 }
 function drawGun(v){
   const s = Math.min(v.w, v.h * 1.6) / 120 * 0.46;
@@ -2711,7 +2733,7 @@ function drawMessages(v){
     textGlow(TL.sub, cx, cy + big*0.85, mid, LBL, 0.9);
     textGlow(game.mode === 'loading' ? 'LOADING…' : touch.on ? TL.tap : 'CLICK OR PRESS ENTER', cx, cy + big*1.65, mid, PHOS, game.mode === 'loading' ? 0.7 : blink);
     const help = touch.on ? [stickRight ? 'RIGHT THUMB MOVES   LEFT THUMB LOOKS' : 'LEFT THUMB MOVES   RIGHT THUMB LOOKS', 'SWAP FLIPS THE SIDES'] :
-      ['WASD MOVE   MOUSE OR Q/E LOOK   CLICK/SPACE FIRE', 'ALT/C CROUCH   G GRENADE   R RELOAD   M SOUND   P PAUSE'];
+      ['WASD MOVE   MOUSE OR Q/E LOOK   CLICK/SPACE FIRE', 'ALT/C CROUCH   G GRENADE   R RELOAD   M SOUND   P PAUSE   F DETAIL'];
     help.forEach((h, i) => textGlow(h, cx, cy + big*2.35 + i*mid*1.4, mid*0.8, LBL, 0.8));
     textGlow(TL.tip, cx, cy + big*2.35 + mid*3.2, mid*0.8, PHOS, 0.65);
     if (game.mode === 'title')
@@ -2814,14 +2836,23 @@ addEventListener('keydown', e => {
   if (e.code === 'KeyM') toggleSnd();
   if (e.code === 'KeyL' && (game.mode === 'title' || game.mode === 'won' || game.mode === 'down')) skipLevel();
   if (e.code === 'KeyL' && game.paused){ game.paused = false; skipLevel(); game.picked = false; newGame(); }
-  if (e.code === 'KeyP' || e.code === 'Escape') { if (game.mode === 'play' || game.mode === 'boat') game.paused = !game.paused; }
+  if (e.code === 'KeyP') setPaused(!game.paused);
+  if (e.code === 'Escape') setPaused(true);              // Esc only pauses: it may also have just dropped the lock
   if (e.code === 'KeyV') opt.post = !opt.post;
+  if (e.code === 'KeyF' && !e.repeat) cycleQual();
 });
+// pausing hands the mouse back; the next click in play takes it again
+function setPaused(on){
+  if (game.mode !== 'play' && game.mode !== 'boat') return;
+  game.paused = on;
+  if (on){ mouseDown = false; if (document.pointerLockElement === c) document.exitPointerLock(); }
+}
 addEventListener('keyup', e => { keys.delete(e.code); if (e.code === 'AltLeft' || e.code === 'AltRight') e.preventDefault(); });
 addEventListener('blur', () => { keys.clear(); mouseDown = false; touch.fire = false; });
 c.addEventListener('mousedown', e => {
   c.focus();
   if (game.mode === 'title' || game.mode === 'down' || game.mode === 'won' || game.mode === 'brief'){ startOrRestart(); return; }
+  if (game.paused) return;                                // P resumes; a click doesn't grab the mouse
   initAudio();
   // pointer lock when the browser allows it; when it refuses (some embedded frames do),
   // the free-cursor steering below takes over and the click still fires
@@ -2835,7 +2866,10 @@ c.addEventListener('mousedown', e => {
 addEventListener('mouseup', () => { mouseDown = false; });
 c.addEventListener('contextmenu', e => e.preventDefault());
 let lockTries = 0;
-document.addEventListener('pointerlockchange', () => { if (document.pointerLockElement === c) lockTries = 0; });
+document.addEventListener('pointerlockchange', () => {
+  if (document.pointerLockElement === c) lockTries = 0;
+  else setPaused(true);                                  // the browser eats the Esc that releases the lock, so losing it pauses
+});
 // free cursor: moving the mouse over the view turns you as if locked, and resting it near
 // the left or right edge keeps turning, so a cursor pinned at the screen edge still steers
 const ms = { inView: false, ex: 0, ey: 0 };
@@ -2850,7 +2884,7 @@ addEventListener('mousemove', e => {
     ms.ey = ms.inView ? clamp(((y - v.y) / v.h - 0.5) * 2, -1, 1) : 0;
     if (!ms.inView || touch.on || x < v.x || x > v.x + v.w) return;
   }
-  if (game.mode !== 'play' && game.mode !== 'boat') return;
+  if ((game.mode !== 'play' && game.mode !== 'boat') || game.paused) return;
   const k = locked ? 0.0024 : 0.0034;
   const mx = clamp(e.movementX || 0, -80, 80), my = clamp(e.movementY || 0, -80, 80);   // some browsers report a jump on entry
   pl.yaw = wrapA(pl.yaw + mx * k);

@@ -2,6 +2,8 @@
 """Headless screenshots and sim checks for Normandy.
 
   python3 tools/shots.py OUTDIR [WIDTHxHEIGHT] [beach|d1]
+
+NM_Q=lo|med|hi picks the render detail (default: the page's own).
 """
 import sys, os, json
 from playwright.sync_api import sync_playwright
@@ -45,7 +47,7 @@ with sync_playwright() as p:
     errs = []
     pg.on('console', lambda m: errs.append(m.text) if m.type == 'error' else None)
     pg.on('pageerror', lambda e: errs.append(str(e)))
-    pg.goto('file://' + os.path.join(ROOT, 'dist', 'index.html'))
+    pg.goto('file://' + os.path.join(ROOT, 'dist', 'index.html') + (('?q=' + os.environ['NM_Q']) if os.environ.get('NM_Q') else ''))
     pg.wait_for_function('window.__qa && window.__qa.ready', timeout=120000)
     print('build ms', pg.evaluate('__qa.buildMs'))
     if h > w: pg.evaluate('__qa.touchOn()')
