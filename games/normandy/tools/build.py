@@ -4,6 +4,8 @@
   git clone --depth 1 https://github.com/freedoom/freedoom.git
   python3 tools/slice_sprites.py src/1000011203.png build/soldier_blue --add down=src/down.png:150 --add fall=src/fall.png:150
   python3 tools/slice_sprites.py src/1000011203.png build/soldier_blue_hi --px 1 --add down=src/down.png:150 --add fall=src/fall.png:150
+  python3 tools/paint_frames.py src/soldier_paint_v1.png src/soldier_paint_v1.json build/soldier_paint
+  python3 tools/gun.py src/m1_ref.png build/gun.png
   python3 tools/build.py FREEDOOM_DIR
 
 Reads game.html, replaces the /*@ASSETS@*/ marker with the texture and sprite
@@ -78,12 +80,13 @@ def grade(im, sat=1.0, mul=(1, 1, 1), add=(0, 0, 0)):
 def uri(im, fmt='PNG'):
     b = io.BytesIO()
     if fmt == 'WEBP':
-        im.save(b, fmt, quality=88, method=6)
+        im.save(b, fmt, quality=88, method=6, alpha_quality=100)
     else:
         im.save(b, fmt, optimize=True)
     return f'data:image/{fmt.lower()};base64,' + base64.b64encode(b.getvalue()).decode()
 
 
+SOLDIERS = 'soldier_paint'   # build/soldier_paint*.png from tools/paint_frames.py
 UP = 4   # texture upscale: the game samples UP texels per base texel (NM_TEXUP)
 
 
@@ -137,22 +140,35 @@ def textures(fd):
 
 
 def sprites(prefix):
+    # painted sheets are big and smooth: WebP (lossless alpha) keeps the page a few MB
+    fmt = 'PNG' if os.path.basename(prefix) == 'soldier_blue' else 'WEBP'
     table = json.load(open(prefix + '.json'))
     keep = {k: v for k, v in table.items() if re.match(r'^[a-z]+_\d$', k) or re.match(r'^(down|fall)(_m)?$', k)}
-    out = {'img': uri(Image.open(prefix + '.png')), 'f': keep}
-    if os.path.exists(prefix + '_hi.png'):
-        hi = json.load(open(prefix + '_hi.json'))
-        out['hi'] = {'img': uri(Image.open(prefix + '_hi.png')),
-                     'f': {k: v for k, v in hi.items() if k in keep}}
+    out = {'img': uri(Image.open(prefix + '.png'), fmt), 'f': keep}
+    # finer sheets, nested: PREFIX_hi, then PREFIX_hi2 (painted sheets only)
+    node = out
+    for suffix in ('_hi', '_hi2'):
+        if not os.path.exists(prefix + suffix + '.png'):
+            break
+        t = json.load(open(prefix + suffix + '.json'))
+        node['hi'] = {'img': uri(Image.open(prefix + suffix + '.png'), fmt), 'f': {k: v for k, v in t.items() if k in keep}}
+        node = node['hi']
     return out
 
 
 def main():
-    fd = sys.argv[1] if len(sys.argv) > 1 else os.path.join(ROOT, '..', 'freedoom')
+    # --soldiers NAME picks build/NAME*.png and writes NAME.html beside index.html instead of
+    # replacing it (soldier_blue: the original pixel sheet on its own)
+    who = sys.argv[sys.argv.index('--soldiers') + 1] if '--soldiers' in sys.argv else SOLDIERS
+    args = [a for a in sys.argv[1:] if not a.startswith('--') and a != who]
+    fd = args[0] if args else os.path.join(ROOT, '..', 'freedoom')
     tex = textures(fd)
-    spr = sprites(os.path.join(ROOT, 'build', 'soldier_blue'))
+    spr = sprites(os.path.join(ROOT, 'build', who))
+    # the in-hand rifle from tools/gun.py, if built; the game falls back to its drawn rifle
+    gp = os.path.join(ROOT, 'build', 'gun.png')
+    gun = uri(Image.open(gp), 'WEBP') if os.path.exists(gp) else None
     assets = ('const NM_TEX = ' + json.dumps(tex) + ';\nconst NM_TEXUP = ' + json.dumps({k: UP for k in tex}) +
-              ';\nconst NM_SPR = ' + json.dumps(spr) + ';')
+              ';\nconst NM_SPR = ' + json.dumps(spr) + ';\nconst NM_GUN = ' + json.dumps(gun) + ';')
     src = open(os.path.join(ROOT, 'game.html')).read()
     assert '/*@ASSETS@*/' in src
     zz = open(os.path.join(ROOT, 'zzfx.js')).read()
@@ -165,9 +181,9 @@ def main():
     open(os.path.join(ROOT, 'dist', 'index.html'), 'w').write(full)
     # the playable page also sits at the game root, where the arcade menu links and
     # where a repo-wide 'dist' ignore rule can't drop it
-    open(os.path.join(ROOT, 'index.html'), 'w').write(full)
+    open(os.path.join(ROOT, 'index.html' if who == SOLDIERS else who + '.html'), 'w').write(full)
     print(f'dist/index.html {len(full) / 1024:.0f} KB, {len(tex)} textures x{UP}, {len(spr["f"])} sprite frames'
-          + (' + full-res set' if 'hi' in spr else ''))
+          + ''.join(' + finer set' for _ in range(('hi' in spr) + ('hi' in spr.get('hi', {})))) + f' ({who})')
 
 
 if __name__ == '__main__':

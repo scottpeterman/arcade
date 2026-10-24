@@ -1,0 +1,17 @@
+{
+  "_note": "figure ids from tools/paint_frames.py --index; drawn views S SW W NW N, the game mirrors SE E NE",
+  "fit": "height",
+  "dirs": ["S", "SW", "W", "NW", "N"],
+  "frames": {
+    "stand": [4, 6, 6, 10, 11],
+    "walk": [12, 13, 16, 19, 22],
+    "run": [12, 13, 16, 19, 22],
+    "aim": [24, 35, 26, 43, 31],
+    "fire": [24, 35, 26, 43, 31],
+    "reload": [24, 35, 26, 43, 31],
+    "grenade": [33, 40, 41, 37, 39],
+    "melee": [12, 13, 16, 19, 22],
+    "hit": [51, 52, 53, 42, 43],
+    "die": [54, 55, 56, 57, 57]
+  }
+}

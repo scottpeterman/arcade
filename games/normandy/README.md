@@ -43,10 +43,12 @@ One self-contained HTML file, built from `game.html` plus assets.
 
 ## Engine
 
+- **Renderer:** WebGL2 when the browser has it: the same world, sun shadows, fog, sky and sprites drawn at the screen's own resolution with filtered textures, its canvas under the HUD canvas. F sets the resolution (half, three-quarters, full). The sky there is a procedural overcast deck (fbm noise on a cloud plane, drifting, coloured from the Freedoom sky); the software renderer keeps the Freedoom sky. The crosshair pick runs on the CPU against the sprites' pixels, with a window tuned to the software renderer's hits. Without WebGL2, or with `?r=soft`, the software rasterizer below takes over.
 - **World:** DECKRUNNER's solid-hull software rasterizer: low-res z-buffer, perspective-correct mipped Freedoom textures, sun shading against a horizon-height shadow map. Fog goes to haze instead of black, and a cylinder sky sits behind it. Each level is a triangulated heightfield on a non-uniform grid. The draw's grid rows slide sideways with the road (`LV.shift`), so the road edges and benches follow its curve. On that heightfield sit boxes, bevel-top concrete, oriented beams and roofless ruins.
 - **Levels:** each level is an entry in `LEVELS` that owns its grid, heights, ground textures, build, spawns, bounds, checkpoint, map and per-frame rules (`tick`). The engine rebuilds the world when you change level. Machine guns and casemates are objects (`MGS`, `EMPS`), so a level can have any number. Riflemen hold a patrol line in any direction, so they can stand along the beach or up the draw.
-- **Soldiers:** 8-direction billboards from the sprite sheet, drawn into the same z-buffer. Parapets hide their legs.
+- **Soldiers:** 8-direction billboards, drawn into the same z-buffer. Parapets hide their legs. The figures come from a painted sheet (`src/soldier_paint_v1.png`): `src/soldier_paint_v1.json` names the figure for each state in five views (S SW W NW N; SE E NE are mirrors) and fits each pose to the height of the pixel sheet's frame, so targets stay the size the game was balanced on. `tools/paint_frames.py SHEET --index OUT.png` numbers a sheet's figures. States the map leaves out fall back to the pixel sheet, and three sizes are stored, the finest used as soon as it covers the screen. `tools/build.py --soldiers soldier_blue` builds the pixel-sheet version as `soldier_blue.html`.
 - **HUD:** Bounty Hunter's frame, warmed to amber. LIFE and EXPO columns; SCORE · TIME · HEALTH · M1 (8-round en-bloc, pings on the last round) · NADES · KILLS · MAP. On D-1 the map is turned on its side: sea on the left, Vierville on the right. Phones in portrait get a thumb deck under the view.
+- **Rifle in hand:** `tools/gun.py` cuts the left-side view out of `src/m1_ref.png`, drops the sling and warps it in perspective into the old drawn rifle's box, so the muzzle flash and bayonet stay on the muzzle. Without `build/gun.png` the game draws its old pixel rifle.
 - **Sound:** ZzFX core, as in DECKRUNNER. D-1 adds the mortar whistle.
 
 ## Rules that matter
@@ -91,6 +93,8 @@ Sources: [WN72](https://www.dday-overlord.com/en/d-day/atlantic-wall/strongpoint
 git clone --depth 1 https://github.com/freedoom/freedoom.git ../freedoom
 python3 tools/slice_sprites.py src/1000011203.png build/soldier_blue --add down=src/down.png:150 --add fall=src/fall.png:150 --debug build/dbg_blue.png
 python3 tools/slice_sprites.py src/1000011203.png build/soldier_blue_hi --px 1 --add down=src/down.png:150 --add fall=src/fall.png:150
+python3 tools/paint_frames.py src/soldier_paint_v1.png src/soldier_paint_v1.json build/soldier_paint
+python3 tools/gun.py src/m1_ref.png build/gun.png
 python3 tools/build.py ../freedoom
 ```
 

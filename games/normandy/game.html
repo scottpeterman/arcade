@@ -55,13 +55,21 @@ const STENCIL= '38,28,8';
 const opt = { post:true, bloom:true };
 // render detail: d/dn divide the view width (desktop/phone) into the rasterizer's width,
 // cap bounds it; gun is the in-hand rifle's drawing scale
-const QUAL = [{ n: 'LO', d: 3.0, dn: 2.4, cap: 560, gun: 1 }, { n: 'MED', d: 2.0, dn: 1.7, cap: 960, gun: 2 }, { n: 'HI', d: 1.4, dn: 1.2, cap: 1400, gun: 4 }];
-let qual = (matchMedia && matchMedia('(pointer: coarse)').matches) ? 0 : 1;
-try { const q = localStorage.getItem('normandy_qual'); if (q !== null && QUAL[+q]) qual = +q; } catch (err) {}
+// gl: on the GPU renderer, the fraction of the screen's own resolution it draws at
+const QUAL = [{ n: 'LO', d: 3.0, dn: 2.4, cap: 560, gun: 1, gl: 0.5 }, { n: 'MED', d: 2.0, dn: 1.7, cap: 960, gun: 2, gl: 0.75 }, { n: 'HI', d: 1.4, dn: 1.2, cap: 1400, gun: 4, gl: 1 }];
+// the GPU renderer's context, made up front so detail can default by renderer (?r=soft: none)
+const GLX = (() => {
+  if (/[?&]r=soft\b/.test(location.search)) return null;
+  try { const cv = document.createElement('canvas'), gl = cv.getContext('webgl2', { antialias: true, alpha: false, depth: true, premultipliedAlpha: false });
+        return gl ? { cv, gl } : null; } catch (err) { return null; }
+})();
+const QKEY = GLX ? 'normandy_qual_gl' : 'normandy_qual';
+let qual = GLX ? 2 : (matchMedia && matchMedia('(pointer: coarse)').matches) ? 0 : 1;
+try { const q = localStorage.getItem(QKEY); if (q !== null && QUAL[+q]) qual = +q; } catch (err) {}
 { const q = (new URLSearchParams(location.search).get('q') || '').toUpperCase(), i = QUAL.findIndex(e => e.n === q); if (i >= 0) qual = i; }
 function cycleQual(){
   qual = (qual + 1) % QUAL.length;
-  try { localStorage.setItem('normandy_qual', String(qual)); } catch (err) {}
+  try { localStorage.setItem(QKEY, String(qual)); } catch (err) {}
   flash('DETAIL ' + QUAL[qual].n, 1.4, LBL);
 }
 
@@ -223,10 +231,12 @@ async function loadAssets(){
   const im = await loadImg(NM_SPR.img);
   SPR.px = imgPixels(im); SPR.w = im.width; SPR.h = im.height; SPR.f = NM_SPR.f;
   SPR.mpp = 1.78 / SPR.f.stand_0[5];
-  if (NM_SPR.hi){
-    const hi = await loadImg(NM_SPR.hi.img);
-    SPR.hi = { px: imgPixels(hi), w: hi.width, h: hi.height, f: NM_SPR.hi.f };
-    SPR.hi.mpp = 1.78 / SPR.hi.f.stand_0[5];
+  if (typeof NM_GUN !== 'undefined' && NM_GUN) GUNIMG = await loadImg(NM_GUN);
+  // finer sheets chain off SPR (hi, then hi.hi); each scales by its own stand height
+  for (let src = NM_SPR.hi, dst = SPR; src; src = src.hi){
+    const im2 = await loadImg(src.img);
+    dst = dst.hi = { px: imgPixels(im2), w: im2.width, h: im2.height, f: src.f, hi: null };
+    dst.mpp = 1.78 / src.f.stand_0[5];
   }
   TEXREADY = true;
 }
@@ -775,7 +785,7 @@ function drawSky(){
 }
 
 // ---- sprites into the z-buffer
-let aimPick = null;
+let aimPick = null, aimR = 1;   // aimR: crosshair window half-width in render pixels
 function spriteFrame(e){
   const dx = cam.x - e.x, dz = cam.z - e.z, L = Math.hypot(dx, dz) || 1;
   const vx = dx / L, vz = dz / L, fx = Math.sin(e.yaw), fz = Math.cos(e.yaw);
@@ -790,7 +800,7 @@ function drawSprite(name, wx, wy, wz, tag, lit, src){
   const iz = 1 / cz, ax = rcx + XF[0]*iz*rFx, ay = rcy - XF[1]*iz*rFy;
   // the full-resolution sheet once each of its pixels covers most of a screen pixel;
   // further out the crisp half-resolution sheet, which nearest sampling keeps stable
-  if (S_ === SPR && SPR.hi && SPR.hi.f[name] && SPR.hi.mpp * iz * rFy >= 0.7){ S_ = SPR.hi; fr = S_.f[name]; }
+  if (S_ === SPR) for (let L = SPR.hi; L && L.f[name] && L.mpp * iz * rFy >= 0.7; L = L.hi){ S_ = L; fr = L.f[name]; }
   const s = S_.mpp * iz * rFy;
   const [fx, fy, fw, fh, fax, fay] = fr;
   const left = ax - fax * s, top = ay - fay * s;
@@ -814,7 +824,7 @@ function drawSprite(name, wx, wy, wz, tag, lit, src){
       zb[i] = cz;
       const r = (cc & 255) * kr + fr_, gg = ((cc >>> 8) & 255) * kg + fg_, b = ((cc >>> 16) & 255) * kb + fb_;
       px[i] = 0xff000000 | ((b > 255 ? 255 : b) << 16) | ((gg > 255 ? 255 : gg) << 8) | (r > 255 ? 255 : r);
-      if (tag && Math.abs(x - cxp) <= 1 && Math.abs(y - cyp) <= 1) aimPick = { tag, z: cz };
+      if (tag && Math.abs(x - cxp) <= aimR && Math.abs(y - cyp) <= aimR) aimPick = { tag, z: cz };
     }
   }
 }
@@ -880,7 +890,9 @@ function drawParticle(p){
 const VIS = [];
 let tanX = 1, tanY = 1;
 function renderWorld(v){
+  if (GLR.on()){ GLR.render(v); return; }
   const B = rbEnsure(v);
+  aimR = Math.max(1, Math.round((narrow() ? 2.4 : 3.0) * B.w / v.w));   // same CSS-px window at every detail level
   const F = Math.min(v.w / 2 / Math.tan(40 * Math.PI / 180), v.h / 2 / Math.tan(33 * Math.PI / 180));
   rFx = F * B.w / v.w; rFy = F * B.h / v.h; rcx = B.w / 2; rcy = B.h / 2;
   tanX = rcx / rFx + 0.05; tanY = rcy / rFy + 0.05;
@@ -930,6 +942,542 @@ function renderWorld(v){
   g.drawImage(B.cv, v.x, v.y, v.w, v.h);
   g.imageSmoothingEnabled = sm;
 }
+
+// ===========================================================================
+// GPU RENDERER (WebGL2). The same world, sun shadows, fog, sky and sprites as the
+// rasterizer above, drawn at screen resolution with filtered, mipped textures. The
+// rasterizer stays as the fallback: no WebGL2, a shader that won't build, or ?r=soft.
+// ===========================================================================
+const GLR = (() => {
+  if (!GLX) return { on: () => false };
+  const gl = GLX.gl, cv = GLX.cv;
+  let ok = false, place = '';
+  const WS = 13;                                           // world vertex: pos3 uv2 sh2 lam amb n3 two
+  const ES = 9;                                            // effect vertex: view pos3, uv2, rgba
+  const SS = 11;                                           // sprite vertex: view pos3, uv2, mul3, add3
+  let P_W, P_S, P_E, P_K, vaoW = null, dynBuf, dynVao, sprBuf, sprVao, fxBuf, fxVao, skyVao;
+  let world = null, shadowTex = null, skyFor = null;
+  const texMap = new WeakMap(), atlasMap = new WeakMap();
+  let aniso = null, anisoMax = 1;
+  const M = new Float32Array(16), PJ = new Float32Array(16);
+
+  function prog(vs, fs){
+    const p = gl.createProgram();
+    for (const [t, s] of [[gl.VERTEX_SHADER, vs], [gl.FRAGMENT_SHADER, fs]]){
+      const sh = gl.createShader(t); gl.shaderSource(sh, s); gl.compileShader(sh);
+      if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(sh));
+      gl.attachShader(p, sh);
+    }
+    gl.linkProgram(p);
+    if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+    const u = {}, n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS);
+    for (let i = 0; i < n; i++){ const nm = gl.getActiveUniform(p, i).name; u[nm] = gl.getUniformLocation(p, nm); }
+    return { p, u };
+  }
+  function vao(buf, stride, layout){
+    const a = gl.createVertexArray(); gl.bindVertexArray(a); gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+    let off = 0;
+    layout.forEach((n, i) => { gl.enableVertexAttribArray(i); gl.vertexAttribPointer(i, n, gl.FLOAT, false, stride * 4, off * 4); off += n; });
+    gl.bindVertexArray(null);
+    return a;
+  }
+
+  const FOGFN = `
+    uniform float uFar;
+    float fogK(float z){ return z < 18.0 ? 1.0 : pow(max(0.0, 1.0 - (z - 18.0) / (uFar - 18.0)), 1.55); }`;
+
+  try {
+    P_W = prog(`#version 300 es
+      layout(location=0) in vec3 aPos; layout(location=1) in vec2 aUv; layout(location=2) in vec2 aSh;
+      layout(location=3) in vec2 aLA; layout(location=4) in vec4 aN;
+      uniform mat4 uVP; uniform vec3 uCam; uniform vec3 uF; uniform vec2 uTexBase;
+      out vec2 vUv; out vec2 vSh; out float vY; out float vZ; flat out vec2 vLA;
+      void main(){
+        vec3 d = aPos - uCam;
+        // one-sided polygons facing away: all three corners off screen, so nothing rasterizes
+        if (aN.w < 0.5 && dot(aN.xyz, d) >= 0.0){ gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }
+        gl_Position = uVP * vec4(aPos, 1.0);
+        vUv = aUv / uTexBase; vSh = aSh; vY = aPos.y; vZ = dot(d, uF); vLA = aLA;
+      }`, `#version 300 es
+      precision highp float; precision highp sampler2D;
+      uniform sampler2D uTex; uniform sampler2D uShadow; uniform vec2 uShSize;
+      uniform vec3 uAmbC; uniform vec3 uSunC; uniform vec3 uFogC; uniform float uFl;
+      in vec2 vUv; in vec2 vSh; in float vY; in float vZ; flat in vec2 vLA;
+      out vec4 o;` + FOGFN + `
+      float shadowAt(vec2 g){
+        g = clamp(g, vec2(0.0), uShSize - 1.001);
+        ivec2 i = ivec2(g); vec2 f = g - vec2(i);
+        float s00 = texelFetch(uShadow, i, 0).r, s10 = texelFetch(uShadow, i + ivec2(1, 0), 0).r;
+        float s01 = texelFetch(uShadow, i + ivec2(0, 1), 0).r, s11 = texelFetch(uShadow, i + ivec2(1, 1), 0).r;
+        return mix(mix(s00, s10, f.x), mix(s01, s11, f.x), f.y);
+      }
+      void main(){
+        vec3 c = texture(uTex, vUv).rgb * 255.0;
+        float lit = vLA.x > 0.0 ? clamp((vY - shadowAt(vSh)) * 3.0 + 0.5, 0.0, 1.0) : 0.0;
+        vec3 col = c * (uAmbC * vLA.y + uSunC * vLA.x * lit) * uFl;
+        float fg = fogK(vZ);
+        o = vec4(min(col * fg + uFogC * (1.0 - fg), 255.0) / 255.0, 1.0);
+      }`);
+    P_S = prog(`#version 300 es
+      layout(location=0) in vec3 aPos; layout(location=1) in vec2 aUv; layout(location=2) in vec3 aMul; layout(location=3) in vec3 aAdd;
+      uniform mat4 uP; out vec2 vUv; out vec3 vMul; out vec3 vAdd;
+      void main(){ gl_Position = uP * vec4(aPos, 1.0); vUv = aUv; vMul = aMul; vAdd = aAdd; }`, `#version 300 es
+      precision highp float; uniform sampler2D uTex; in vec2 vUv; in vec3 vMul; in vec3 vAdd; out vec4 o;
+      void main(){
+        vec4 t = texture(uTex, vUv);
+        if (t.a < 0.5) discard;
+        o = vec4(min(t.rgb * 255.0 * vMul + vAdd, 255.0) / 255.0, 1.0);
+      }`);
+    P_E = prog(`#version 300 es
+      layout(location=0) in vec3 aPos; layout(location=1) in vec2 aUv; layout(location=2) in vec4 aCol;
+      uniform mat4 uP; out vec2 vUv; out vec4 vCol;
+      void main(){ gl_Position = uP * vec4(aPos, 1.0); vUv = aUv; vCol = aCol; }`, `#version 300 es
+      precision highp float; uniform int uMode; in vec2 vUv; in vec4 vCol; out vec4 o;
+      void main(){
+        if (uMode == 1){                                   // soldier's blob shadow: multiply, darkest at the centre
+          float e = dot(vUv, vUv); if (e >= 1.0) discard;
+          float k = 0.55 + 0.45 * e; o = vec4(k, k, k, 1.0);
+        } else if (uMode == 2){                            // smoke, sand and sparks: soft round puffs
+          float d = length(vUv); if (d >= 1.0) discard;
+          o = vec4(vCol.rgb, vCol.a * (1.0 - smoothstep(0.55, 1.0, d)));
+        } else o = vCol;
+      }`);
+    P_K = prog(`#version 300 es
+      layout(location=0) in vec2 aPos; void main(){ gl_Position = vec4(aPos, 0.0, 1.0); }`, `#version 300 es
+      precision highp float; uniform vec3 uR; uniform vec3 uU; uniform vec3 uF;
+      uniform vec2 uC; uniform vec2 uFoc; uniform vec3 uFogC; uniform float uFl; uniform float uTime;
+      uniform vec3 uDark; uniform vec3 uLight; uniform vec2 uSunH; out vec4 o;
+      // overcast deck: value-noise fbm on a cloud plane, each octave faded out before it gets
+      // finer than a pixel, so it stays smooth to the horizon instead of shimmering
+      float hash(vec2 p){ p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+      float vnoise(vec2 p){
+        vec2 i = floor(p), f = fract(p), u = f * f * (3.0 - 2.0 * f);
+        return mix(mix(hash(i), hash(i + vec2(1, 0)), u.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), u.x), u.y);
+      }
+      float fbm(vec2 p, float fw){
+        float v = 0.0, a = 0.5, f = 1.0;
+        mat2 R = mat2(0.8, 0.6, -0.6, 0.8);
+        for (int i = 0; i < 7; i++){
+          float k = clamp(1.6 - f * fw * 2.5, 0.0, 1.0);   // 1 while this octave is coarser than a pixel
+          v += a * mix(0.5, vnoise(p * f), k);
+          p = R * p + 17.3; f *= 2.02; a *= 0.5;
+        }
+        return v;
+      }
+      void main(){
+        float kx = (gl_FragCoord.x - uC.x) / uFoc.x, ky = (gl_FragCoord.y - uC.y) / uFoc.y;
+        vec3 d = uF + uR * kx + uU * ky;
+        float el = d.y / length(d.xz);
+        vec3 c = uFogC;
+        if (el > 0.0){
+          vec2 p = d.xz / max(d.y, 0.02) * 0.55 + uTime * vec2(0.018, 0.006);
+          float fw = length(fwidth(p));
+          float big = fbm(p * 0.35 + 3.1, fw * 0.35);          // broad light and dark masses
+          float n = fbm(p, fw);                                  // billows inside them
+          float t = smoothstep(0.34, 0.74, n * 0.62 + big * 0.6 - 0.11);
+          vec3 cl = mix(uDark, uLight * 1.05, t);
+          // a little brighter where the deck lies between you and the hidden sun
+          float sun = max(0.0, dot(normalize(d.xz), uSunH));
+          cl *= 1.0 + 0.08 * sun * sun * t;
+          c = mix(uFogC, cl, clamp(el * 7.0, 0.0, 1.0));
+        }
+        o = vec4(min(c * uFl, 255.0) / 255.0, 1.0);
+      }`);
+    dynBuf = gl.createBuffer(); dynVao = vao(dynBuf, WS, [3, 2, 2, 2, 4]);
+    sprBuf = gl.createBuffer(); sprVao = vao(sprBuf, SS, [3, 2, 3, 3]);
+    fxBuf = gl.createBuffer(); fxVao = vao(fxBuf, ES, [3, 2, 4]);
+    const kb = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, kb);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+    skyVao = vao(kb, 2, [2]);
+    // the GPU canvas sits under the game canvas, which leaves the view clear; no per-frame copy
+    cv.setAttribute('aria-hidden', 'true');
+    cv.style.cssText = 'position:fixed;left:0;top:0;width:1px;height:1px;z-index:0;pointer-events:none;display:none';
+    c.style.position = 'relative'; c.style.zIndex = '1';
+    c.parentNode.insertBefore(cv, c);
+    aniso = gl.getExtension('EXT_texture_filter_anisotropic');
+    if (aniso) anisoMax = Math.min(8, gl.getParameter(aniso.MAX_TEXTURE_MAX_ANISOTROPY_EXT));
+    ok = true;
+  } catch (err){
+    console.warn('Normandy: WebGL2 renderer unavailable, using the software rasterizer.', err);
+  }
+
+  // ---- textures
+  function texOf(mips){
+    let t = texMap.get(mips); if (t) return t;
+    const L = mips[0];
+    t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, L.w, L.h, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(L.px.buffer, L.px.byteOffset, L.w * L.h * 4));
+    gl.generateMipmap(gl.TEXTURE_2D);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    if (aniso) gl.texParameterf(gl.TEXTURE_2D, aniso.TEXTURE_MAX_ANISOTROPY_EXT, anisoMax);
+    texMap.set(mips, t); return t;
+  }
+  // filtered sprites sample across the cut-out edge: give the clear pixels next to a figure
+  // that figure's colour, so the edge doesn't pick up a dark rim from them
+  function bleed(S){
+    const W_ = S.w, H_ = S.h, src = S.px, out = new Uint32Array(src);
+    for (let y = 0; y < H_; y++) for (let x = 0; x < W_; x++){
+      const i = y * W_ + x; if ((src[i] >>> 24) >= 128) continue;
+      let rs = 0, gs = 0, bs = 0, n = 0;
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++){
+        const xx = x + dx, yy = y + dy; if (xx < 0 || yy < 0 || xx >= W_ || yy >= H_) continue;
+        const q = src[yy * W_ + xx]; if ((q >>> 24) < 128) continue;
+        rs += q & 255; gs += (q >>> 8) & 255; bs += (q >>> 16) & 255; n++;
+      }
+      if (n) out[i] = (src[i] & 0xff000000) | (((bs / n) | 0) << 16) | (((gs / n) | 0) << 8) | ((rs / n) | 0);
+    }
+    return out;
+  }
+  function atlasOf(S){
+    let t = atlasMap.get(S); if (t) return t;
+    const px = bleed(S);
+    t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, S.w, S.h, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(px.buffer, 0, S.w * S.h * 4));
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    atlasMap.set(S, t); return t;
+  }
+  // the cloud colours come from the Freedoom sky the software renderer uses: the mean of its
+  // darkest and of its lightest sixth, so both renderers sit under the same overcast
+  let skyDark = [110, 114, 120], skyLight = [200, 204, 210];
+  function ensureSky(){
+    const S = TX.skyRaw;
+    if (skyFor === S) return;
+    const top = Math.floor(S.h * 0.46), L = [];
+    for (let y = 0; y < top; y++) for (let x = 0; x < S.w; x += 2){
+      const q = S.px[y * S.w + x], r = q & 255, g_ = (q >>> 8) & 255, b = (q >>> 16) & 255;
+      L.push([0.299 * r + 0.587 * g_ + 0.114 * b, r, g_, b]);
+    }
+    L.sort((a, b) => a[0] - b[0]);
+    const mean = arr => [1, 2, 3].map(k => arr.reduce((s_, e) => s_ + e[k], 0) / arr.length);
+    const n6 = Math.max(1, Math.floor(L.length / 6));
+    skyDark = mean(L.slice(0, n6)); skyLight = mean(L.slice(-n6));
+    skyFor = S;
+  }
+
+  // ---- world geometry: static batches per texture, rebuilt when the level is
+  function putPoly(a, o, p){
+    const d = p.d, lam = p.sun ? p.lam : 0, two = p.two ? 1 : 0;
+    for (let i = 1; i < p.n - 1; i++) for (let c = 0; c < 3; c++){
+      const s = (c === 0 ? 0 : c === 1 ? i : i + 1) * 8;
+      a[o] = d[s]; a[o+1] = d[s+1]; a[o+2] = d[s+2];
+      a[o+3] = d[s+3] - 65536; a[o+4] = d[s+4] - 65536;
+      a[o+5] = d[s+5]; a[o+6] = d[s+6];
+      a[o+7] = lam; a[o+8] = p.amb;
+      a[o+9] = p.nx; a[o+10] = p.ny; a[o+11] = p.nz; a[o+12] = two;
+      o += WS;
+    }
+    return o;
+  }
+  function freeWorld(){
+    if (!world) return;
+    for (const B of world.batches){ gl.deleteBuffer(B.buf); gl.deleteVertexArray(B.vao); }
+    world = null;
+  }
+  function buildWorldGL(){
+    freeWorld();
+    const groups = new Map();
+    for (const p of POLYS){ const key = p.water ? 'water' : p.tex; let L = groups.get(key); if (!L) groups.set(key, L = []); L.push(p); }
+    const batches = [];
+    for (const [key, polys] of groups){
+      let nv = 0; for (const p of polys) nv += (p.n - 2) * 3;
+      const data = new Float32Array(nv * WS), items = [];
+      let o = 0;
+      for (const p of polys){ const first = o / WS; o = putPoly(data, o, p); items.push({ p, first, count: o / WS - first, amb: p.amb }); }
+      const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.bufferData(gl.ARRAY_BUFFER, data, gl.DYNAMIC_DRAW);
+      batches.push({ key, items, data, buf, vao: vao(buf, WS, [3, 2, 2, 2, 4]) });
+    }
+    if (!shadowTex) shadowTex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, shadowTex);
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.R32F, SG.w, SG.h, 0, gl.RED, gl.FLOAT, SG.S);
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    world = { batches, sig: POLYS.length, first: POLYS[0], sg: SG };
+  }
+
+  function texBase(mips){ const up = mips.up || 1; return [mips[0].w / up, mips[0].h / up]; }
+  function drawBatch(B){
+    const mips = B.key === 'water' ? WATERP[0].tex : B.key;
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, texOf(mips));
+    gl.uniform2fv(P_W.u.uTexBase, texBase(mips));
+    // shading changes (a strongpoint going dark) rewrite just that polygon's vertices
+    let lo = -1, hi = -1;
+    for (const it of B.items) if (it.p.amb !== it.amb){
+      it.amb = it.p.amb;
+      for (let k = 0; k < it.count; k++) B.data[(it.first + k) * WS + 8] = it.amb;
+      if (lo < 0 || it.first < lo) lo = it.first;
+      hi = Math.max(hi, it.first + it.count);
+    }
+    if (lo >= 0){ gl.bindBuffer(gl.ARRAY_BUFFER, B.buf); gl.bufferSubData(gl.ARRAY_BUFFER, lo * WS * 4, B.data, lo * WS, (hi - lo) * WS); }
+    gl.bindVertexArray(B.vao);
+    // hidden polygons (closed doors, rubble before a blast) split the batch into runs
+    let run = -1, end = 0;
+    for (const it of B.items){
+      if (it.p.hidden){ if (run >= 0){ gl.drawArrays(gl.TRIANGLES, run, end - run); run = -1; } continue; }
+      if (run < 0) run = it.first;
+      end = it.first + it.count;
+    }
+    if (run >= 0) gl.drawArrays(gl.TRIANGLES, run, end - run);
+  }
+  let dynData = new Float32Array(WS * 3 * 64);
+  function drawDyn(list){
+    const groups = new Map();
+    for (const p of list){ if (p.hidden) continue; let L = groups.get(p.tex); if (!L) groups.set(p.tex, L = []); L.push(p); }
+    for (const [mips, polys] of groups){
+      let nv = 0; for (const p of polys) nv += (p.n - 2) * 3;
+      if (dynData.length < nv * WS) dynData = new Float32Array(nv * WS * 2);
+      let o = 0; for (const p of polys) o = putPoly(dynData, o, p);
+      gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, texOf(mips));
+      gl.uniform2fv(P_W.u.uTexBase, texBase(mips));
+      gl.bindBuffer(gl.ARRAY_BUFFER, dynBuf); gl.bufferData(gl.ARRAY_BUFFER, dynData.subarray(0, o), gl.STREAM_DRAW);
+      gl.bindVertexArray(dynVao); gl.drawArrays(gl.TRIANGLES, 0, nv);
+    }
+  }
+
+  // ---- sprites, as camera-facing quads at the anchor's depth
+  const SPRQ = new Map();
+  let Fdev = 1;
+  function spriteLevel(name, src, k){
+    let S_ = src || SPR, fr = S_.f[name]; if (!fr) return null;
+    if (S_ === SPR) for (let L = SPR.hi; L && L.f[name] && L.mpp * k >= 0.7; L = L.hi){ S_ = L; fr = L.f[name]; }
+    return [S_, fr];
+  }
+  function pushSprite(name, wx, wy, wz, lit, src){
+    toCam(wx, wy, wz, XF);
+    const cz = XF[2]; if (cz < 0.4 || cz > FAR) return;
+    const sel = spriteLevel(name, src, Fdev / cz); if (!sel) return;
+    const [S_, fr] = sel, [fx, fy, fw, fh, fax, fay] = fr, m = S_.mpp;
+    const x0 = XF[0] - fax * m, x1 = XF[0] + (fw - fax) * m, y0 = XF[1] + fay * m, y1 = XF[1] - (fh - fay) * m;
+    const u0 = fx / S_.w, u1 = (fx + fw) / S_.w, v0 = fy / S_.h, v1 = (fy + fh) / S_.h;
+    const fi = (cz * FOGK) | 0, fg = FOG[fi], fl = 1 + rFlash;
+    const mr = (AMB[0] + lit * SUNC[0] * 0.62) * fg * fl, mg = (AMB[1] + lit * SUNC[1] * 0.62) * fg * fl, mb = (AMB[2] + lit * SUNC[2] * 0.62) * fg * fl;
+    const ar = FOGR[fi], ag = FOGG[fi], ab = FOGB[fi];
+    let L = SPRQ.get(S_); if (!L) SPRQ.set(S_, L = []);
+    for (const [x, y, u, v] of [[x0, y0, u0, v0], [x1, y0, u1, v0], [x1, y1, u1, v1], [x0, y0, u0, v0], [x1, y1, u1, v1], [x0, y1, u0, v1]])
+      L.push(x, y, cz, u, v, mr, mg, mb, ar, ag, ab);
+  }
+  function flushSprites(){
+    if (!SPRQ.size) return;
+    gl.useProgram(P_S.p); gl.uniformMatrix4fv(P_S.u.uP, false, PJ); gl.uniform1i(P_S.u.uTex, 0);
+    gl.bindVertexArray(sprVao); gl.bindBuffer(gl.ARRAY_BUFFER, sprBuf);
+    for (const [S_, L] of SPRQ){
+      gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, atlasOf(S_));
+      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(L), gl.STREAM_DRAW);
+      gl.drawArrays(gl.TRIANGLES, 0, L.length / SS);
+    }
+    SPRQ.clear();
+  }
+
+  // ---- effects: blob shadows, particles, tracers
+  const FX = { blob: [], norm: [], add: [], line: [] };
+  const quadV = (L, a, b, c, d, rgba, uvs) => {
+    const Q = [a, b, c, a, c, d], U = uvs || [[-1, -1], [1, -1], [1, 1], [-1, -1], [1, 1], [-1, 1]];
+    for (let i = 0; i < 6; i++) L.push(Q[i][0], Q[i][1], Q[i][2], U[i][0], U[i][1], rgba[0], rgba[1], rgba[2], rgba[3]);
+  };
+  const vc = (x, y, z) => { toCam(x, y, z, XF); return [XF[0], XF[1], XF[2]]; };
+  function pushBlob(x, z, gy, rad){
+    toCam(x, gy + 0.03, z, XF);
+    if (XF[2] < 0.6 || XF[2] > 140) return;
+    const y = gy + 0.04;
+    quadV(FX.blob, vc(x - rad, y, z - rad), vc(x + rad, y, z - rad), vc(x + rad, y, z + rad), vc(x - rad, y, z + rad), [1, 1, 1, 1]);
+  }
+  function pushParticle(p){
+    toCam(p.x, p.y, p.z, XF);
+    const z = XF[2]; if (z < 0.3 || z > FAR) return;
+    const life = p.t / p.max, a = p.alpha * (p.fadeIn ? Math.min(1, life * 6) : 1) * (1 - life);
+    if (a <= 0.01) return;
+    const fi = (z * FOGK) | 0, fg = FOG[fi];
+    const col = [(p.col[0] * fg + FOGR[fi]) / 255, (p.col[1] * fg + FOGG[fi]) / 255, (p.col[2] * fg + FOGB[fi]) / 255, a];
+    const r = Math.max(p.size * 0.6, 0.8 * z / Fdev), x = XF[0], y = XF[1];   // round, so a little larger than the old square
+    quadV(p.add ? FX.add : FX.norm, [x - r, y - r, z], [x + r, y - r, z], [x + r, y + r, z], [x - r, y + r, z], col);
+  }
+  function pushLine(x1, y1, z1, x2, y2, z2, rgb, a){
+    const A = vc(x1, y1, z1), B = vc(x2, y2, z2);
+    if (A[2] < NEAR && B[2] < NEAR) return;
+    if (A[2] < NEAR){ const t = (NEAR - A[2]) / (B[2] - A[2]); for (let k = 0; k < 3; k++) A[k] += (B[k] - A[k]) * t; }
+    if (B[2] < NEAR){ const t = (NEAR - B[2]) / (A[2] - B[2]); for (let k = 0; k < 3; k++) B[k] += (A[k] - B[k]) * t; }
+    // screen-space width: about the old one-pixel line at the original render scale
+    let dx = B[0] / B[2] - A[0] / A[2], dy = B[1] / B[2] - A[1] / A[2];
+    const l = Math.hypot(dx, dy) || 1; dx /= l; dy /= l;
+    const w = 1.6 * Math.max(1, Fdev / 600);
+    const oa = w * A[2] / Fdev, ob = w * B[2] / Fdev;
+    const ka = a * 0.35, kb = a;
+    const ca = [rgb[0] / 255 * ka, rgb[1] / 255 * ka, rgb[2] / 255 * ka, 1], cb = [rgb[0] / 255 * kb, rgb[1] / 255 * kb, rgb[2] / 255 * kb, 1];
+    const P1 = [A[0] - dy * oa, A[1] + dx * oa, A[2]], P2 = [A[0] + dy * oa, A[1] - dx * oa, A[2]];
+    const P3 = [B[0] + dy * ob, B[1] - dx * ob, B[2]], P4 = [B[0] - dy * ob, B[1] + dx * ob, B[2]];
+    const L = FX.line, Q = [[P1, ca], [P2, ca], [P3, cb], [P1, ca], [P3, cb], [P4, cb]];
+    for (const [p, c] of Q) L.push(p[0], p[1], p[2], 0, 0, c[0], c[1], c[2], c[3]);
+  }
+  function flushFx(L, mode, src, dst){
+    if (!L.length) return;
+    gl.uniform1i(P_E.u.uMode, mode);
+    gl.blendFunc(src, dst);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(L), gl.STREAM_DRAW);
+    gl.drawArrays(gl.TRIANGLES, 0, L.length / ES);
+    L.length = 0;
+  }
+
+  // ---- crosshair pick on the CPU: the nearest soldier whose opaque pixels fall in a small
+  // window round the crosshair, if no polygon on the crosshair ray is nearer
+  // camera depth of the nearest polygon along a ray through the eye (f: unit direction)
+  function rayDepth(f){
+    const o = [cam.x, cam.y, cam.z];
+    let best = FAR / Math.max(0.2, f[0] * cam.f[0] + f[1] * cam.f[1] + f[2] * cam.f[2]);
+    const test = p => {
+      if (p.hidden) return;
+      const vx = p.cx - o[0], vy = p.cy - o[1], vz = p.cz - o[2], t0 = vx * f[0] + vy * f[1] + vz * f[2];
+      if (t0 < -p.rad || t0 - p.rad > best) return;
+      const qx = vx - f[0] * t0, qy = vy - f[1] * t0, qz = vz - f[2] * t0;
+      if (qx * qx + qy * qy + qz * qz > p.rad * p.rad) return;
+      const d = p.d, nx = p.nx, ny = p.ny, nz = p.nz;
+      if (!p.two && nx * (o[0] - d[0]) + ny * (o[1] - d[1]) + nz * (o[2] - d[2]) <= 0) return;
+      const den = nx * f[0] + ny * f[1] + nz * f[2]; if (Math.abs(den) < 1e-7) return;
+      const t = (nx * (d[0] - o[0]) + ny * (d[1] - o[1]) + nz * (d[2] - o[2])) / den;
+      if (t <= NEAR || t >= best) return;
+      const px = o[0] + f[0] * t, py = o[1] + f[1] * t, pz = o[2] + f[2] * t;
+      let sgn = 0;
+      for (let i = 0; i < p.n; i++){
+        const a = i * 8, b = ((i + 1) % p.n) * 8;
+        const ex = d[b] - d[a], ey = d[b+1] - d[a+1], ez = d[b+2] - d[a+2], wx = px - d[a], wy = py - d[a+1], wz = pz - d[a+2];
+        const s = (ey * wz - ez * wy) * nx + (ez * wx - ex * wz) * ny + (ex * wy - ey * wx) * nz;
+        if (Math.abs(s) < 1e-9) continue;
+        if (sgn === 0) sgn = Math.sign(s); else if (Math.sign(s) !== sgn) return;
+      }
+      best = t;
+    };
+    for (const p of POLYS) test(p);
+    for (const p of dynPolys) test(p);
+    return best * (f[0] * cam.f[0] + f[1] * cam.f[1] + f[2] * cam.f[2]);
+  }
+  function pick(F, half, step){
+    // each window point has its own ray, so a parapet edge occludes per point as the z-buffer did
+    const rays = new Map(), r = cam.r, u = cam.u, cf = cam.f;
+    const depthAt = (dx, dy) => {
+      const key = dx + ',' + dy; let z = rays.get(key);
+      if (z === undefined){
+        const kx = dx / F, ky = -dy / F, d = [cf[0] + r[0]*kx + u[0]*ky, cf[1] + r[1]*kx + u[1]*ky, cf[2] + r[2]*kx + u[2]*ky], l = Math.hypot(d[0], d[1], d[2]);
+        z = rayDepth([d[0] / l, d[1] / l, d[2] / l]); rays.set(key, z);
+      }
+      return z;
+    };
+    let best = null;
+    for (const e of game.enemies){
+      if (e.state === 'dead' || e.state === 'hit') continue;
+      toCam(e.x - Math.sin(e.yaw) * e.kick * 0.06, e.gy + (e.bob || 0), e.z - Math.cos(e.yaw) * e.kick * 0.06, XF);
+      const cz = XF[2]; if (cz < 0.4 || cz > FAR || (best && cz >= best.z)) continue;
+      const sel = spriteLevel(e.frame, null, Fdev / cz); if (!sel) continue;
+      const [S_, fr] = sel, k = F / cz, s = S_.mpp * k;
+      const left = XF[0] * k - fr[4] * s, top = -XF[1] * k - fr[5] * s;
+      let hit = false;
+      for (let dy = -half; dy <= half + 1e-6 && !hit; dy += step) for (let dx = -half; dx <= half + 1e-6; dx += step){
+        const tx = Math.floor((dx - left) / s), ty = Math.floor((dy - top) / s);
+        if (tx < 0 || ty < 0 || tx >= fr[2] || ty >= fr[3]) continue;
+        if ((S_.px[(fr[1] + ty) * S_.w + fr[0] + tx] >>> 24) >= 128 && cz < depthAt(dx, dy)){ hit = true; break; }
+      }
+      if (hit) best = { tag: e, z: cz };
+    }
+    aimPick = best;
+  }
+
+  function render(v){
+    if (!world || world.sig !== POLYS.length || world.first !== POLYS[0] || world.sg !== SG) buildWorldGL();
+    ensureSky();
+    const sc = QUAL[qual].gl, w = Math.max(1, Math.round(v.w * DPR * sc)), h = Math.max(1, Math.round(v.h * DPR * sc));
+    if (cv.width !== w || cv.height !== h){ cv.width = w; cv.height = h; }
+    const F = Math.min(v.w / 2 / Math.tan(40 * Math.PI / 180), v.h / 2 / Math.tan(33 * Math.PI / 180));
+    Fdev = F * w / v.w;
+    rFx = Fdev; rFy = F * h / v.h; rcx = w / 2; rcy = h / 2;
+    // projection (camera space, z forward) and view-projection
+    const sx = 2 * F / v.w, sy = 2 * F / v.h, n = NEAR, fz = FAR;
+    PJ.fill(0); PJ[0] = sx; PJ[5] = sy; PJ[10] = (fz + n) / (fz - n); PJ[11] = 1; PJ[14] = -2 * fz * n / (fz - n);
+    const r = cam.r, u = cam.u, f = cam.f, cp = [cam.x, cam.y, cam.z];
+    const V = [r[0], u[0], f[0], 0, r[1], u[1], f[1], 0, r[2], u[2], f[2], 0,
+               -(r[0]*cp[0] + r[1]*cp[1] + r[2]*cp[2]), -(u[0]*cp[0] + u[1]*cp[1] + u[2]*cp[2]), -(f[0]*cp[0] + f[1]*cp[1] + f[2]*cp[2]), 1];
+    for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++){
+      let s = 0; for (let k = 0; k < 4; k++) s += PJ[k * 4 + j] * V[i * 4 + k];
+      M[i * 4 + j] = s;
+    }
+    const fl = 1 + rFlash;
+    gl.viewport(0, 0, w, h);
+    gl.disable(gl.BLEND); gl.disable(gl.CULL_FACE);
+    gl.clearColor(FOGC[0] / 255, FOGC[1] / 255, FOGC[2] / 255, 1); gl.clearDepth(1);
+    gl.depthMask(true); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+    // sky
+    gl.disable(gl.DEPTH_TEST);
+    gl.useProgram(P_K.p);
+    gl.uniform3fv(P_K.u.uDark, skyDark); gl.uniform3fv(P_K.u.uLight, skyLight);
+    gl.uniform2f(P_K.u.uSunH, SUN_H[0], SUN_H[1]); gl.uniform1f(P_K.u.uTime, game.t);
+    gl.uniform3fv(P_K.u.uR, r); gl.uniform3fv(P_K.u.uU, u); gl.uniform3fv(P_K.u.uF, f);
+    gl.uniform2f(P_K.u.uC, w / 2, h / 2); gl.uniform2f(P_K.u.uFoc, Fdev, F * h / v.h);
+    gl.uniform3fv(P_K.u.uFogC, FOGC); gl.uniform1f(P_K.u.uFl, fl);
+    gl.bindVertexArray(skyVao); gl.drawArrays(gl.TRIANGLES, 0, 3);
+    // world
+    gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LESS);
+    gl.useProgram(P_W.p);
+    gl.uniformMatrix4fv(P_W.u.uVP, false, M); gl.uniform3fv(P_W.u.uCam, cp); gl.uniform3fv(P_W.u.uF, f);
+    gl.uniform1i(P_W.u.uTex, 0); gl.uniform1i(P_W.u.uShadow, 1);
+    gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, shadowTex);
+    gl.uniform2f(P_W.u.uShSize, SG.w, SG.h);
+    gl.uniform3fv(P_W.u.uAmbC, AMB); gl.uniform3fv(P_W.u.uSunC, SUNC); gl.uniform3fv(P_W.u.uFogC, FOGC);
+    gl.uniform1f(P_W.u.uFl, fl); gl.uniform1f(P_W.u.uFar, FAR);
+    for (const B of world.batches) drawBatch(B);
+    drawDyn(dynPolys);
+    // soldiers and pickups
+    for (const e of game.enemies){
+      const gy = e.gy;
+      if (e.state !== 'dead' && !e.crew) pushBlob(e.x, e.z, gy, 0.42);
+      const lit = e.crew ? 0.55 : clamp((gy + 1.2 - shadowAt(e.x, e.z)) * 3 + 0.5, 0, 1);
+      pushSprite(e.frame, e.x - Math.sin(e.yaw) * e.kick * 0.06, gy + (e.bob || 0), e.z - Math.cos(e.yaw) * e.kick * 0.06, lit);
+    }
+    for (const m of MEDS){
+      if (m.taken) continue;
+      const lit = clamp((m.gy + 0.3 - shadowAt(m.x, m.z)) * 3 + 0.5, 0, 1);
+      pushSprite('kit', m.x, m.gy + 0.02 + Math.abs(Math.sin(game.t * 2.2 + m.x)) * 0.06, m.z, lit, MEDKIT);
+    }
+    for (const m of AMMOS){
+      if (m.taken) continue;
+      const lit = clamp((m.gy + 0.3 - shadowAt(m.x, m.z)) * 3 + 0.5, 0, 1);
+      pushSprite('can', m.x, m.gy + 0.02 + Math.abs(Math.sin(game.t * 2.2 + m.z)) * 0.06, m.z, lit, AMMOCAN);
+    }
+    // blob shadows go on the ground before the soldiers stand on them
+    gl.useProgram(P_E.p); gl.uniformMatrix4fv(P_E.u.uP, false, PJ);
+    gl.bindVertexArray(fxVao); gl.bindBuffer(gl.ARRAY_BUFFER, fxBuf);
+    gl.enable(gl.BLEND); gl.depthMask(false); gl.depthFunc(gl.LEQUAL);
+    gl.enable(gl.POLYGON_OFFSET_FILL); gl.polygonOffset(-2, -2);
+    flushFx(FX.blob, 1, gl.DST_COLOR, gl.ZERO);
+    gl.disable(gl.POLYGON_OFFSET_FILL);
+    gl.disable(gl.BLEND); gl.depthMask(true); gl.depthFunc(gl.LESS);
+    flushSprites();
+    // particles and tracers: blended over, depth-tested, not written
+    for (const p of game.parts) pushParticle(p);
+    for (const gr of game.grenades) pushParticle({ x: gr.x, y: gr.y, z: gr.z, size: 0.16, col: [40, 48, 34], alpha: 1, t: 0, max: 1 });
+    for (const b of game.bullets) if (b.tracer) pushLine(b.x, b.y, b.z, b.x - b.vx*0.022, b.y - b.vy*0.022, b.z - b.vz*0.022, [255, 214, 140], 1.0);
+      else pushLine(b.x, b.y, b.z, b.x - b.vx*0.012, b.y - b.vy*0.012, b.z - b.vz*0.012, [200, 180, 140], 0.35);
+    gl.useProgram(P_E.p); gl.bindVertexArray(fxVao); gl.bindBuffer(gl.ARRAY_BUFFER, fxBuf);
+    gl.enable(gl.BLEND); gl.depthMask(false);
+    flushFx(FX.norm, 2, gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+    flushFx(FX.add, 2, gl.SRC_ALPHA, gl.ONE);
+    flushFx(FX.line, 0, gl.ONE, gl.ONE);
+    gl.disable(gl.BLEND); gl.depthMask(true);
+    gl.bindVertexArray(null);
+    // crosshair window, in CSS px: tuned so hits match the rasterizer at its original LO scale
+    const half = narrow() ? 2.4 : 3.0;
+    pick(F, half, half / 3);
+    const R = c.getBoundingClientRect(), key = `${R.left + v.x},${R.top + v.y},${v.w},${v.h}`;
+    if (key !== place){
+      place = key;
+      Object.assign(cv.style, { left: (R.left + v.x) + 'px', top: (R.top + v.y) + 'px', width: v.w + 'px', height: v.h + 'px', display: 'block' });
+    }
+    g.clearRect(v.x, v.y, v.w, v.h);
+  }
+
+  return { on: () => ok && TEXREADY, render, ok: () => ok };
+})();
+
+// a context but no working shaders: back on the rasterizer, whose HI is too heavy to start on
+if (GLX && !GLR.ok()) qual = Math.min(qual, 1);
 
 // ===========================================================================
 // AUDIO (ZzFX core)
@@ -2593,8 +3141,9 @@ function drawFrame(v){
 }
 
 // ---- rifle in hand: low-res pixel drawing scaled up
-let _gunCv = null, _gunK = 0;
+let _gunCv = null, _gunK = 0, GUNIMG = null;
 function gunCanvas(){
+  if (GUNIMG) return GUNIMG;
   const k = QUAL[qual].gun;
   if (_gunCv && _gunK === k) return _gunCv;
   const cv = document.createElement('canvas'); cv.width = 120 * k; cv.height = 70 * k;
@@ -2615,7 +3164,7 @@ function drawGun(v){
   const bob = Math.sin(pl.bob) * 4, side = Math.cos(pl.bob * 0.5) * 3, kick = pl.recoil * 12;
   const x = v.x + v.w - 120*s + side + kick*0.4, y = v.y + v.h - 70*s + 8 + Math.abs(bob) + kick + (pl.crouch ? 6 : 0) + (pl.reloadT > 0 ? 40 : 0);
   g.save(); g.beginPath(); g.rect(v.x, v.y, v.w, v.h); g.clip();
-  g.imageSmoothingEnabled = false;
+  g.imageSmoothingEnabled = !!GUNIMG;                     // the rendered rifle is smooth; the drawn one is pixels
   g.globalAlpha = 0.98;
   let gx = x, gy = y, gs = s;
   if (pl.bayo || pl.lungeT > 0){
@@ -2951,6 +3500,7 @@ c.addEventListener('touchcancel', onTouchEnd, { passive: false });
 
 // ---- headless hooks for screenshots and tests
 window.__qa = {
+  renderer(){ return GLR.on() ? 'gl' : 'soft'; },
   frozen: false,
   start(){ newGame(); },
   play(){ const s = stageNo; stageNo = STAGES.findIndex(st => st.lv === STAGES[s].lv); newGame(); stageNo = s; setMode('play'); if (LV.go) LV.go(); },
