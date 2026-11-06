@@ -1,3 +1,4 @@
+<!-- lab/sound-lab/index.html -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -34,6 +35,9 @@ textarea{width:100%;min-height:120px;background:#08101b;color:var(--ink);border:
 .status{color:var(--dim);font-size:12px;margin-top:6px;min-height:16px}
 .seg{display:flex;gap:0}
 .seg button{border-radius:0}.seg button:first-child{border-radius:6px 0 0 6px}.seg button:last-child{border-radius:0 6px 6px 0}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chips button{min-width:72px}
+.chips button.off{opacity:.45;text-decoration:line-through;background:transparent}
 .kv{display:flex;justify-content:space-between;color:var(--dim);font-variant-numeric:tabular-nums;margin-top:6px}
 @media (max-width:860px){main{grid-template-columns:1fr}}
 </style>
@@ -47,12 +51,22 @@ textarea{width:100%;min-height:120px;background:#08101b;color:var(--ink);border:
 <main>
   <section>
     <div class="card">
+      <h2>Sounds</h2>
+      <p class="note">Click to mute or unmute a layer. Shift+click to solo it; Shift+click it again to bring everything back.</p>
+      <div class="chips" id="chips"></div>
+    </div>
+    <div class="card">
+      <h2>Presets</h2>
+      <p class="note">Each loads the game defaults with one part of the engine switched off, to find what a sound is coming from. Click Game defaults to compare.</p>
+      <div class="chips" id="presets"></div>
+    </div>
+    <div class="card">
       <h2>Situation</h2>
       <p class="note">What the game would be feeding the sound. Not exported.</p>
       <div id="situation"></div>
       <div class="kv"><span id="rpmOut">600 rpm</span><span id="fireOut">90 Hz firing</span></div>
       <div class="btns">
-        <div class="seg"><button id="vCock" class="on">Cockpit</button><button id="vOut">Outside</button></div>
+        <div class="seg" title="Cockpit = the game's cockpit camera (6). Outside = every other camera: orbit, chase, blueprints. Distance is the camera-to-aircraft distance; the chase camera sits about 16 m back."><button id="vCock" class="on">Cockpit</button><button id="vOut">Outside</button></div>
         <button id="engBtn" class="on">Engine: ON</button>
       </div>
       <div class="btns">
@@ -99,10 +113,12 @@ const SND_DEFAULTS = {
     stackMix: 1.1, bodyMix: .7, directMix: .25, toneHz: 420, toneHzLoad: 600, dcHz: 35,
   },
   engine: {                    // after the worklet: drive, saturation, filters, roar, prop, bus
-    drive: 3, clip: 1.8, post: 2.3, toneBase: 380, toneLoad: 650, toneFire: .5,
+    // drive/clip near-linear: harder saturation crunched the uneven pulses into patter (found in the sound lab)
+    drive: 1, clip: .5, post: 6, toneBase: 380, toneLoad: 650, toneFire: .5,
     roar: .05, roarPower: .35, roarBand: 55, roarBandFire: .35, roarQ: .8,
     prop: .035, propBand: 420, propBeat: .85,
-    busCockpit: 1.5, busOutside: 1.15, muffleCockpit: 900, muffleOutside: 4500,
+    busCockpit: 1.5, busOutside: 1.15, muffleCockpit: 600, muffleOutside: 4500,
+    cockpitLowDb: 6, cockpitLowHz: 150, outsideBarkDb: 0, outsideBarkHz: 900, toneOutside: 0,
   },
   crackle: {chop: .12, minRpm: 1400, time: 1.8, rate: 3, level: .12, levelRand: .45, hp: 700, pitch: .6, pitchRand: .9},
   air: {level: .07, from: 20, full: 170, curve: 1.5, outside: .6, hp: 600, hpPerMs: 8},
@@ -141,14 +157,19 @@ class R2800 extends AudioWorkletProcessor {
   constructor(opt) {
     super();
     Object.assign(this, {ph: 0, cyl: 0, env: 0, jit: 1, y1: 0, y2: 0, z1: 0, z2: 0, lp: 0, br: 0, hx: 0, hy: 0});
-    this.u = []; for (let i = 0; i < 18; i++) this.u.push(Math.random());
-    this.p = Object.assign({}, opt.processorOptions);
-    this.port.onmessage = e => Object.assign(this.p, e.data);
+    this.u = new Float32Array(18); for (let i = 0; i < 18; i++) this.u[i] = Math.random();
+    this.cg = new Float32Array(18);
+    this.p = Object.assign({}, opt.processorOptions); this.mix();
+    this.port.onmessage = e => { Object.assign(this.p, e.data); this.mix(); };
+  }
+  mix() {                                         // cylinder strengths, recomputed only when settings change
+    const P = this.p;
+    for (let i = 0; i < 18; i++) this.cg[i] = (1 - P.spread * this.u[i]) * (i === 5 ? 1 - P.weak : i === 13 ? 1 - P.weak * .6 : 1);
   }
   process(inputs, outputs, params) {
     const out = outputs[0][0], sr = sampleRate, rpm = params.rpm[0], load = params.load[0], P = this.p;
     if (rpm < 30) { out.fill(0); this.env = 0; return true; }
-    const fire = rpm / 60 * 9, cg = this.u.map((u, i) => (1 - P.spread * u) * (i === 5 ? 1 - P.weak : i === 13 ? 1 - P.weak * .6 : 1));
+    const fire = rpm / 60 * 9, cg = this.cg;
     const w1 = 2 * Math.PI * (P.stackHz + P.stackHzLoad * load) / sr, r1 = P.stackRing, c1 = 2 * r1 * Math.cos(w1), d1 = -r1 * r1, g1 = (1 - r1) * 2 * Math.sin(w1);
     const w2 = 2 * Math.PI * (P.bodyHz + P.bodyHzLoad * load) / sr, r2 = P.bodyRing, c2 = 2 * r2 * Math.cos(w2), d2 = -r2 * r2, g2 = (1 - r2) * 2 * Math.sin(w2);
     const dec = Math.exp(-1 / (sr * (P.decayIdle + (P.decayLoad - P.decayIdle) * load) * .001));
@@ -207,12 +228,13 @@ function audioInit() {
   // ---- engine: 18 cylinders, 4-stroke -> 9 firing pulses per crank rev; 3-blade prop at half crank speed
   const osc = (type, f, det = 0) => { const o = ctx.createOscillator(); o.type = type; o.frequency.value = f; o.detune.value = det; o.start(); return o; };
   const E = AU.E = {lastThr: 0, crackle: 0, clipK: 0};
-  E.bus = G(0); E.lp = F('lowpass', 4500, .5); E.bus.connect(E.lp).connect(AU.master);
+  E.bus = G(0); E.lp = F('lowpass', 4500, .5); E.low = F('lowshelf', 150); E.bark = F('peaking', 900, 1);
+  E.bus.connect(E.low).connect(E.bark).connect(E.lp).connect(AU.master);   // view voicing: shelf (cockpit), bark (outside), top end
   E.fire = [osc('sawtooth', 90, -7), osc('sawtooth', 90, 6)];         // fallback when AudioWorklet is unavailable
   const pulse = G(.3); E.fire.forEach(o => o.connect(pulse));
   loop(AU.brown, 1.9).connect(G(.2)).connect(pulse.gain);
   E.lope = osc('sine', 10); E.lope.connect(G(.1)).connect(pulse.gain);
-  E.fireLP = F('lowpass', 400, .8); pulse.connect(E.fallbackClip = ctx.createWaveShaper()).connect(E.fireLP).connect(E.bus);
+  E.fireG = G(1); E.fireLP = F('lowpass', 400, .8); pulse.connect(E.fallbackClip = ctx.createWaveShaper()).connect(E.fireLP).connect(E.fireG).connect(E.bus);
   E.fallbackClip.curve = sndClipCurve(3.2); E.fallbackClip.oversample = '2x';
   if (ctx.audioWorklet) ctx.audioWorklet.addModule(URL.createObjectURL(new Blob([ENGINE_WORKLET], {type: 'application/javascript'}))).then(() => {
     E.wk = new AudioWorkletNode(ctx, 'r2800', {numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [1], processorOptions: SND.cyl});
@@ -225,43 +247,49 @@ function audioInit() {
   loop(AU.pink, .8).connect(E.propBP).connect(E.propG).connect(E.bus); E.blade.connect(E.bladeG).connect(E.propG.gain);
   E.air = G(0); E.airHP = F('highpass', 900, .5); loop(AU.pink, 1.3).connect(E.airHP).connect(E.air).connect(AU.master);
   E.pop = buf(.07, d => { for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.exp(-i / (d.length * .18)); });
-  E.popHP = F('highpass', 700, .7); E.popHP.connect(E.bus);
+  E.popG = G(1); E.popHP = F('highpass', 700, .7); E.popHP.connect(E.popG).connect(E.bus);
 }
 function sndPushWorklet() { if (AU.E && AU.E.wk) AU.E.wk.port.postMessage(Object.assign({}, SND.cyl)); }
 // S: {on, engineOn, rpm, pwr (0..1 engine power), cmd (0..1 throttle lever), ias (m/s), speed (m/s, for wind),
-//     cockpit (bool), att (0..1 distance fade outside), rain (0..1), dark (0..1 storm)}
+//     cockpit (bool), att (0..1 distance fade outside), rain (0..1), dark (0..1 storm),
+//     mute (optional, lab only: {engine, roar, prop, crackle, air, wind, rain, thunder} true = silent)}
 function audioDrive(S) {
   if (!AU.ctx) return;
   const t = AU.ctx.currentTime, k = S.rain, soft = sndSstep(0, .35, k), heavy = sndSstep(.3, 1, k), sp = sndClamp(S.speed / 50, 0, 1);
-  const R = SND.rain, W = SND.wind, N = SND.engine, A = SND.air, C = SND.crackle;
+  const R = SND.rain, W = SND.wind, N = SND.engine, A = SND.air, C = SND.crackle, M = S.mute || {}, on_ = k => M[k] ? 0 : 1;
+  AU.mute = M;
   AU.master.gain.setTargetAtTime(S.on ? SND.master : 0, t, .3);
-  AU.wash.gain.setTargetAtTime(R.wash * (.25 * soft + .75 * heavy), t, 1.2);
+  const rn = on_('rain');
+  AU.wash.gain.setTargetAtTime(rn * R.wash * (.25 * soft + .75 * heavy), t, M.rain ? .05 : 1.2);
   AU.washLP.frequency.setTargetAtTime(R.washLP + R.washLPHeavy * heavy, t, 1.2);
-  AU.hiss.gain.setTargetAtTime(R.hiss * (.3 * soft + .7 * heavy) + R.hissSpeed * sp * soft, t, 1.2);
-  AU.low.gain.setTargetAtTime(R.low * heavy, t, 1.2);
-  AU.patter.gain.setTargetAtTime(R.patter * soft * (.6 + .4 * heavy) * (1 + R.patterSpeed * sp), t, 1.2);
+  AU.hiss.gain.setTargetAtTime(rn * (R.hiss * (.3 * soft + .7 * heavy) + R.hissSpeed * sp * soft), t, M.rain ? .05 : 1.2);
+  AU.low.gain.setTargetAtTime(rn * R.low * heavy, t, M.rain ? .05 : 1.2);
+  AU.patter.gain.setTargetAtTime(rn * R.patter * soft * (.6 + .4 * heavy) * (1 + R.patterSpeed * sp), t, M.rain ? .05 : 1.2);
   const gust = .6 + .4 * sndNoise(t * .35 + 4.2);
-  AU.wind.gain.setTargetAtTime((W.base + W.storm * S.dark + W.speed * sp) * gust, t, .8);
+  AU.wind.gain.setTargetAtTime(on_('wind') * (W.base + W.storm * S.dark + W.speed * sp) * gust, t, M.wind ? .05 : .8);
   AU.windBP.frequency.setTargetAtTime(W.band + W.bandGust * gust + W.bandSpeed * sp, t, .8);
   const E = AU.E, ctx = AU.ctx, rpm = Math.max(0, S.rpm), on = S.engineOn ? 1 : 0, pwr = S.pwr, cmd = S.cmd;
   const crank = rpm / 60, fire = crank * 9, bladeF = crank * .5 * 3, cock = S.cockpit, att = cock ? 1 : S.att;
   E.fire.forEach(o => o.frequency.setTargetAtTime(Math.max(fire, 5), t, .12));
   E.lope.frequency.setTargetAtTime(Math.max(crank, 1), t, .12);
   E.blade.frequency.setTargetAtTime(Math.max(bladeF, .5), t, .12);
-  E.fireLP.frequency.setTargetAtTime(E.wk ? N.toneBase + N.toneLoad * pwr + fire * N.toneFire : 220 + fire * (1.3 + 1.7 * pwr), t, .15);
+  E.fireLP.frequency.setTargetAtTime(E.wk ? N.toneBase + N.toneLoad * pwr + fire * N.toneFire + (cock ? 0 : N.toneOutside) : 220 + fire * (1.3 + 1.7 * pwr), t, .15);
   if (E.wk) {
     E.wk.parameters.get('rpm').setTargetAtTime(on ? rpm : 0, t, .12); E.wk.parameters.get('load').setTargetAtTime(pwr, t, .2);
     E.drive.gain.setTargetAtTime(N.drive, t, .1); E.post.gain.setTargetAtTime(N.post, t, .1);
     if (E.clipK !== N.clip) { E.clipK = N.clip; E.clip.curve = sndClipCurve(N.clip); }
   }
   E.roarBP.frequency.setTargetAtTime(N.roarBand + fire * N.roarBandFire, t, .15); E.roarBP.Q.setTargetAtTime(N.roarQ, t, .15);
-  E.roar.gain.setTargetAtTime(on * (N.roar + N.roarPower * pwr), t, .15);
-  const pb = on * N.prop * sndSstep(300, 2700, rpm) * (.4 + .6 * pwr);
+  E.roar.gain.setTargetAtTime(on * on_('roar') * (N.roar + N.roarPower * pwr), t, .15);
+  E.fireG.gain.setTargetAtTime(on_('engine'), t, .05); E.popG.gain.setTargetAtTime(on_('crackle'), t, .05);
+  const pb = on * on_('prop') * N.prop * sndSstep(300, 2700, rpm) * (.4 + .6 * pwr);
   E.propBP.frequency.setTargetAtTime(N.propBand, t, .2);
   E.propG.gain.setTargetAtTime(pb, t, .2); E.bladeG.gain.setTargetAtTime(pb * N.propBeat, t, .2);
   E.bus.gain.setTargetAtTime(on * (cock ? N.busCockpit : N.busOutside) * att, t, .25);
   E.lp.frequency.setTargetAtTime(cock ? N.muffleCockpit : N.muffleOutside, t, .3);
-  E.air.gain.setTargetAtTime(A.level * Math.pow(sndSstep(A.from, A.full, S.ias), A.curve) * (cock ? 1 : A.outside * att), t, .4);
+  E.low.frequency.setTargetAtTime(N.cockpitLowHz, t, .1); E.low.gain.setTargetAtTime(cock ? N.cockpitLowDb : 0, t, .3);
+  E.bark.frequency.setTargetAtTime(N.outsideBarkHz, t, .1); E.bark.gain.setTargetAtTime(cock ? 0 : N.outsideBarkDb, t, .3);
+  E.air.gain.setTargetAtTime(on_('air') * A.level * Math.pow(sndSstep(A.from, A.full, S.ias), A.curve) * (cock ? 1 : A.outside * att), t, M.air ? .05 : .4);
   E.airHP.frequency.setTargetAtTime(A.hp + S.ias * A.hpPerMs, t, .4);
   E.popHP.frequency.setTargetAtTime(C.hp, t, .1);
   if (E.lastThr - cmd > C.chop && rpm > C.minRpm) E.crackle = C.time;     // chop the throttle at high rpm: the stacks pop
@@ -275,7 +303,7 @@ function audioDrive(S) {
   }
 }
 function thunder(delay, s, pan) {               // close strikes crack then roll; far strikes are a slow dark roll
-  if (!AU.ctx || !AU.on) return;
+  if (!AU.ctx || !AU.on || (AU.mute && AU.mute.thunder)) return;
   const ctx = AU.ctx, G = AU.G, F = AU.F, T = SND.thunder, t = ctx.currentTime + delay, close = sndSstep(.5, .9, s);
   const src = (b, at, dur, rate = 1) => { const n = ctx.createBufferSource(); n.buffer = b; n.loop = true; n.playbackRate.value = rate; n.start(at, Math.random() * 2); n.stop(at + dur); return n; };
   const o = G(T.level), pn = ctx.createStereoPanner(); pn.pan.value = sndClamp(pan * .7, -.8, .8);
@@ -321,13 +349,15 @@ const SPEC = [
     ['bodyHz', 'Body resonance (Hz)', 80, 600, 1], ['bodyHzLoad', 'Body rise with power (Hz)', 0, 200, 1], ['bodyRing', 'Body ring', .97, .999, .0005],
     ['stackMix', 'Mix: stack', 0, 3, .05], ['bodyMix', 'Mix: body', 0, 3, .05], ['directMix', 'Mix: dry pulse', 0, 1.5, .05],
     ['toneHz', 'Tone at idle (Hz)', 100, 3000, 10], ['toneHzLoad', 'Tone added at full (Hz)', 0, 3000, 10], ['dcHz', 'Low cut (Hz)', 10, 120, 1]]],
-  ['engine', 'Engine · tone and mix', 'After the firing train: saturation, the brightness filter, exhaust roar, the prop beat and how loud it all is in each view.', [
-    ['drive', 'Drive into saturation', .5, 10, .1], ['clip', 'Saturation hardness', .5, 6, .1], ['post', 'Level after saturation', 0, 6, .05],
+  ['engine', 'Engine · tone and mix', 'After the firing train: saturation, the brightness filter, exhaust roar, the prop beat, and how each view is voiced (the cockpit gets a structure-borne low boost and a heavier muffle; outside can get exhaust bark and extra brightness).', [
+    ['drive', 'Drive into saturation', .5, 10, .1], ['clip', 'Saturation hardness', .5, 6, .1], ['post', 'Level after saturation', 0, 12, .05],
     ['toneBase', 'Brightness at idle (Hz)', 100, 3000, 10], ['toneLoad', 'Brightness added, full (Hz)', 0, 3000, 10], ['toneFire', 'Brightness per firing Hz', 0, 3, .05],
     ['roar', 'Exhaust roar at idle', 0, .4, .005], ['roarPower', 'Roar added at full', 0, 1, .01], ['roarBand', 'Roar band (Hz)', 20, 400, 1], ['roarBandFire', 'Roar band per firing Hz', 0, 2, .01], ['roarQ', 'Roar band width (Q)', .1, 4, .05],
     ['prop', 'Prop swish', 0, .15, .001], ['propBand', 'Prop band (Hz)', 100, 2000, 10], ['propBeat', 'Blade-pass beat depth', 0, 1, .01],
     ['busCockpit', 'Engine level: cockpit', 0, 4, .05], ['busOutside', 'Engine level: outside', 0, 4, .05],
-    ['muffleCockpit', 'Cockpit muffle (Hz)', 200, 6000, 10], ['muffleOutside', 'Outside top end (Hz)', 500, 12000, 50]]],
+    ['muffleCockpit', 'Cockpit muffle (Hz)', 200, 6000, 10], ['muffleOutside', 'Outside top end (Hz)', 500, 12000, 50],
+    ['cockpitLowDb', 'Cockpit low boost (dB)', 0, 15, .5], ['cockpitLowHz', 'Cockpit low boost below (Hz)', 40, 400, 5],
+    ['outsideBarkDb', 'Outside exhaust bark (dB)', -6, 12, .5], ['outsideBarkHz', 'Outside bark at (Hz)', 200, 3000, 10], ['toneOutside', 'Outside brightness added (Hz)', 0, 2000, 10]]],
   ['crackle', 'Exhaust crackle', 'Pops from the stacks after a throttle chop at high rpm. Use "Full, then chop" to hear it.', [
     ['chop', 'Throttle drop to trigger', .02, .6, .01], ['minRpm', 'Only above (rpm)', 600, 2700, 50], ['time', 'How long it lasts (s)', .2, 5, .1],
     ['rate', 'Pops per tick', 0, 10, .1], ['level', 'Pop level', 0, 1, .01], ['levelRand', 'Pop level spread', 0, 1, .01],
@@ -360,9 +390,9 @@ function makeRow(parent, label, min, max, step, get, set, isMod, title) {
   const v = document.createElement('span'); v.className = 'v';
   const inp = document.createElement('input'); inp.type = 'range'; inp.min = min; inp.max = max; inp.step = step;
   row.append(l, v, inp); parent.append(row);
-  const refresh = () => { inp.value = get(); v.textContent = fmt(get(), step); if (isMod) row.classList.toggle('mod', isMod()); };
-  inp.addEventListener('input', () => { set(+inp.value); refresh(); });
-  return {row, inp, refresh};
+  const obj = {row, inp, refresh: () => { inp.value = get(); v.textContent = fmt(get(), step); if (isMod) row.classList.toggle('mod', isMod()); }};
+  inp.addEventListener('input', () => { set(+inp.value); obj.refresh(); });   // obj.refresh: rows may swap in their own formatter
+  return obj;
 }
 // ---- tunable sections
 const secHost = $('sections');
@@ -417,7 +447,7 @@ sitRow('Airspeed', 0, 200, 1, () => SIT.ias, v => SIT.ias = v, v => Math.round(v
 sitRow('Distance outside (m)', 16, 300, 1, () => SIT.dist, v => SIT.dist = v, v => Math.round(v) + ' m');
 sitRow('Rain', 0, 1, .01, () => SIT.rain, v => SIT.rain = v, v => Math.round(v * 100) + '%');
 sitRow('Storm darkness', 0, 1, .01, () => SIT.dark, v => SIT.dark = v, v => Math.round(v * 100) + '%');
-const setView = c => { SIT.cockpit = c; $('vCock').classList.toggle('on', c); $('vOut').classList.toggle('on', !c); };
+const setView = c => { SIT.cockpit = c; $('vCock').classList.toggle('on', c); $('vOut').classList.toggle('on', !c); acc = .2; };
 $('vCock').onclick = () => setView(true); $('vOut').onclick = () => setView(false);
 $('engBtn').onclick = () => { SIT.engineOn = !SIT.engineOn; $('engBtn').textContent = 'Engine: ' + (SIT.engineOn ? 'ON' : 'OFF'); $('engBtn').classList.toggle('on', SIT.engineOn); };
 let sweepT = -1;
@@ -425,6 +455,44 @@ $('sweep').onclick = () => { sweepT = 0; };
 $('chop').onclick = () => { sweepT = -1; SIT.thr = 1; thrRow.refresh(); setTimeout(() => { SIT.thr = .15; thrRow.refresh(); }, 4500); status('Full power for 4.5 s, then chopped to 15%.'); };
 $('thClose').onclick = () => thunder(0, .95, -.3);
 $('thFar').onclick = () => thunder(.2, .3, .4);
+// ---- presets: game defaults plus one change each, for isolating where a sound comes from
+const PRESETS = [
+  ['Game defaults', {}],
+  ['Steady (no randomness)', {cyl: {spread: 0, weak: 0, fireJit: 0, timeJit: 0, timeJitLoad: 0, missChance: 0}}],
+  ['No cylinder pattern', {cyl: {spread: 0, weak: 0}}],
+  ['No strength jitter', {cyl: {fireJit: 0}}],
+  ['No timing jitter', {cyl: {timeJit: 0, timeJitLoad: 0}}],
+  ['No noise in pulse', {cyl: {noise: 0, rumble: 0}}],
+  ['No dry pulse', {cyl: {directMix: 0}}],
+  ['Old saturation (patter)', {engine: {drive: 3, clip: 1.8, post: 2.3}}],
+  ['Stack resonance only', {cyl: {bodyMix: 0, directMix: 0}}],
+  ['Body resonance only', {cyl: {stackMix: 0, directMix: 0}}],
+];
+function loadSettings(o) {
+  for (const k in SND_DEFAULTS) { if (typeof SND_DEFAULTS[k] === 'object') Object.assign(SND[k], SND_DEFAULTS[k]); else SND[k] = SND_DEFAULTS[k]; }
+  sndMerge(SND, o); rows.forEach(r => r.refresh()); changed('cyl'); acc = .2;
+}
+const presetEls = [];
+for (const [name, o] of PRESETS) {
+  const b = document.createElement('button'); b.textContent = name; $('presets').append(b); presetEls.push(b);
+  b.onclick = () => { loadSettings(o); presetEls.forEach(x => x.classList.toggle('on', x === b)); $('in').value = JSON.stringify(o, null, 2); status(`Loaded "${name}".`); };
+}
+// ---- mute chips (lab only: passed to audioDrive as S.mute, never exported)
+const LAYERS = [['engine', 'Engine'], ['roar', 'Roar'], ['prop', 'Prop'], ['crackle', 'Crackle'], ['air', 'Airflow'], ['wind', 'Wind'], ['rain', 'Rain'], ['thunder', 'Thunder']];
+const MUTE = {}; let soloed = null;
+const chipEls = {};
+const paintChips = () => LAYERS.forEach(([k]) => { chipEls[k].classList.toggle('off', !!MUTE[k]); chipEls[k].classList.toggle('on', !MUTE[k]); });
+for (const [k, label] of LAYERS) {
+  const b = document.createElement('button'); b.textContent = label; chipEls[k] = b; $('chips').append(b);
+  b.onclick = e => {
+    if (e.shiftKey) {
+      if (soloed === k) { LAYERS.forEach(([j]) => MUTE[j] = false); soloed = null; }
+      else { LAYERS.forEach(([j]) => MUTE[j] = j !== k); soloed = k; }
+    } else { MUTE[k] = !MUTE[k]; soloed = null; }
+    paintChips(); acc = .2;   // drive on the next frame so it answers the click at once
+  };
+}
+paintChips();
 // ---- the loop: same spool rates and the same 0.2 s drive tick as the game
 let last = performance.now(), acc = 0;
 function tick() {
@@ -437,7 +505,7 @@ function tick() {
   if (AU.ctx && acc >= .2) {
     acc = 0;
     audioDrive({on: AU.on, engineOn: SIT.engineOn && SIT.rpm > 60, rpm: SIT.rpm, pwr: SIT.pwr, cmd: SIT.thr, ias: SIT.ias, speed: SIT.ias,
-      cockpit: SIT.cockpit, att: sndClamp(16 / Math.max(SIT.dist, 16), .06, 1), rain: SIT.rain, dark: SIT.dark});
+      cockpit: SIT.cockpit, att: sndClamp(16 / Math.max(SIT.dist, 16), .06, 1), rain: SIT.rain, dark: SIT.dark, mute: MUTE});
   }
   draw();
   requestAnimationFrame(tick);
@@ -484,7 +552,7 @@ $('unapply').onclick = () => status(store.del(GAME_KEY) ? 'Game override cleared
 $('load').onclick = () => {
   let o; try { o = JSON.parse($('in').value); } catch (e) { status('That isn\'t valid JSON.'); return; }
   for (const k in SND_DEFAULTS) { if (typeof SND_DEFAULTS[k] === 'object') Object.assign(SND[k], SND_DEFAULTS[k]); else SND[k] = SND_DEFAULTS[k]; }
-  sndMerge(SND, o); rows.forEach(r => r.refresh()); changed('cyl'); status('Loaded (unknown keys ignored).');
+  loadSettings(o); presetEls.forEach(x => x.classList.remove('on')); status('Loaded (unknown keys ignored).');
 };
 $('resetAll').onclick = () => { for (const k in SND_DEFAULTS) { if (typeof SND_DEFAULTS[k] === 'object') Object.assign(SND[k], SND_DEFAULTS[k]); else SND[k] = SND_DEFAULTS[k]; } rows.forEach(r => r.refresh()); changed('cyl'); status('Everything back to the game defaults.'); };
 changed('');
