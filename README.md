@@ -24,7 +24,8 @@ Wireframe and vector games for the browser. Each game is a single self-contained
     <td align="center"><img src="lab/tauri-reach/docs/screenshots/station-overview.png" width="400" alt="Tauri Reach: the spindle station over the young star's jets"><br><b>Tauri Reach</b> (lab) · the station</td>
   </tr>
   <tr>
-    <td align="center" colspan="2"><img src="games/phosphor-field/docs/screenshots/wave-02-saucer.png" width="400" alt="Phosphor Field wave 2: the large saucer firing across a glowing vector rock field"><br><b><a href="games/phosphor-field/">Phosphor Field</a></b> · wave 2, the large saucer</td>
+    <td align="center"><img src="games/phosphor-field/docs/screenshots/wave-02-saucer.png" width="400" alt="Phosphor Field wave 2: the large saucer firing across a glowing vector rock field"><br><b><a href="games/phosphor-field/">Phosphor Field</a></b> · wave 2, the large saucer</td>
+    <td align="center"><img src="lab/corsair/docs/screenshots/chase-island.png" width="400" alt="F4U Corsair: chase view over the jungle island and its airstrip"><br><b><a href="lab/corsair/">F4U Corsair</a></b> (lab) · over the island</td>
   </tr>
 </table>
 
@@ -105,7 +106,7 @@ The games themselves still open straight from disk.
 ## Network use
 
 - Banrion online play uses an outbound WebSocket to a public MQTT broker. Hot-seat and vs-computer need no network.
-- Puppis Echo and Ringworld load three.js from jsDelivr.
+- Puppis Echo, Ringworld and the F4U Corsair lab load three.js from jsDelivr.
 - Several games request Google Fonts and fall back to system fonts without it.
 
 ## License
