@@ -43,6 +43,18 @@ More per game in each `docs/screenshots/` folder.
 | [Phosphor Field](games/phosphor-field/) | Vector rock shooter with a simulated XY-monitor phosphor; V flips to an LCD |
 | [Puppis Echo](games/puppis-echo/) | WebGL flight and combat in deep space |
 
+## Lab
+
+Experiments, prototypes and the tools behind the games.
+
+| Entry | What it is |
+|---|---|
+| [F4U Corsair](lab/corsair/) | Fly a Corsair off a Pacific island strip: storm fronts, lightning, a cloud deck to climb through, synthesised engine |
+| [Tauri Reach](lab/tauri-reach/) | Dogfight inside a raymarched nebula while a young star erupts |
+| [Ringworld](lab/ringworld/) | A ringworld megastructure, explorable in WebGL |
+| [Piece Lab](games/banrion/piece_lab.html) | Banrion's wireframe piece designer |
+| [Fighter Viewer](games/deckrunner/tools/fighter_viewer.html) | Deckrunner's enemy fighter model viewer |
+
 ## Layout
 
 ```
