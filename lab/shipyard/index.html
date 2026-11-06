@@ -1,0 +1,338 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Shipyard · Qin Fleet</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;600&family=Share+Tech+Mono&display=swap">
+<style>
+/* Layout follows the concept sheets: hero view + spec panel on top, TOP / SIDE / FRONT blueprints below.
+   One WebGL canvas sits behind the page; each panel is a scissored viewport over its own div. */
+:root{
+  --void:#03060c;--panel:rgba(8,16,30,.72);--line:rgba(120,170,230,.32);--line2:rgba(120,170,230,.16);
+  --text:#dfe8f5;--dim:#8396b2;--blue:#8fc6ff;--plasma:#ffb36b;
+  --display:"Chakra Petch","Segoe UI",system-ui,sans-serif;--mono:"Share Tech Mono",ui-monospace,Menlo,Consolas,monospace;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;overflow:hidden;background:var(--void);color:var(--text);font-family:var(--display)}
+canvas#gl{position:fixed;inset:0;width:100%;height:100%;display:block;pointer-events:none;z-index:0}
+#sheet{position:fixed;inset:0;z-index:1;display:grid;gap:10px;padding:12px;
+  grid-template-columns:repeat(12,1fr);grid-template-rows:minmax(0,1.55fr) minmax(0,1fr)}
+.frame{position:relative;border:1px solid var(--line);border-radius:4px;
+  clip-path:polygon(14px 0,100% 0,100% calc(100% - 14px),calc(100% - 14px) 100%,0 100%,0 14px)}
+#hero{grid-column:1/10;grid-row:1;cursor:grab}
+#hero:active{cursor:grabbing}
+#spec{grid-column:10/13;grid-row:1;display:flex;flex-direction:column;gap:10px;background:transparent;border:0;clip-path:none}
+#spec .frame{background:var(--panel);padding:14px 16px}
+.bp{grid-row:2;
+  background-image:linear-gradient(var(--line2) 1px,transparent 1px),linear-gradient(90deg,var(--line2) 1px,transparent 1px);
+  background-size:22px 22px;background-position:-1px -1px}
+#bpTop{grid-column:1/5}#bpSide{grid-column:5/10}#bpFront{grid-column:10/13}
+.cap{position:absolute;left:16px;top:10px;font-weight:600;letter-spacing:.22em;font-size:14px;color:var(--text);z-index:2;pointer-events:none}
+.cap::after{content:"";display:block;width:180px;max-width:60vw;height:1px;margin-top:6px;background:linear-gradient(90deg,var(--blue),transparent)}
+.scale{position:absolute;left:0;bottom:12px;height:30px;font-family:var(--mono);font-size:11px;color:var(--dim);pointer-events:none;z-index:2}
+.scale i{position:absolute;top:0;width:1px;height:8px;background:var(--blue)}
+.scale b{position:absolute;top:0;left:0;height:1px;background:var(--blue)}
+.scale span{position:absolute;top:11px;transform:translateX(-50%);white-space:nowrap;font-weight:400}
+#brand{position:absolute;left:18px;top:14px;display:flex;gap:16px;align-items:center;z-index:2;pointer-events:none}
+#brand svg{width:54px;height:72px}
+#brand h1{margin:0;font-size:46px;letter-spacing:.12em;line-height:1;font-weight:600}
+#brand .sub{font-size:12px;letter-spacing:.42em;color:var(--dim);margin-top:6px}
+#brand .cls{font-size:20px;letter-spacing:.32em;margin-top:10px;font-weight:600}
+#hint{position:absolute;right:16px;bottom:12px;font-family:var(--mono);font-size:10.5px;letter-spacing:.12em;color:var(--dim);z-index:2;pointer-events:none}
+#title h2{margin:0;font-size:22px;letter-spacing:.2em;font-weight:600}
+#title div{font-size:11.5px;letter-spacing:.4em;color:var(--dim);margin-top:6px}
+#stats{flex:1;min-height:0;overflow:auto;font-size:12.5px;scrollbar-width:thin;scrollbar-color:rgba(120,170,230,.4) transparent;
+  -webkit-mask-image:linear-gradient(#000 calc(100% - 22px),transparent);mask-image:linear-gradient(#000 calc(100% - 22px),transparent);padding-bottom:22px!important}
+#stats table{border-collapse:collapse;width:100%}
+#stats td{padding:1px 0;vertical-align:top}
+#stats td:first-child{color:var(--dim);font-family:var(--mono);font-size:12px;letter-spacing:.06em;width:44%;text-transform:uppercase}
+#stats p{color:#c3cede;font-size:12px;line-height:1.45;margin:10px 0 0}
+#fleet{display:flex;gap:6px;flex-wrap:wrap}
+#fleet button{font:600 10.5px var(--display);letter-spacing:.16em;text-transform:uppercase;color:var(--text);background:rgba(10,20,36,.8);
+  border:1px solid var(--line);border-radius:3px;padding:6px 9px;cursor:pointer}
+#fleet button.on{border-color:var(--plasma);color:var(--plasma)}
+#fleet button:disabled{opacity:.4;cursor:default}
+@media (max-height:950px){
+  #stats{font-size:11.5px}#stats td:first-child{font-size:11px}#stats p{font-size:11px;line-height:1.4}
+  #brand h1{font-size:36px}#brand .cls{font-size:16px}#title h2{font-size:19px}.cap{font-size:12.5px}
+}
+body.full #sheet{grid-template-rows:1fr 0}
+body.full #hero{grid-column:1/13}
+body.full #spec,body.full .bp{display:none}
+@media (max-width:900px){
+  #sheet{grid-template-rows:minmax(0,1.4fr) auto minmax(0,.7fr) minmax(0,.7fr);overflow:auto}
+  #hero{grid-column:1/13}#spec{grid-column:1/13;grid-row:2}
+  #bpTop{grid-column:1/13;grid-row:3}#bpSide{grid-column:1/7;grid-row:4}#bpFront{grid-column:7/13;grid-row:4}
+  #brand h1{font-size:30px}#brand svg{width:36px;height:48px}
+}
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+<div id="sheet">
+  <div id="hero" class="frame">
+    <div id="brand">
+      <svg viewBox="0 0 54 72" fill="none" stroke="#c9d3e2" stroke-width="3"><path d="M27 2 L27 70"/><path d="M16 14 C4 26 4 46 16 58" /><path d="M38 14 C50 26 50 46 38 58"/><path d="M27 2 L22 30 L27 46 L32 30 Z" fill="#c9d3e2" stroke="none"/></svg>
+      <div><h1 id="race">QIN</h1><div class="sub" id="raceSub">QUANTUM ION NUCLEAR FLEET</div><div class="cls" id="cls"></div></div>
+    </div>
+    <div id="hint">DRAG ORBIT · WHEEL ZOOM · R RESET · F FULL</div>
+  </div>
+  <div id="spec">
+    <div class="frame" id="title"><h2 id="role"></h2><div id="cls2"></div></div>
+    <div class="frame" id="stats"></div>
+    <div class="frame"><div id="fleet"></div></div>
+  </div>
+  <div id="bpTop" class="frame bp"><div class="cap">TOP VIEW</div><div class="scale"></div></div>
+  <div id="bpSide" class="frame bp"><div class="cap">SIDE VIEW</div><div class="scale"></div></div>
+  <div id="bpFront" class="frame bp"><div class="cap">FRONT VIEW</div><div class="scale"></div></div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/loaders/GLTFLoader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/controls/OrbitControls.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/environments/RoomEnvironment.js"></script>
+<script>
+/* ---------- the fleet: one entry per ship; models are built by assets/build_<name>.py (1 unit = 100 m, nose -Z) ---------- */
+const SHIPS=[
+  {id:'reclamation',race:'QIN',raceSub:'QUANTUM ION NUCLEAR FLEET',hull:'CRUISER CLASS',cls:'RECLAMATION CLASS',
+   model:'assets/qin-reclamation.glb',
+   stats:[['Length','960 m'],['Beam','340 m'],['Height','240 m'],['Crew','2,800'],['Propulsion','Quantum Ion Nuclear'],
+          ['Reactors','Tri-Core (Redundant)'],['Armament','Heavy Rail Batteries<br>Missile Bays<br>Point Defense Arrays<br>Torpedo Tubes<br>Drone Hangar (12)'],
+          ['Role','Logistics<br>Refit &amp; Repair<br>Resource Extraction<br>Fleet Support<br>Forward Base<br>Extended Operations']],
+   blurb:'The Reclamation class is a multi-role cruiser built for long-duration operations. Designed to support fleet sustainment, field repairs, and resource acquisition, it combines heavy cargo capacity with defensive armament and a large hangar for drones and support craft. Quantum ion propulsion gives it the range to operate far beyond traditional supply lines.',
+   // engine glow halos: x,y,z,radius (match the drive discs in the build script)
+   glows:[[0,0,4.42,.4],[0,.62,4.37,.25],[0,-.62,4.37,.25],[1.42,0,4.32,.3],[-1.42,0,4.32,.3]],
+   scales:{long:[0,200,400,600,800,960],front:[0,100,200,300]}},
+  {id:'pathfinder',cls:'PATHFINDER CLASS',dock:true},
+  {id:'sovereign',race:'QIN',raceSub:'QUANTUM ION NUCLEAR FLEET',hull:'CRUISER CLASS',cls:'SOVEREIGN CLASS',
+   model:'assets/qin-sovereign.glb',
+   stats:[['Length','1,200 m'],['Beam','320 m'],['Height','220 m'],['Crew','3,200'],['Propulsion','Quantum Ion Nuclear'],
+          ['Reactors','Dual Core (Redundant)'],['Armament','Heavy Ion Cannons<br>Missile Bays<br>Point Defense<br>Carrier Capacity'],
+          ['Role','Fleet Command<br>Heavy Assault<br>Force Projection']],
+   blurb:'The Sovereign class is the backbone of the Qin fleet, combining quantum ion drives with nuclear-powered reactors for unmatched range and sustained firepower. Layered armor, multiple weapon banks, and carrier capacity make it a force projection platform in any theater.',
+   glows:[[0,.2,5.57,.27],[0,-.15,5.57,.24],[1.45,-.05,5.62,.34],[-1.45,-.05,5.62,.34]],
+   scales:{long:[0,250,500,750,1000,1200],front:[0,100,200,300]}}
+];
+
+const $=id=>document.getElementById(id);
+const cv=$('gl');
+const R=new THREE.WebGLRenderer({canvas:cv,antialias:true,alpha:true});
+R.setPixelRatio(Math.min(devicePixelRatio||1,2));R.outputEncoding=THREE.sRGBEncoding;
+R.toneMapping=THREE.ACESFilmicToneMapping;R.toneMappingExposure=0.95;R.setClearColor(0x000000,0);R.autoClear=false;
+
+/* ---------- hero scene: lit like the Tauri Reach briefing, plus a planet and stars ---------- */
+const hs=new THREE.Scene();
+const hcam=new THREE.PerspectiveCamera(30,1,0.1,4000);
+const key=new THREE.DirectionalLight(0xffe0c0,2.1);key.position.set(-5,9,-6);   // high, forward: lights the dorsal plating
+const fill=new THREE.DirectionalLight(0x6f9fff,0.55);fill.position.set(4,-3,8);  // planet bounce from below/aft
+const rim=new THREE.DirectionalLight(0xa8ccff,1.4);rim.position.set(7,3,10);
+hs.add(key,fill,rim,new THREE.HemisphereLight(0x8fa8d8,0x120e0c,0.18));
+if(THREE.RoomEnvironment){const pm=new THREE.PMREMGenerator(R);hs.environment=pm.fromScene(new THREE.RoomEnvironment(),0.04).texture;}
+const ctl=new THREE.OrbitControls(hcam,$('hero'));
+ctl.enableDamping=true;ctl.dampingFactor=0.08;ctl.minDistance=6;ctl.maxDistance=45;ctl.enablePan=false;
+let sway=true;ctl.addEventListener('start',()=>{sway=false;});
+const shipRoot=new THREE.Group();hs.add(shipRoot);
+const shipYaw=new THREE.Group();shipRoot.add(shipYaw);
+
+(function nebula(){ // drawn in-scene so additive glows never punch alpha holes in the canvas
+  const c=document.createElement('canvas');c.width=1024;c.height=576;const x=c.getContext('2d');
+  const rg=(cx,cy,r,col)=>{const g=x.createRadialGradient(cx,cy,0,cx,cy,r);g.addColorStop(0,col);g.addColorStop(1,'rgba(0,0,0,0)');x.fillStyle=g;x.fillRect(0,0,1024,576);};
+  const g=x.createRadialGradient(512,288,0,512,288,700);g.addColorStop(0,'#0a1426');g.addColorStop(1,'#02040a');x.fillStyle=g;x.fillRect(0,0,1024,576);
+  rg(740,170,420,'rgba(110,70,150,.30)');rg(300,430,380,'rgba(40,90,160,.26)');rg(880,90,200,'rgba(170,110,160,.16)');
+  for(let i=0;i<220;i++)rg(Math.random()*1024,Math.random()*576,20+Math.random()*90,`rgba(${90+Math.random()*80|0},${80+Math.random()*60|0},${150+Math.random()*80|0},0.025)`);
+  const t=new THREE.CanvasTexture(c);t.encoding=THREE.sRGBEncoding;hs.background=t;
+})();
+(function stars(){
+  const n=2400,p=new Float32Array(n*3),c=new Float32Array(n*3);
+  for(let i=0;i<n;i++){
+    const u=Math.random()*2-1,a=Math.random()*Math.PI*2,r=900,s=Math.sqrt(1-u*u);
+    p.set([r*s*Math.cos(a),r*u,r*s*Math.sin(a)],i*3);
+    const k=0.4+Math.random()*0.8,w=Math.random();c.set([k*(w<.2?1:.8),k*.88,k*(w>.8?1:.95)],i*3);
+  }
+  const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.BufferAttribute(p,3));g.setAttribute('color',new THREE.BufferAttribute(c,3));
+  hs.add(new THREE.Points(g,new THREE.PointsMaterial({size:1.6,sizeAttenuation:false,vertexColors:true,depthWrite:false})));
+})();
+(function planet(){
+  const c=document.createElement('canvas');c.width=512;c.height=256;const x=c.getContext('2d');
+  x.fillStyle='#0f2a4a';x.fillRect(0,0,512,256);x.globalCompositeOperation='source-over';
+  for(let i=0;i<420;i++){ // land masses
+    const w=4+Math.random()*22;x.fillStyle=`rgba(${110+Math.random()*50|0},${85+Math.random()*30|0},${60+Math.random()*25|0},${0.12+Math.random()*0.2})`;
+    x.beginPath();x.ellipse(Math.random()*512,40+Math.random()*176,w,w*0.5,Math.random()*3,0,7);x.fill();
+  }
+  for(let i=0;i<700;i++){ // cloud streaks
+    const w=6+Math.random()*40;x.fillStyle=`rgba(230,238,250,${0.03+Math.random()*0.08})`;
+    x.beginPath();x.ellipse(Math.random()*512,Math.random()*256,w,w*0.12,0,0,7);x.fill();
+  }
+  const t=new THREE.CanvasTexture(c);t.encoding=THREE.sRGBEncoding;
+  const pl=new THREE.Mesh(new THREE.SphereGeometry(110,64,32),new THREE.MeshStandardMaterial({map:t,roughness:0.95,metalness:0,envMapIntensity:0}));
+  pl.position.set(165,-235,-340);pl.rotation.set(-0.5,2,0.2);hs.add(pl);
+  const atm=new THREE.Mesh(new THREE.SphereGeometry(114,64,32),new THREE.ShaderMaterial({
+    transparent:true,blending:THREE.AdditiveBlending,side:THREE.BackSide,depthWrite:false,
+    uniforms:{c:{value:new THREE.Color(0.35,0.65,1.0)}},
+    vertexShader:'varying vec3 n;varying vec3 v;void main(){n=normalize(normalMatrix*normal);vec4 mv=modelViewMatrix*vec4(position,1.);v=normalize(-mv.xyz);gl_Position=projectionMatrix*mv;}',
+    fragmentShader:'uniform vec3 c;varying vec3 n;varying vec3 v;void main(){float f=pow(1.0-abs(dot(n,v)),3.0);gl_FragColor=vec4(c*f*1.6,f);}'
+  }));
+  atm.position.copy(pl.position);hs.add(atm);
+})();
+
+/* ---------- blueprint scene: hidden-line wireframe of the same parts, nose to +X ---------- */
+const bs=new THREE.Scene();
+const bpRoot=new THREE.Group();bpRoot.rotation.y=-Math.PI/2;bs.add(bpRoot);
+const VIEWS={
+  bpTop:{pos:[0,40,0],up:[0,0,-1],span:'long'},
+  bpSide:{pos:[0,0,40],up:[0,1,0],span:'long'},
+  bpFront:{pos:[40,0,0],up:[0,1,0],span:'front'}
+};
+for(const k in VIEWS){const v=VIEWS[k];v.cam=new THREE.OrthographicCamera(-1,1,1,-1,0.1,200);v.cam.position.set(...v.pos);v.cam.up.set(...v.up);v.cam.lookAt(0,0,0);}
+
+/* ---------- materials by part name (vertex colours are authored in sRGB) ---------- */
+const srgb=c=>c<=0.04045?c/12.92:Math.pow((c+0.055)/1.055,2.4);
+let blink=[],glowSprites=[],bbox=null;
+function linearize(o){
+  const col=o.geometry.getAttribute('color');if(!col||col.isLin)return;
+  const n=col.count,a=new Float32Array(n*3);
+  for(let i=0;i<n;i++){a[i*3]=srgb(col.getX(i));a[i*3+1]=srgb(col.getY(i));a[i*3+2]=srgb(col.getZ(i));}
+  o.geometry.setAttribute('color',new THREE.BufferAttribute(a,3));o.geometry.attributes.color.isLin=true;
+}
+function heroMaterial(base,o){
+  if(/^engine_glow_core|^aux_glow/.test(base))return new THREE.MeshBasicMaterial({color:new THREE.Color(3.2,3.8,4.4),side:THREE.DoubleSide});
+  if(/^engine_glow/.test(base))return new THREE.MeshBasicMaterial({color:new THREE.Color(0.7,2.2,4.2),side:THREE.DoubleSide});
+  if(/^window|^hangar_glow/.test(base))return new THREE.MeshBasicMaterial({vertexColors:true,color:new THREE.Color(1.5,1.5,1.6)});
+  if(/^nav_light/.test(base)){const m=new THREE.MeshBasicMaterial({vertexColors:true,color:new THREE.Color(3,3,3)});blink.push(m);return m;}
+  if(/stripe|lip|ring_trim|torpedo_ring|hangar_frame/.test(base))return new THREE.MeshStandardMaterial({vertexColors:true,metalness:0.8,roughness:0.3,flatShading:true,envMapIntensity:0.6});
+  return new THREE.MeshStandardMaterial({vertexColors:true,metalness:0.55,roughness:0.5,flatShading:true,envMapIntensity:0.35});
+}
+const BP_LINE=new THREE.LineBasicMaterial({color:0xcfe6ff,transparent:true,opacity:0.85});
+const BP_FILL=new THREE.MeshBasicMaterial({color:0x07182b,polygonOffset:true,polygonOffsetFactor:1,polygonOffsetUnits:1});
+const BP_GLOW=new THREE.MeshBasicMaterial({color:0x6fc8ff,side:THREE.DoubleSide});
+function glowTex(){
+  const c=document.createElement('canvas');c.width=c.height=128;const x=c.getContext('2d');
+  const g=x.createRadialGradient(64,64,0,64,64,64);g.addColorStop(0,'rgba(220,240,255,1)');g.addColorStop(.25,'rgba(110,190,255,.75)');g.addColorStop(1,'rgba(40,110,255,0)');
+  x.fillStyle=g;x.fillRect(0,0,128,128);return new THREE.CanvasTexture(c);
+}
+const GT=glowTex();
+const PLUME=new THREE.ShaderMaterial({transparent:true,depthWrite:false,blending:THREE.AdditiveBlending,side:THREE.DoubleSide,
+  uniforms:{t:{value:0}},
+  vertexShader:'varying float u;varying vec3 n;varying vec3 v;void main(){u=uv.y;vec4 mv=modelViewMatrix*vec4(position,1.);n=normalize(normalMatrix*normal);v=normalize(-mv.xyz);gl_Position=projectionMatrix*mv;}',
+  fragmentShader:'uniform float t;varying float u;varying vec3 n;varying vec3 v;void main(){float a=pow(1.0-u,1.8);float core=pow(abs(dot(n,v)),2.0);float fl=0.85+0.15*sin(u*40.0-t*30.0);gl_FragColor=vec4(vec3(0.25,0.6,1.3)*a*core*fl,1.0);}'
+});
+
+function loadShip(ship){
+  while(shipYaw.children.length)shipYaw.remove(shipYaw.children[0]);
+  while(bpRoot.children.length)bpRoot.remove(bpRoot.children[0]);
+  blink=[];glowSprites=[];
+  new THREE.GLTFLoader().load(ship.model,g=>{
+    const hero=g.scene,bp=new THREE.Group();
+    hero.updateMatrixWorld(true);
+    const box=new THREE.Box3().setFromObject(hero); // measured unparented: the hero group sways
+    hero.traverse(o=>{
+      if(!o.isMesh)return;
+      const base=o.name.replace(/_\d+$/,'');linearize(o);o.material=heroMaterial(base,o);
+      // blueprint copy
+      if(/glow/.test(base)){const m=new THREE.Mesh(o.geometry,BP_GLOW);m.applyMatrix4(o.matrixWorld);bp.add(m);return;}
+      const fill=new THREE.Mesh(o.geometry,BP_FILL);fill.applyMatrix4(o.matrixWorld);bp.add(fill);
+      if(/^window/.test(base))return;
+      const e=new THREE.LineSegments(new THREE.EdgesGeometry(o.geometry,24),BP_LINE);e.applyMatrix4(o.matrixWorld);bp.add(e);
+    });
+    for(const [x,y,z,r] of ship.glows){
+      const s=new THREE.Sprite(new THREE.SpriteMaterial({map:GT,blending:THREE.AdditiveBlending,depthWrite:false,transparent:true}));
+      s.position.set(x,y,z+0.08);s.scale.setScalar(r*3.6);s.userData.r=r;hero.add(s);glowSprites.push(s);
+      const L=r*5.5,pl=new THREE.Mesh(new THREE.ConeGeometry(r*0.85,L,24,1,true),PLUME);
+      pl.rotation.x=Math.PI/2;pl.position.set(x,y,z+L/2+0.02);hero.add(pl);
+    }
+    shipYaw.add(hero);bpRoot.add(bp);
+    bbox=box;
+    layoutScales(ship);reset();
+  });
+}
+
+/* ---------- spec panel ---------- */
+let cur=null;
+function show(ship){
+  cur=ship;
+  $('race').textContent=ship.race;$('raceSub').textContent=ship.raceSub;$('cls').textContent=ship.cls;
+  $('role').textContent=ship.hull;$('cls2').textContent=ship.cls;
+  $('stats').innerHTML='<table>'+ship.stats.map(([k,v])=>`<tr><td>${k}:</td><td>${v}</td></tr>`).join('')+'</table><p>'+ship.blurb+'</p>';
+  for(const b of $('fleet').children)b.classList.toggle('on',b.dataset.id===ship.id);
+  loadShip(ship);
+}
+for(const s of SHIPS){
+  const b=document.createElement('button');b.textContent=s.cls.replace(' CLASS','');b.dataset.id=s.id;
+  if(s.dock){b.disabled=true;b.title='In drydock';}else b.onclick=()=>show(s);
+  $('fleet').appendChild(b);
+}
+
+/* ---------- blueprint framing and scale bars ---------- */
+function frameView(id){ // fit the ship in the panel with margins; returns world units per pixel
+  const el=$(id),r=el.getBoundingClientRect(),v=VIEWS[id];if(!bbox||r.width<4)return 0;
+  const sz=bbox.getSize(new THREE.Vector3()); // hero frame: x beam, y height, z length
+  let w,h;if(id==='bpTop'){w=sz.z;h=sz.x;}else if(id==='bpSide'){w=sz.z;h=sz.y;}else{w=sz.x;h=sz.y;}
+  const aw=r.width*0.86,ah=(r.height-90)*0.95;const upp=Math.max(w/aw,h/ah);
+  const c=v.cam;c.left=-r.width/2*upp;c.right=r.width/2*upp;c.top=r.height/2*upp;c.bottom=-r.height/2*upp;
+  bpRoot.updateMatrixWorld(true);const ctr=bpRoot.localToWorld(bbox.getCenter(new THREE.Vector3())); // aim at the hull's centre
+  c.position.set(...v.pos).add(ctr);c.lookAt(ctr);
+  c.updateProjectionMatrix();
+  // lift the ship a little so the scale bar has room under it
+  const lift=18*upp;c.top-=lift;c.bottom-=lift;c.updateProjectionMatrix();
+  v.upp=upp;return upp;
+}
+function layoutScales(ship){
+  for(const id in VIEWS){
+    const upp=frameView(id);if(!upp)continue;
+    const ticks=ship.scales[VIEWS[id].span],max=ticks[ticks.length-1],px=max/100/upp;
+    const el=$(id),r=el.getBoundingClientRect(),sc=el.querySelector('.scale');
+    const left=Math.max(14,(r.width-px)/2);
+    sc.style.left=left+'px';sc.style.width=px+'px';
+    // label every tick that has room; the end tick always keeps its label
+    let lastX=-1e9;const lab=[];
+    for(let i=ticks.length-1;i>=0;i--){const x=ticks[i]/max*px;if(i===ticks.length-1||lastX-x>=38||i===0&&lastX-x>=24){lab[i]=true;lastX=x;}}
+    sc.innerHTML=`<b style="width:${px}px"></b>`+ticks.map((t,i)=>`<i style="left:${t/max*px}px"></i>`+(lab[i]?`<span style="left:${t/max*px}px">${t.toLocaleString()}${i===ticks.length-1?' m':''}</span>`:'')).join('');
+  }
+}
+
+/* ---------- loop ---------- */
+function reset(){ // same three-quarter angle for every hull, distance from its length
+  sway=true;const L=bbox?bbox.getSize(new THREE.Vector3()).z:10,cy=bbox?(bbox.min.y+bbox.max.y)/2*0.6:0.1;
+  hcam.position.copy(new THREE.Vector3(-0.6,4.6,12.2).normalize().multiplyScalar(L*1.32)).add(new THREE.Vector3(0,cy,0));
+  ctl.target.set(0,cy,0);ctl.maxDistance=L*4.5;ctl.update();
+}
+addEventListener('keydown',e=>{
+  if(e.key==='r'||e.key==='R')reset();
+  if(e.key==='f'||e.key==='F'){document.body.classList.toggle('full');setTimeout(()=>cur&&layoutScales(cur),30);}
+});
+addEventListener('resize',()=>cur&&layoutScales(cur));
+const clock=new THREE.Clock();let t=0;
+function vp(el){
+  const r=el.getBoundingClientRect(),H=innerHeight;
+  if(r.width<2||r.height<2||getComputedStyle(el).display==='none')return null;
+  return [r.left,H-r.bottom,r.width,r.height];
+}
+function frame(){
+  requestAnimationFrame(frame);
+  const dt=Math.min(clock.getDelta(),0.05);t+=dt;
+  const w=innerWidth,h=innerHeight;
+  if(cv.width!==Math.round(w*R.getPixelRatio())||cv.height!==Math.round(h*R.getPixelRatio()))R.setSize(w,h,false);
+  // the ship drifts nose-right toward the camera, like the concept's hero shot
+  const base=-2.2;
+  if(sway){shipYaw.rotation.y=base+Math.sin(t*0.18)*0.22;shipYaw.rotation.z=Math.sin(t*0.3)*0.05;shipRoot.position.y=Math.sin(t*0.5)*0.12;}
+  PLUME.uniforms.t.value=t;
+  for(const s of glowSprites)s.scale.setScalar(s.userData.r*(3.4+Math.random()*0.5));
+  const ph=t%1.6,on=ph<0.08||(ph>0.22&&ph<0.3);
+  for(const m of blink)m.color.setScalar(on?3:0.25);
+  ctl.update();
+  R.setScissorTest(true);R.setViewport(0,0,w,h);R.setScissor(0,0,w,h);R.clear();
+  let v=vp($('hero'));
+  if(v){R.setViewport(...v);R.setScissor(...v);hcam.aspect=v[2]/v[3];hcam.updateProjectionMatrix();R.render(hs,hcam);}
+  R.toneMapping=THREE.NoToneMapping;
+  R.setClearColor(0x06111f,1);
+  for(const id in VIEWS){v=vp($(id));if(!v)continue;R.setViewport(...v);R.setScissor(...v);R.clear();R.render(bs,VIEWS[id].cam);}
+  R.setClearColor(0x000000,0);
+  R.toneMapping=THREE.ACESFilmicToneMapping;
+}
+window.__qa={scene:hs,lights:{key,fill,rim},show:id=>show(SHIPS.find(s=>s.id===id)),pose:(x,y,z,yaw)=>{sway=false;hcam.position.set(x,y,z);if(yaw!=null)shipYaw.rotation.y=yaw;ctl.update();},
+  ready:()=>!!bbox,full:on=>{document.body.classList.toggle('full',!!on);setTimeout(()=>cur&&layoutScales(cur),30);}};
+show(SHIPS.find(s=>s.id===new URLSearchParams(location.search).get('ship')&&!s.dock)||SHIPS[0]);frame();
+</script>
+</body></html>

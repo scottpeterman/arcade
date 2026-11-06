@@ -127,6 +127,17 @@
       "input": ["keyboard", "mouse", "touch"],
       "shelf": "lab",
       "readme": "lab/tauri-reach/README.md"
+    },
+    {
+      "slug": "shipyard",
+      "title": "Shipyard",
+      "tagline": "3D models of the Qin fleet, laid out as live spec sheets. First hull: the Reclamation-class cruiser.",
+      "path": "lab/shipyard/",
+      "thumb": "lab/thumbs/shipyard.webp",
+      "tags": ["webgl", "3d", "visualization"],
+      "input": ["mouse", "touch"],
+      "shelf": "lab",
+      "readme": "lab/shipyard/README.md"
     }
   ]
 }
