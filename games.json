@@ -139,6 +139,17 @@
       "players": "1",
       "shelf": "lab",
       "readme": "lab/corsair/README.md"
+    },
+    {
+      "slug": "sound-lab",
+      "title": "Sound Lab",
+      "tagline": "The Corsair's synthesised sound on sliders: tune the engine, wind, rain and thunder, then export the settings.",
+      "path": "lab/sound-lab/",
+      "thumb": "lab/thumbs/sound-lab.webp",
+      "tags": ["audio", "tool"],
+      "input": ["mouse"],
+      "players": "1",
+      "shelf": "lab"
     }
   ]
 }

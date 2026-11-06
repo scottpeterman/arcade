@@ -922,11 +922,11 @@ const terrain = (() => {
       const r = lerp(22, 120, k), gg = lerp(120, 215, k), b = lerp(135, 205, k);
       const w = Math.min(1, surf * .95 + reefEdge * .6);
       img.data[o] = lerp(r, 245, w); img.data[o + 1] = lerp(gg, 248, w); img.data[o + 2] = lerp(b, 245, w);
-      img.data[o + 3] = 255 * Math.min(1, shallow * .82 + w * .9) * (1 - sstep(.03, .06, m));
+      img.data[o + 3] = 255 * Math.min(1, shallow * .82 + w * .9) * (1 - sstep(.018, .034, m));   // gone before the dry sand
     }
     x.putImageData(img, 0, 0);
   });
-  const reef = new THREE.Mesh(new THREE.PlaneGeometry(S, S), new THREE.MeshStandardMaterial({map: reefTex, transparent: true, depthWrite: false, roughness: .22, metalness: 0, polygonOffset: true, polygonOffsetFactor: -2}));
+  const reef = new THREE.Mesh(new THREE.PlaneGeometry(S, S), new THREE.MeshStandardMaterial({map: reefTex, transparent: true, depthWrite: false, roughness: .22, metalness: 0, polygonOffset: true, polygonOffsetFactor: 0, polygonOffsetUnits: -4}));
   reef.rotation.x = -Math.PI / 2; reef.position.y = .06; reef.renderOrder = 1; island.add(reef); island.userData.reef = reef;
 }
 
@@ -1111,7 +1111,7 @@ const palmSpots = [];
   const r = rng(7);
   for (let i = 0; i < 26000 && palmSpots.length < 520; i++) {               // beach palms, leaning seaward
     const x = (r() - .5) * ISL.S, z = (r() - .5) * ISL.S, m = isleMask(x, z);
-    if (m < .055 || m > .14 || clearW(x, z) > .5 || r() > .55) continue;
+    if (m < .075 || m > .14 || clearW(x, z) > .5 || r() > .55) continue;
     const gx = isleMask(x + 3, z) - isleMask(x - 3, z), gz = isleMask(x, z + 3) - isleMask(x, z - 3);
     palmSpots.push([x, z, Math.atan2(-gz, -gx), .85 + r() * .35, .18 + r() * .2]);
   }
@@ -1129,6 +1129,12 @@ const palmSpots = [];
     const a = (r() - .5) * 2 * (RW.half + 60), b = (r() < .5 ? -1 : 1) * (60 + r() * 40), p = rwWorld(a, b > 0 ? b : b - 110);
     if (clearW(p.x, p.z) < .9) palmSpots.push([p.x, p.z, r() * 6.28, .8 + r() * .3, .08 + r() * .1]);
   }
+  const dry = ([x, z]) => {                                                // palms don't stand in salt water
+    if (isleH(x, z) < 2) return false;
+    for (let dx = -8; dx <= 8; dx += 4) for (let dz = -8; dz <= 8; dz += 4) if (isleH(x + dx, z + dz) < .4) return false;
+    return true;
+  };
+  for (let i = palmSpots.length - 1; i >= 0; i--) if (!dry(palmSpots[i])) palmSpots.splice(i, 1);
   const {trunk, fronds} = palmGeometries();
   const tm = new THREE.InstancedMesh(trunk, new THREE.MeshStandardMaterial({color: 0x6b5e48, roughness: 1}), palmSpots.length);
   const fm = new THREE.InstancedMesh(fronds, new THREE.MeshStandardMaterial({color: 0x557a32, vertexColors: true, roughness: .8, side: THREE.DoubleSide}), palmSpots.length);
@@ -1748,7 +1754,95 @@ function strike(force = false, aim = false) {
 }
 
 // ---- audio: synthesised rain bed, wind and thunder (no files)
+// ==== SYNTH BEGIN — shared verbatim with lab/sound-lab/index.html; edit one, copy to the other ====
+// Every tunable number in the sound lives in SND. The sound lab exports changes as JSON in this shape;
+// "Apply to game" stores them under localStorage 'arcade.corsair.snd', merged over these defaults at load.
+const SND_DEFAULTS = {
+  master: .9,
+  cyl: {                       // R-2800 firing train (AudioWorklet)
+    spread: .3, weak: .25, fireJit: .56, idleLevel: .45, timeJit: .09, timeJitLoad: .05,
+    missChance: .04, missRpm: 1000, missDepth: .85, decayIdle: 5.5, decayLoad: 3.5, noise: .55, rumble: .2,
+    stackHz: 68, stackHzLoad: 30, stackRing: .9965, bodyHz: 175, bodyHzLoad: 55, bodyRing: .992,
+    stackMix: 1.1, bodyMix: .7, directMix: .25, toneHz: 420, toneHzLoad: 600, dcHz: 35,
+  },
+  engine: {                    // after the worklet: drive, saturation, filters, roar, prop, bus
+    drive: 3, clip: 1.8, post: 2.3, toneBase: 380, toneLoad: 650, toneFire: .5,
+    roar: .05, roarPower: .35, roarBand: 55, roarBandFire: .35, roarQ: .8,
+    prop: .035, propBand: 420, propBeat: .85,
+    busCockpit: 1.5, busOutside: 1.15, muffleCockpit: 900, muffleOutside: 4500,
+  },
+  crackle: {chop: .12, minRpm: 1400, time: 1.8, rate: 3, level: .12, levelRand: .45, hp: 700, pitch: .6, pitchRand: .9},
+  air: {level: .07, from: 20, full: 170, curve: 1.5, outside: .6, hp: 600, hpPerMs: 8},
+  wind: {base: .03, storm: .16, speed: .1, band: 320, bandGust: 380, bandSpeed: 300},
+  rain: {wash: .22, washLP: 2600, washLPHeavy: 2400, hiss: .035, hissSpeed: .02, low: .12, patter: .55, patterSpeed: .6},
+  thunder: {level: 1, crack: .55, roll: .9, reverb: .55},
+};
+const SND = JSON.parse(JSON.stringify(SND_DEFAULTS));
+function sndMerge(dst, src) {                     // copy only keys that exist in the defaults, numbers only
+  for (const k in dst) {
+    if (!(k in src)) continue;
+    if (typeof dst[k] === 'object') { if (src[k] && typeof src[k] === 'object') sndMerge(dst[k], src[k]); }
+    else if (typeof src[k] === 'number' && Number.isFinite(src[k])) dst[k] = src[k];
+  }
+  return dst;
+}
+try { const o = JSON.parse(localStorage.getItem('arcade.corsair.snd') || 'null'); if (o) sndMerge(SND, o); } catch (e) {}
+const sndClamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const sndSstep = (a, b, v) => { const x = sndClamp((v - a) / (b - a), 0, 1); return x * x * (3 - 2 * x); };
+const sndRng = seed => () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+const sndNoise = x => {                           // smooth 1-D value noise, 0..1
+  const h = n => { const s = Math.sin(n * 127.1 + 311.7) * 43758.5453; return s - Math.floor(s); };
+  const i = Math.floor(x), f = x - i, u = f * f * (3 - 2 * f);
+  return h(i) + (h(i + 1) - h(i)) * u;
+};
 const AU = {ctx: null, on: false, acc: 0};
+// R-2800 firing train: 18 cylinders with their own strength (the pattern repeats every two revolutions, which is
+// where the rumble under the note comes from), per-fire timing and strength jitter, the odd weak fire at idle,
+// each pulse ringing an exhaust-stack resonance and a body resonance. Tunables arrive over the port (SND.cyl).
+const ENGINE_WORKLET = `
+class R2800 extends AudioWorkletProcessor {
+  static get parameterDescriptors() {
+    return [{name: 'rpm', defaultValue: 600, minValue: 0, maxValue: 4000, automationRate: 'k-rate'},
+            {name: 'load', defaultValue: .3, minValue: 0, maxValue: 1, automationRate: 'k-rate'}];
+  }
+  constructor(opt) {
+    super();
+    Object.assign(this, {ph: 0, cyl: 0, env: 0, jit: 1, y1: 0, y2: 0, z1: 0, z2: 0, lp: 0, br: 0, hx: 0, hy: 0});
+    this.u = []; for (let i = 0; i < 18; i++) this.u.push(Math.random());
+    this.p = Object.assign({}, opt.processorOptions);
+    this.port.onmessage = e => Object.assign(this.p, e.data);
+  }
+  process(inputs, outputs, params) {
+    const out = outputs[0][0], sr = sampleRate, rpm = params.rpm[0], load = params.load[0], P = this.p;
+    if (rpm < 30) { out.fill(0); this.env = 0; return true; }
+    const fire = rpm / 60 * 9, cg = this.u.map((u, i) => (1 - P.spread * u) * (i === 5 ? 1 - P.weak : i === 13 ? 1 - P.weak * .6 : 1));
+    const w1 = 2 * Math.PI * (P.stackHz + P.stackHzLoad * load) / sr, r1 = P.stackRing, c1 = 2 * r1 * Math.cos(w1), d1 = -r1 * r1, g1 = (1 - r1) * 2 * Math.sin(w1);
+    const w2 = 2 * Math.PI * (P.bodyHz + P.bodyHzLoad * load) / sr, r2 = P.bodyRing, c2 = 2 * r2 * Math.cos(w2), d2 = -r2 * r2, g2 = (1 - r2) * 2 * Math.sin(w2);
+    const dec = Math.exp(-1 / (sr * (P.decayIdle + (P.decayLoad - P.decayIdle) * load) * .001));
+    const a = 1 - Math.exp(-2 * Math.PI * (P.toneHz + P.toneHzLoad * load) / sr), hp = Math.exp(-2 * Math.PI * P.dcHz / sr);
+    for (let i = 0; i < out.length; i++) {
+      this.ph += fire * this.jit / sr;
+      if (this.ph >= 1) {
+        this.ph -= 1; this.cyl = (this.cyl + 1) % 18;
+        this.jit = 1 + (Math.random() - .5) * (P.timeJit - P.timeJitLoad * load);
+        let k = cg[this.cyl] * (1 - P.fireJit / 2 + P.fireJit * Math.random()) * (P.idleLevel + (1 - P.idleLevel) * load);
+        if (rpm < P.missRpm && Math.random() < P.missChance) k *= 1 - P.missDepth;
+        if (k > this.env) this.env = k;
+      }
+      this.env *= dec;
+      this.br = this.br * .996 + (Math.random() * 2 - 1) * .02;
+      const x = this.env * (P.noise * (Math.random() * 2 - 1) + (1 - P.noise)) + this.br * P.rumble;
+      const y = x + c1 * this.y1 + d1 * this.y2; this.y2 = this.y1; this.y1 = y;
+      const z = x + c2 * this.z1 + d2 * this.z2; this.z2 = this.z1; this.z1 = z;
+      this.lp += a * ((y * g1 * P.stackMix + z * g2 * P.bodyMix + x * P.directMix) - this.lp);
+      this.hy = this.lp - this.hx + hp * this.hy; this.hx = this.lp;      // DC blocker: pulses are one-sided
+      out[i] = this.hy;
+    }
+    return true;
+  }
+}
+registerProcessor('r2800', R2800);`;
+function sndClipCurve(k) { const c = new Float32Array(1024); for (let i = 0; i < 1024; i++) { const x = i / 1023 * 2 - 1; c[i] = Math.tanh(k * x) / Math.tanh(k); } return c; }
 function audioInit() {
   const ctx = AU.ctx = new (window.AudioContext || window.webkitAudioContext)(), sr = ctx.sampleRate;
   const buf = (sec, fill) => { const b = ctx.createBuffer(2, Math.floor(sec * sr), sr); for (let c = 0; c < 2; c++) fill(b.getChannelData(c), c); return b; };
@@ -1756,7 +1850,7 @@ function audioInit() {
   AU.pink = buf(5, d => { let b0 = 0, b1 = 0, b2 = 0, b3 = 0, b4 = 0, b5 = 0, b6 = 0; for (let i = 0; i < d.length; i++) { const w = Math.random() * 2 - 1; b0 = .99886 * b0 + w * .0555179; b1 = .99332 * b1 + w * .0750759; b2 = .969 * b2 + w * .153852; b3 = .8665 * b3 + w * .3104856; b4 = .55 * b4 + w * .5329522; b5 = -.7616 * b5 - w * .016898; d[i] = (b0 + b1 + b2 + b3 + b4 + b5 + b6 + w * .5362) * .11; b6 = w * .115926; } });
   AU.brown = buf(5, d => { let l = 0; for (let i = 0; i < d.length; i++) { l = (l + .02 * (Math.random() * 2 - 1)) / 1.02; d[i] = l * 3.5; } });
   const patter = buf(5.3, (d, c) => {                     // drops drumming on the canopy and airframe
-    const r = rng(4101 + c * 911);
+    const r = sndRng(4101 + c * 911);
     for (let k = 0; k < 1400 * 5.3; k++) {
       const at = Math.floor(r() * d.length), f = 1600 * Math.pow(7000 / 1600, r()), dec = (.0006 + r() * .0024) * sr, amp = Math.pow(r(), 2.2) * .22 + .01;
       const len = Math.min(Math.floor(dec * 5), 900), w = 2 * Math.PI * f / sr, ph = r() * 6.283;
@@ -1768,7 +1862,7 @@ function audioInit() {
   const loop = (b, rate = 1) => { const s = ctx.createBufferSource(); s.buffer = b; s.loop = true; s.playbackRate.value = rate; s.start(); return s; };
   AU.G = G; AU.F = F;
   AU.master = G(0);
-  const comp = ctx.createDynamicsCompressor(); AU.master.connect(comp).connect(ctx.destination);
+  const comp = ctx.createDynamicsCompressor(); AU.master.connect(comp).connect(ctx.destination); AU.out = comp;
   AU.reverb = ctx.createConvolver();
   AU.reverb.buffer = buf(3.4, d => { for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / d.length, 3.2); });
   AU.reverb.connect(G(.5)).connect(AU.master);
@@ -1777,83 +1871,87 @@ function audioInit() {
   AU.low = G(0); loop(AU.brown, .9).connect(F('lowpass', 180, .5)).connect(AU.low).connect(AU.master);
   AU.patter = G(0); loop(patter).connect(F('highpass', 900, .5)).connect(AU.patter).connect(AU.master);
   AU.wind = G(0); AU.windBP = F('bandpass', 450, .6); loop(AU.pink, .7).connect(AU.windBP).connect(AU.wind).connect(AU.master);
-  // ---- engine: R-2800, synthesised. 18 cylinders, 4-stroke -> 9 firing pulses per crank rev; 3-blade prop at half crank speed
-  {
-    const osc = (type, f, det = 0) => { const o = ctx.createOscillator(); o.type = type; o.frequency.value = f; o.detune.value = det; o.start(); return o; };
-    const clip = k => { const s = ctx.createWaveShaper(), c = new Float32Array(1024); for (let i = 0; i < 1024; i++) { const x = i / 1023 * 2 - 1; c[i] = Math.tanh(k * x) / Math.tanh(k); } s.curve = c; s.oversample = '2x'; return s; };
-    const E = AU.E = {lastThr: 0, crackle: 0};
-    E.bus = G(0); E.lp = F('lowpass', 4500, .5); E.bus.connect(E.lp).connect(AU.master);
-    // firing pulse: two detuned saws, level fluttered by noise (uneven combustion) and by crank rate (lope), clipped and filtered
-    E.fire = [osc('sawtooth', 90, -7), osc('sawtooth', 90, 6)];
-    const pulse = G(.3); E.fire.forEach(o => o.connect(pulse));
-    loop(AU.brown, 1.9).connect(G(.2)).connect(pulse.gain);
-    E.lope = osc('sine', 10); E.lope.connect(G(.1)).connect(pulse.gain);
-    E.fireLP = F('lowpass', 400, 1.1); pulse.connect(clip(3.2)).connect(E.fireLP).connect(E.bus);
-    // exhaust roar: low noise riding the firing band, grows with power
-    E.roarBP = F('bandpass', 180, .8); E.roar = G(0); loop(AU.brown, 1.1).connect(E.roarBP).connect(E.roar).connect(E.bus);
-    // prop: broadband swish chopped at blade-pass frequency
-    E.blade = osc('sine', 30); E.propG = G(0); E.bladeG = G(0);
-    loop(AU.pink, .8).connect(F('bandpass', 650, .7)).connect(E.propG).connect(E.bus); E.blade.connect(E.bladeG).connect(E.propG.gain);
-    // airflow over the canopy and airframe
-    E.air = G(0); E.airHP = F('highpass', 900, .5); loop(AU.pink, 1.3).connect(E.airHP).connect(E.air).connect(AU.master);
-    // exhaust crackle: short pops scheduled after a throttle chop
-    E.pop = buf(.07, d => { for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.exp(-i / (d.length * .18)); });
-    E.popHP = F('highpass', 700, .7); E.popHP.connect(E.bus);
-  }
+  // ---- engine: 18 cylinders, 4-stroke -> 9 firing pulses per crank rev; 3-blade prop at half crank speed
+  const osc = (type, f, det = 0) => { const o = ctx.createOscillator(); o.type = type; o.frequency.value = f; o.detune.value = det; o.start(); return o; };
+  const E = AU.E = {lastThr: 0, crackle: 0, clipK: 0};
+  E.bus = G(0); E.lp = F('lowpass', 4500, .5); E.bus.connect(E.lp).connect(AU.master);
+  E.fire = [osc('sawtooth', 90, -7), osc('sawtooth', 90, 6)];         // fallback when AudioWorklet is unavailable
+  const pulse = G(.3); E.fire.forEach(o => o.connect(pulse));
+  loop(AU.brown, 1.9).connect(G(.2)).connect(pulse.gain);
+  E.lope = osc('sine', 10); E.lope.connect(G(.1)).connect(pulse.gain);
+  E.fireLP = F('lowpass', 400, .8); pulse.connect(E.fallbackClip = ctx.createWaveShaper()).connect(E.fireLP).connect(E.bus);
+  E.fallbackClip.curve = sndClipCurve(3.2); E.fallbackClip.oversample = '2x';
+  if (ctx.audioWorklet) ctx.audioWorklet.addModule(URL.createObjectURL(new Blob([ENGINE_WORKLET], {type: 'application/javascript'}))).then(() => {
+    E.wk = new AudioWorkletNode(ctx, 'r2800', {numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [1], processorOptions: SND.cyl});
+    E.drive = G(SND.engine.drive); E.clip = ctx.createWaveShaper(); E.clip.oversample = '2x'; E.clip.curve = sndClipCurve(E.clipK = SND.engine.clip); E.post = G(SND.engine.post);
+    pulse.disconnect(); E.wk.connect(E.drive).connect(E.clip).connect(E.post).connect(E.fireLP);
+    AU.onWorklet && AU.onWorklet();
+  }).catch(() => {});
+  E.roarBP = F('bandpass', 180, .8); E.roar = G(0); loop(AU.brown, 1.1).connect(E.roarBP).connect(E.roar).connect(E.bus);
+  E.blade = osc('sine', 30); E.propG = G(0); E.bladeG = G(0); E.propBP = F('bandpass', 420, .7);
+  loop(AU.pink, .8).connect(E.propBP).connect(E.propG).connect(E.bus); E.blade.connect(E.bladeG).connect(E.propG.gain);
+  E.air = G(0); E.airHP = F('highpass', 900, .5); loop(AU.pink, 1.3).connect(E.airHP).connect(E.air).connect(AU.master);
+  E.pop = buf(.07, d => { for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.exp(-i / (d.length * .18)); });
+  E.popHP = F('highpass', 700, .7); E.popHP.connect(E.bus);
 }
-function audioUpdate(dt, speed) {
+function sndPushWorklet() { if (AU.E && AU.E.wk) AU.E.wk.port.postMessage(Object.assign({}, SND.cyl)); }
+// S: {on, engineOn, rpm, pwr (0..1 engine power), cmd (0..1 throttle lever), ias (m/s), speed (m/s, for wind),
+//     cockpit (bool), att (0..1 distance fade outside), rain (0..1), dark (0..1 storm)}
+function audioDrive(S) {
   if (!AU.ctx) return;
-  AU.acc += dt; if (AU.acc < .2) return; AU.acc = 0;
-  const t = AU.ctx.currentTime, k = WX.kRain, soft = sstep(0, .35, k), heavy = sstep(.3, 1, k), sp = clamp(speed / 50, 0, 1);
-  AU.master.gain.setTargetAtTime(AU.on ? .9 : 0, t, .3);
-  AU.wash.gain.setTargetAtTime(.22 * (.25 * soft + .75 * heavy), t, 1.2);
-  AU.washLP.frequency.setTargetAtTime(2600 + 2400 * heavy, t, 1.2);
-  AU.hiss.gain.setTargetAtTime(.035 * (.3 * soft + .7 * heavy) + .02 * sp * soft, t, 1.2);
-  AU.low.gain.setTargetAtTime(.12 * heavy, t, 1.2);
-  AU.patter.gain.setTargetAtTime(.55 * soft * (.6 + .4 * heavy) * (1 + .6 * sp), t, 1.2);
-  const gust = .6 + .4 * fbm(t * .35, 4.2, 2);
-  AU.wind.gain.setTargetAtTime((.03 + .16 * WX.kDark + .1 * sp) * gust, t, .8);
-  AU.windBP.frequency.setTargetAtTime(320 + 380 * gust + 300 * sp, t, .8);
-  if (AU.E) {                                                  // engine, prop, airflow, crackle
-    const E = AU.E, ctx = AU.ctx, rpm = Math.max(0, ui.rpm), on = rpm > 60 && !(FM.on && FM.crashed) ? 1 : 0;
-    const pwr = FM.on ? FM.pwr : clamp((rpm - 600) / 2100, 0, 1), cmd = FM.on ? FM.thr : pwr;
-    const crank = rpm / 60, fire = crank * 9, bladeF = crank * .5 * 3, cock = mode === 'cockpit';
-    const att = cock ? 1 : clamp(16 / Math.max(camera.position.distanceTo(aircraft.position), 16), .06, 1);   // fades with orbit distance
-    E.fire.forEach(o => o.frequency.setTargetAtTime(Math.max(fire, 5), t, .12));
-    E.lope.frequency.setTargetAtTime(Math.max(crank, 1), t, .12);
-    E.blade.frequency.setTargetAtTime(Math.max(bladeF, .5), t, .12);
-    E.fireLP.frequency.setTargetAtTime(220 + fire * (1.3 + 1.7 * pwr), t, .15);
-    E.roarBP.frequency.setTargetAtTime(90 + fire * .9, t, .15);
-    E.roar.gain.setTargetAtTime(on * (.05 + .35 * pwr), t, .15);
-    const pb = on * .035 * sstep(300, 2700, rpm) * (.4 + .6 * pwr);
-    E.propG.gain.setTargetAtTime(pb, t, .2); E.bladeG.gain.setTargetAtTime(pb * .85, t, .2);
-    E.bus.gain.setTargetAtTime(on * (cock ? 1.5 : 1.15) * att, t, .25);
-    E.lp.frequency.setTargetAtTime(cock ? 900 : 4500, t, .3);              // canopy and firewall muffle it from inside
-    const ias = curIAS;
-    E.air.gain.setTargetAtTime(.07 * Math.pow(sstep(20, 170, ias), 1.5) * (cock ? 1 : .6 * att), t, .4);
-    E.airHP.frequency.setTargetAtTime(600 + ias * 8, t, .4);
-    if (E.lastThr - cmd > .12 && rpm > 1400) E.crackle = 1.8;               // chop the throttle at high rpm: the stacks pop
-    E.lastThr = cmd;
-    if (E.crackle > 0 && on) {
-      E.crackle -= .2;
-      for (let i = 0, n = Math.round(Math.random() * 3 * E.crackle); i < n; i++) {
-        const s = ctx.createBufferSource(), g = AU.G((.12 + Math.random() * .45) * att);
-        s.buffer = E.pop; s.playbackRate.value = .6 + Math.random() * .9; s.connect(g).connect(E.popHP); s.start(t + Math.random() * .2);
-      }
+  const t = AU.ctx.currentTime, k = S.rain, soft = sndSstep(0, .35, k), heavy = sndSstep(.3, 1, k), sp = sndClamp(S.speed / 50, 0, 1);
+  const R = SND.rain, W = SND.wind, N = SND.engine, A = SND.air, C = SND.crackle;
+  AU.master.gain.setTargetAtTime(S.on ? SND.master : 0, t, .3);
+  AU.wash.gain.setTargetAtTime(R.wash * (.25 * soft + .75 * heavy), t, 1.2);
+  AU.washLP.frequency.setTargetAtTime(R.washLP + R.washLPHeavy * heavy, t, 1.2);
+  AU.hiss.gain.setTargetAtTime(R.hiss * (.3 * soft + .7 * heavy) + R.hissSpeed * sp * soft, t, 1.2);
+  AU.low.gain.setTargetAtTime(R.low * heavy, t, 1.2);
+  AU.patter.gain.setTargetAtTime(R.patter * soft * (.6 + .4 * heavy) * (1 + R.patterSpeed * sp), t, 1.2);
+  const gust = .6 + .4 * sndNoise(t * .35 + 4.2);
+  AU.wind.gain.setTargetAtTime((W.base + W.storm * S.dark + W.speed * sp) * gust, t, .8);
+  AU.windBP.frequency.setTargetAtTime(W.band + W.bandGust * gust + W.bandSpeed * sp, t, .8);
+  const E = AU.E, ctx = AU.ctx, rpm = Math.max(0, S.rpm), on = S.engineOn ? 1 : 0, pwr = S.pwr, cmd = S.cmd;
+  const crank = rpm / 60, fire = crank * 9, bladeF = crank * .5 * 3, cock = S.cockpit, att = cock ? 1 : S.att;
+  E.fire.forEach(o => o.frequency.setTargetAtTime(Math.max(fire, 5), t, .12));
+  E.lope.frequency.setTargetAtTime(Math.max(crank, 1), t, .12);
+  E.blade.frequency.setTargetAtTime(Math.max(bladeF, .5), t, .12);
+  E.fireLP.frequency.setTargetAtTime(E.wk ? N.toneBase + N.toneLoad * pwr + fire * N.toneFire : 220 + fire * (1.3 + 1.7 * pwr), t, .15);
+  if (E.wk) {
+    E.wk.parameters.get('rpm').setTargetAtTime(on ? rpm : 0, t, .12); E.wk.parameters.get('load').setTargetAtTime(pwr, t, .2);
+    E.drive.gain.setTargetAtTime(N.drive, t, .1); E.post.gain.setTargetAtTime(N.post, t, .1);
+    if (E.clipK !== N.clip) { E.clipK = N.clip; E.clip.curve = sndClipCurve(N.clip); }
+  }
+  E.roarBP.frequency.setTargetAtTime(N.roarBand + fire * N.roarBandFire, t, .15); E.roarBP.Q.setTargetAtTime(N.roarQ, t, .15);
+  E.roar.gain.setTargetAtTime(on * (N.roar + N.roarPower * pwr), t, .15);
+  const pb = on * N.prop * sndSstep(300, 2700, rpm) * (.4 + .6 * pwr);
+  E.propBP.frequency.setTargetAtTime(N.propBand, t, .2);
+  E.propG.gain.setTargetAtTime(pb, t, .2); E.bladeG.gain.setTargetAtTime(pb * N.propBeat, t, .2);
+  E.bus.gain.setTargetAtTime(on * (cock ? N.busCockpit : N.busOutside) * att, t, .25);
+  E.lp.frequency.setTargetAtTime(cock ? N.muffleCockpit : N.muffleOutside, t, .3);
+  E.air.gain.setTargetAtTime(A.level * Math.pow(sndSstep(A.from, A.full, S.ias), A.curve) * (cock ? 1 : A.outside * att), t, .4);
+  E.airHP.frequency.setTargetAtTime(A.hp + S.ias * A.hpPerMs, t, .4);
+  E.popHP.frequency.setTargetAtTime(C.hp, t, .1);
+  if (E.lastThr - cmd > C.chop && rpm > C.minRpm) E.crackle = C.time;     // chop the throttle at high rpm: the stacks pop
+  E.lastThr = cmd;
+  if (E.crackle > 0 && on) {
+    E.crackle -= .2;
+    for (let i = 0, n = Math.round(Math.random() * C.rate * E.crackle); i < n; i++) {
+      const s = ctx.createBufferSource(), g = AU.G((C.level + Math.random() * C.levelRand) * att);
+      s.buffer = E.pop; s.playbackRate.value = C.pitch + Math.random() * C.pitchRand; s.connect(g).connect(E.popHP); s.start(t + Math.random() * .2);
     }
   }
 }
 function thunder(delay, s, pan) {               // close strikes crack then roll; far strikes are a slow dark roll
   if (!AU.ctx || !AU.on) return;
-  const ctx = AU.ctx, G = AU.G, F = AU.F, t = ctx.currentTime + delay, close = sstep(.5, .9, s);
+  const ctx = AU.ctx, G = AU.G, F = AU.F, T = SND.thunder, t = ctx.currentTime + delay, close = sndSstep(.5, .9, s);
   const src = (b, at, dur, rate = 1) => { const n = ctx.createBufferSource(); n.buffer = b; n.loop = true; n.playbackRate.value = rate; n.start(at, Math.random() * 2); n.stop(at + dur); return n; };
-  const o = G(1), pn = ctx.createStereoPanner(); pn.pan.value = clamp(pan * .7, -.8, .8);
-  o.connect(pn); pn.connect(AU.master); pn.connect(G(.55 + .25 * (1 - s))).connect(AU.reverb);
+  const o = G(T.level), pn = ctx.createStereoPanner(); pn.pan.value = sndClamp(pan * .7, -.8, .8);
+  o.connect(pn); pn.connect(AU.master); pn.connect(G(T.reverb + .25 * (1 - s))).connect(AU.reverb);
   if (close > 0) {
     const dur = .25 + .2 * Math.random(), lp = F('lowpass', 7000, .4), g = G(0);
     lp.frequency.setValueAtTime(7000, t); lp.frequency.exponentialRampToValueAtTime(900, t + dur + .4);
     let tt = t; const steps = 12 + (Math.random() * 10 | 0);
-    for (let i = 0; i < steps; i++) { g.gain.setValueAtTime((.25 + .75 * Math.random()) * (1 - .6 * i / steps) * .55 * close, tt); tt += dur / steps * (.5 + Math.random()); }
+    for (let i = 0; i < steps; i++) { g.gain.setValueAtTime((.25 + .75 * Math.random()) * (1 - .6 * i / steps) * T.crack * close, tt); tt += dur / steps * (.5 + Math.random()); }
     g.gain.setTargetAtTime(0, tt, .12);
     src(AU.white, t, dur + .6).connect(F('highpass', 350)).connect(lp).connect(g).connect(o);
     const bg = G(0); bg.gain.setValueAtTime(0, t); bg.gain.linearRampToValueAtTime(.9 * close, t + .02); bg.gain.setTargetAtTime(0, t + .1, .5);
@@ -1862,7 +1960,7 @@ function thunder(delay, s, pan) {               // close strikes crack then roll
   const len = 4 + 5 * s + 1.5 * Math.random(), t0 = t + (close > 0 ? .12 : 0);
   const lp = F('lowpass', 180 + 900 * s * s, .6);
   lp.frequency.setValueAtTime(180 + 900 * s * s, t0); lp.frequency.exponentialRampToValueAtTime(70 + 120 * s, t0 + len * .4); lp.frequency.exponentialRampToValueAtTime(55, t0 + len);
-  const g = G(0), peak = (.35 + .65 * s) * .9, attack = close > 0 ? .05 : .35 + .5 * (1 - s);
+  const g = G(0), peak = (.35 + .65 * s) * T.roll, attack = close > 0 ? .05 : .35 + .5 * (1 - s);
   g.gain.setValueAtTime(0, t0); g.gain.linearRampToValueAtTime(peak, t0 + attack);
   let ts = t0 + attack + .2;
   for (let i = 0, n = 3 + (Math.random() * 4 | 0); i < n && ts < t0 + len; i++) {
@@ -1874,6 +1972,15 @@ function thunder(delay, s, pan) {               // close strikes crack then roll
   src(AU.brown, t0, len + 2.5, .8 + .3 * Math.random()).connect(lp);
   src(AU.pink, t0, len + 2.5, .6).connect(G(.25 + .35 * s)).connect(lp);
   lp.connect(F('lowpass', 900, .5)).connect(g).connect(o);
+}
+// ==== SYNTH END ====
+// game side of the shared synth: read the sim, hand audioDrive a plain situation
+function audioUpdate(dt, speed) {
+  if (!AU.ctx) return;
+  AU.acc += dt; if (AU.acc < .2) return; AU.acc = 0;
+  const rpm = Math.max(0, ui.rpm), pwr = FM.on ? FM.pwr : clamp((rpm - 600) / 2100, 0, 1), cock = mode === 'cockpit';
+  audioDrive({on: AU.on, engineOn: rpm > 60 && !(FM.on && FM.crashed), rpm, pwr, cmd: FM.on ? FM.thr : pwr, ias: curIAS, speed, cockpit: cock,
+    att: clamp(16 / Math.max(camera.position.distanceTo(aircraft.position), 16), .06, 1), rain: WX.kRain, dark: WX.kDark});
 }
 
 // ---- per-frame weather state -> lights, fog, sea, paint, rain

@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Procedural Jungle Tree — Three.js Prototype</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#101a1b;color:#e6f0eb;font:13px system-ui,Segoe UI,sans-serif;overflow:hidden}
+#app{position:fixed;inset:0}#panel{position:absolute;left:18px;top:18px;width:290px;background:#101d20e8;border:1px solid #617b7466;border-radius:10px;padding:16px;backdrop-filter:blur(12px)}
+h1{font-size:17px;letter-spacing:.5px;margin:0 0 5px}p{line-height:1.45;color:#afc6bd;margin:0 0 12px}
+label{display:flex;justify-content:space-between;margin:13px 0 5px}label span{color:#91d8b4}
+input[type=range],select{width:100%;accent-color:#70c39b}
+select,button{background:#213333;color:#e6f0eb;border:1px solid #526e66;border-radius:5px;padding:8px}
+.buttons{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:14px}button{cursor:pointer}
+#stats{position:absolute;right:18px;bottom:16px;color:#d3e4dc;background:#101d20aa;padding:8px 12px;border-radius:6px;text-align:right}
+#help{position:absolute;left:18px;bottom:16px;color:#d3e4dc;background:#101d20aa;padding:8px 12px;border-radius:6px}
+@media(max-width:600px){#panel{width:230px;left:8px;top:8px;padding:10px}}
+</style>
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.161.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.161.0/examples/jsm/"}}</script>
+</head><body><div id="app"></div>
+<div id="panel"><h1>Jungle canopy study</h1><p>Branching architecture + layered leaf sprays, rather than solid crown spheres. Compatible with Three.js r161.</p>
+<label>Species / form</label><select id="species"><option value="broad">Tropical broadleaf</option><option value="emergent">Tall emergent</option><option value="understory">Understory tree</option></select>
+<label>Leaf density <span id="densityValue">100%</span></label><input id="density" type="range" min="30" max="160" value="100" step="10">
+<label>Wind <span id="windValue">35%</span></label><input id="wind" type="range" min="0" max="100" value="35">
+<label>Time of day <span id="sunValue">65%</span></label><input id="sun" type="range" min="10" max="100" value="65">
+<div class="buttons"><button id="grove">Grove: OFF</button><button id="wire">Wireframe: OFF</button><button id="regen">New seed</button><button id="reset">Reset view</button></div></div>
+<div id="stats"></div><div id="help">Drag orbit · Wheel zoom · Right-drag pan<br>Procedural mesh · no external model assets</div>
+<script type="module">
+import * as THREE from 'three';
+import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
+const renderer=new THREE.WebGLRenderer({antialias:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));renderer.setSize(innerWidth,innerHeight);
+renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+renderer.outputColorSpace=THREE.SRGBColorSpace;renderer.toneMapping=THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure=1.1;document.getElementById('app').appendChild(renderer.domElement);
+const scene=new THREE.Scene();scene.background=new THREE.Color(0x9fb7b5);scene.fog=new THREE.Fog(0x9fb7b5,55,145);
+const camera=new THREE.PerspectiveCamera(46,innerWidth/innerHeight,.1,300);
+camera.position.set(22,15,25);const controls=new OrbitControls(camera,renderer.domElement);controls.enableDamping=true;
+controls.target.set(0,9,0);controls.maxDistance=100;controls.minDistance=4;
+const hemi=new THREE.HemisphereLight(0xd5eeff,0x3b3927,2.0);scene.add(hemi);
+const sun=new THREE.DirectionalLight(0xffefc9,3.0);sun.position.set(-24,38,18);sun.castShadow=true;sun.shadow.mapSize.set(2048,2048);
+sun.shadow.camera.left=-55;sun.shadow.camera.right=55;sun.shadow.camera.top=55;sun.shadow.camera.bottom=-55;sun.shadow.camera.near=1;sun.shadow.camera.far=130;sun.shadow.bias=-.0003;scene.add(sun);
+const ground=new THREE.Mesh(new THREE.PlaneGeometry(240,240),new THREE.MeshStandardMaterial({color:0x465a37,roughness:1}));
+ground.rotation.x=-Math.PI/2;ground.receiveShadow=true;scene.add(ground);
+const barkMat=new THREE.MeshStandardMaterial({color:0x635647,roughness:1,vertexColors:true});
+const leafMat=new THREE.MeshStandardMaterial({color:0xffffff,vertexColors:false,roughness:.87,metalness:0,side:THREE.DoubleSide,alphaTest:.15});
+const leafGeo=new THREE.BufferGeometry();
+// Gently folded, pointed, lanceolate leaf. Two triangles across width, four along length.
+{
+const P=[],UV=[],I=[];const sections=5;
+for(let j=0;j<=sections;j++){const t=j/sections;const w=.5*Math.pow(Math.sin(Math.PI*t),.75);
+for(let k=-1;k<=1;k++){P.push(k*w,t*1.65,Math.sin(Math.PI*t)*.13+Math.abs(k)*.12);UV.push((k+1)/2,t);}}
+for(let j=0;j<sections;j++)for(let k=0;k<2;k++){const a=j*3+k,b=a+3;I.push(a,b,a+1,a+1,b,b+1);}
+leafGeo.setAttribute('position',new THREE.Float32BufferAttribute(P,3));leafGeo.setAttribute('uv',new THREE.Float32BufferAttribute(UV,2));leafGeo.setIndex(I);leafGeo.computeVertexNormals();
+}
+let forest=new THREE.Group();scene.add(forest);let seed=1042;let grove=false,wire=false;let totalLeaves=0,totalBranches=0;let leafMeshes=[];
+function RNG(s){let v=s>>>0;return function(){v=(Math.imul(1664525,v)+1013904223)>>>0;return v/4294967296;};}
+function makeTree(root,treeSeed,type,density){
+const rand=RNG(treeSeed), group=new THREE.Group();group.position.copy(root);forest.add(group);
+const isEmergent=type==='emergent',under=type==='understory';
+const height=under?10+rand()*3:isEmergent?23+rand()*5:16+rand()*4;
+const spread=under?6:isEmergent?10:9;
+const trunkRadius=under?.26:isEmergent?.57:.45;
+const woodPos=[],woodNor=[],woodCol=[],woodIdx=[];const leafData=[];let branches=0;
+const V=(x,y,z)=>new THREE.Vector3(x,y,z);
+function tube(a,b,r0,r1){
+const axis=b.clone().sub(a);const len=axis.length();if(len<.001)return;
+const up=axis.clone().normalize();const tangent=new THREE.Vector3(1,0,0);
+if(Math.abs(up.dot(tangent))>.9)tangent.set(0,0,1);
+const side=new THREE.Vector3().crossVectors(up,tangent).normalize();const other=new THREE.Vector3().crossVectors(up,side).normalize();
+const base=woodPos.length/3,segments=7;
+for(let j=0;j<2;j++){const center=j?b:a,r=j?r1:r0;
+for(let k=0;k<segments;k++){const ang=k/segments*Math.PI*2,n=side.clone().multiplyScalar(Math.cos(ang)).addScaledVector(other,Math.sin(ang));
+const p=center.clone().addScaledVector(n,r);woodPos.push(p.x,p.y,p.z);woodNor.push(n.x,n.y,n.z);
+const tint=.72+rand()*.24;woodCol.push(tint,tint*.94,tint*.84);}}
+for(let k=0;k<segments;k++){const n=(k+1)%segments;woodIdx.push(base+k,base+n,base+segments+k,base+n,base+segments+n,base+segments+k);}
+branches++;
+}
+function spray(center,dir,scale,count){
+const axis=dir.clone().normalize();
+for(let i=0;i<count;i++){
+const az=rand()*Math.PI*2,rad=Math.sqrt(rand())*scale*.85;
+const radial=V(Math.cos(az),(.5-rand())*.5,Math.sin(az));
+const pos=center.clone().addScaledVector(radial,rad).addScaledVector(axis,(rand()-.5)*scale*.55);
+const orient=radial.clone().addScaledVector(axis,.4+rand()*.65).normalize();
+leafData.push({pos,dir:orient,scale:(.28+rand()*.32)*(under?.85:1),hue:rand()});
+}}
+const lean=V((rand()-.5)*.8,0,(rand()-.5)*.8);
+const base=V(0,0,0),top=V(lean.x,height,lean.z);
+let prev=base;
+for(let i=1;i<=12;i++){const t=i/12;const p=V(lean.x*t+Math.sin(t*4)*.15,t*height,lean.z*t+Math.cos(t*5)*.12);
+tube(prev,p,trunkRadius*Math.pow(1-(i-1)/13,1.25),trunkRadius*Math.pow(1-i/13,1.25));prev=p;}
+const tierCount=under?7:isEmergent?10:9;
+for(let tier=0;tier<tierCount;tier++){
+const yFrac=(under?.34:.38)+tier/(tierCount-1)*(under?.54:.56);
+const nBranches=tier<2?5:4;
+for(let j=0;j<nBranches;j++){
+const az=(j+rand()*.32)/nBranches*Math.PI*2+tier*2.399;
+const len=spread*(.48+.5*rand())*(.58+.42*Math.sin(Math.PI*(yFrac-.25)/.8));
+const start=V(lean.x*yFrac,yFrac*height,lean.z*yFrac);
+const mid=start.clone().add(V(Math.cos(az)*len*.48,len*(.08+rand()*.11),Math.sin(az)*len*.48));
+const end=start.clone().add(V(Math.cos(az)*len,len*(.03+rand()*.12),Math.sin(az)*len));
+tube(start,mid,trunkRadius*(.29+.12*rand()),.11);tube(mid,end,.11,.025);
+for(let twig=0;twig<3;twig++){
+const f=.42+twig*.22;const anchor=mid.clone().lerp(end,f);
+const ta=az+(twig%2===0?1:-1)*(.4+rand()*.45);
+const tip=anchor.clone().add(V(Math.cos(ta)*len*.25,(rand()-.2)*len*.2,Math.sin(ta)*len*.25));
+tube(anchor,tip,.065,.009);
+spray(tip,tip.clone().sub(anchor),.9+rand()*.75,Math.round((16+rand()*12)*density));
+}
+spray(end,end.clone().sub(mid),1.15+rand()*.8,Math.round((28+rand()*18)*density));
+}}
+for(let i=0;i<7;i++){const a=i*2.4,r=1+rand()*1.6;
+tube(V(Math.cos(a)*r,0,Math.sin(a)*r),V(Math.cos(a)*r*.35,2.5+rand(),Math.sin(a)*r*.35),.16,.05);}
+const geo=new THREE.BufferGeometry();geo.setAttribute('position',new THREE.Float32BufferAttribute(woodPos,3));geo.setAttribute('normal',new THREE.Float32BufferAttribute(woodNor,3));geo.setAttribute('color',new THREE.Float32BufferAttribute(woodCol,3));geo.setIndex(woodIdx);
+const wood=new THREE.Mesh(geo,barkMat);wood.castShadow=true;wood.receiveShadow=true;group.add(wood);
+const foliage=new THREE.InstancedMesh(leafGeo,leafMat,leafData.length);foliage.instanceMatrix.setUsage(THREE.StaticDrawUsage);
+const dummy=new THREE.Object3D();const color=new THREE.Color();
+for(let i=0;i<leafData.length;i++){
+const d=leafData[i];dummy.position.copy(d.pos);dummy.quaternion.setFromUnitVectors(V(0,1,0),d.dir);
+dummy.rotateY(rand()*Math.PI*2);dummy.rotateX((rand()-.5)*.7);
+dummy.scale.setScalar(d.scale);dummy.updateMatrix();foliage.setMatrixAt(i,dummy.matrix);
+color.setHSL(.265+(d.hue-.5)*.075,.36+rand()*.18,.19+rand()*.15);foliage.setColorAt(i,color);
+}
+foliage.instanceMatrix.needsUpdate=true;if(foliage.instanceColor)foliage.instanceColor.needsUpdate=true;
+foliage.castShadow=true;foliage.receiveShadow=true;foliage.frustumCulled=false;group.add(foliage);leafMeshes.push(foliage);
+totalLeaves+=leafData.length;totalBranches+=branches;return group;
+}
+function build(){
+scene.remove(forest);forest.traverse(o=>{if(o.isMesh&&o.geometry!==leafGeo)o.geometry.dispose();});forest=new THREE.Group();scene.add(forest);leafMeshes=[];totalLeaves=0;totalBranches=0;
+const density=Number(document.getElementById('density').value)/100,type=document.getElementById('species').value;
+makeTree(new THREE.Vector3(0,0,0),seed,type,density);
+if(grove){const r=RNG(seed+200);for(let i=0;i<7;i++){const a=i*2.399+1.2,dist=13+Math.sqrt(i)*6;
+const t=i%3===0?'emergent':i%3===1?'broad':'understory';
+makeTree(new THREE.Vector3(Math.cos(a)*dist,0,Math.sin(a)*dist),seed+11+i*317,t,density*.65);}}
+for(const o of leafMeshes)o.material.wireframe=wire;
+document.getElementById('stats').textContent=totalLeaves.toLocaleString()+' instanced leaves · '+totalBranches+' branch segments · '+(grove?'8 trees':'1 tree');
+}
+document.getElementById('density').addEventListener('input',e=>document.getElementById('densityValue').textContent=e.target.value+'%');
+document.getElementById('density').addEventListener('change',build);
+document.getElementById('species').addEventListener('change',build);
+document.getElementById('wind').addEventListener('input',e=>document.getElementById('windValue').textContent=e.target.value+'%');
+document.getElementById('sun').addEventListener('input',e=>{document.getElementById('sunValue').textContent=e.target.value+'%';sun.intensity=Number(e.target.value)/25;});
+document.getElementById('grove').onclick=e=>{grove=!grove;e.target.textContent='Grove: '+(grove?'ON':'OFF');build();};
+document.getElementById('wire').onclick=e=>{wire=!wire;e.target.textContent='Wireframe: '+(wire?'ON':'OFF');leafMat.wireframe=wire;};
+document.getElementById('regen').onclick=()=>{seed+=1297;build();};
+document.getElementById('reset').onclick=()=>{camera.position.set(22,15,25);controls.target.set(0,9,0);controls.update();};
+build();const clock=new THREE.Clock();
+function frame(){requestAnimationFrame(frame);const t=clock.getElapsedTime(),wind=Number(document.getElementById('wind').value)/100;
+for(let i=0;i<leafMeshes.length;i++){const o=leafMeshes[i];o.rotation.z=Math.sin(t*.65+i*1.3)*wind*.008;o.rotation.x=Math.sin(t*.47+i*.8)*wind*.006;}
+controls.update();renderer.render(scene,camera);}
+frame();addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);});
+</script></body></html>

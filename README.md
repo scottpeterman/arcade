@@ -50,6 +50,7 @@ Experiments, prototypes and the tools behind the games.
 | Entry | What it is |
 |---|---|
 | [F4U Corsair](lab/corsair/) | Fly a Corsair off a Pacific island strip: storm fronts, lightning, a cloud deck to climb through, synthesised engine |
+| [Sound Lab](lab/sound-lab/) | The Corsair's synthesised sound on sliders: engine, airflow, wind, rain and thunder; exports settings the game reads |
 | [Tauri Reach](lab/tauri-reach/) | Dogfight inside a raymarched nebula while a young star erupts |
 | [Ringworld](lab/ringworld/) | A ringworld megastructure, explorable in WebGL |
 | [Piece Lab](games/banrion/piece_lab.html) | Banrion's wireframe piece designer |
