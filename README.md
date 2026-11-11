@@ -31,6 +31,17 @@ Wireframe and vector games for the browser. Each game is a single self-contained
 
 More per game in each `docs/screenshots/` folder.
 
+## Six Fleets
+
+<p align="center"><img src="games/six-fleets/six-fleets.gif" width="720" alt="Six Fleets: real-time 3D starship combat across the campaign's battlegrounds"></p>
+
+Six races, one war over the QIN drive. Fly a cruiser or a destroyer in real-time 3D against the computer: every hit is resolved box by box on the ship's damage sheet.
+
+- **Skirmish:** any two of the twelve ships, at any of the seven locations.
+- **Campaign:** one cruiser through seven missions, from first contact at Tauri-B to the Rayzine star base. Wins are saved in the browser and unlock the next mission.
+
+[Play Six Fleets](games/six-fleets/)
+
 ## Games
 
 | Game | What it is |
