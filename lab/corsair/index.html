@@ -29,6 +29,29 @@ button:hover{background:#21405a}
 body.paused #pause{display:block}
 #bpTitle{display:none;position:fixed;right:16px;top:16px;border:1.5px solid #d8ecffcc;color:#d8ecff;font:12px/1.5 ui-monospace,Consolas,monospace;padding:8px 14px;letter-spacing:1px}
 body.bp #bpTitle{display:block}
+#tgt{display:none;position:fixed;left:0;top:0;width:30px;height:30px;margin:-15px 0 0 -15px;border:1.5px solid #ff7a66;border-radius:2px;pointer-events:none;box-shadow:0 0 4px #0008}
+#tgt::after{content:attr(data-d);position:absolute;top:32px;left:50%;white-space:nowrap;transform:translateX(-50%);color:#ffa090;font:11px ui-monospace,Consolas,monospace;text-shadow:0 1px 3px #000}
+#tgt.hit{border-color:#ffe08a;border-width:2.5px}
+#tgt.off{width:0;height:0;margin:-9px 0 0 -8px;border:none;border-left:16px solid #ff7a66;border-top:9px solid transparent;border-bottom:9px solid transparent;border-radius:0;box-shadow:none}
+#wing{display:none;position:fixed;left:0;top:0;width:16px;height:16px;margin:-8px 0 0 -8px;border:1.5px solid #7cc4ff;transform-origin:center;pointer-events:none;border-radius:50%;box-shadow:0 0 4px #0008}
+#wing::after{content:attr(data-d);position:absolute;top:18px;left:50%;transform:translateX(-50%);white-space:nowrap;color:#9fd2ff;font:10px ui-monospace,Consolas,monospace;letter-spacing:1px;text-shadow:0 1px 3px #000}
+#wing.off{width:0;height:0;margin:-7px 0 0 -6px;border:none;border-left:12px solid #7cc4ff;border-top:7px solid transparent;border-bottom:7px solid transparent;border-radius:0;box-shadow:none}
+#pip{display:none;position:fixed;left:0;top:0;width:26px;height:26px;margin:-13px 0 0 -13px;pointer-events:none}
+#pip::before,#pip::after{content:'';position:absolute;background:#ffe2a8;box-shadow:0 0 3px #000a}
+#pip::before{left:0;right:0;top:12px;height:1.5px}
+#pip::after{top:0;bottom:0;left:12px;width:1.5px}
+#lead{display:none;position:fixed;left:0;top:0;width:18px;height:18px;margin:-9px 0 0 -9px;border:1.5px solid #ffe2a8;border-radius:50%;pointer-events:none;box-shadow:0 0 3px #000a}
+body.ouch::after{content:'';position:fixed;inset:0;box-shadow:inset 0 0 140px #d02020b0;pointer-events:none}
+.buttons button.wide{grid-column:span 2}
+#recdot{position:fixed;right:16px;top:16px;color:#ff6b5b;font:600 12px ui-monospace,Consolas,monospace;letter-spacing:1px;text-shadow:0 1px 3px #000;pointer-events:none}
+#shotflash{position:fixed;inset:0;background:#fff;opacity:0;pointer-events:none}
+#shotflash.go{animation:shot .35s ease-out}
+@keyframes shot{0%{opacity:.55}100%{opacity:0}}
+#unclean{display:none;position:fixed;left:10px;top:10px;opacity:.35;font-size:11px;padding:4px 8px}
+#unclean:hover{opacity:1}
+body.clean #panel,body.clean #help,body.clean #status,body.clean #msg,body.clean #pause,body.clean #tgt,body.clean #wing,body.clean #pip,body.clean #lead,body.clean #bpTitle{display:none!important}
+body.clean #unclean{display:block}
+body.clean.ouch::after{display:none}
 #error{display:none;position:fixed;inset:20%;background:#152333;padding:24px;border:1px solid #e88;border-radius:10px;z-index:20;white-space:pre-wrap;font-family:ui-monospace,monospace}
 @media(max-width:600px){#panel{width:216px;left:8px;top:8px;padding:11px}#help{bottom:8px;left:8px;max-width:70%;font-size:11px}#bpTitle{top:auto;bottom:60px}}
 </style>
@@ -42,8 +65,13 @@ body.bp #bpTitle{display:block}
 <body>
 <div id="view"></div>
 <div id="panel">
-  <h1>F4U-1D CORSAIR</h1>
-  <small>Chance Vought · US Navy · Pacific 1944</small>
+  <h1 id="typeName">F4U-1D CORSAIR</h1>
+  <small id="typeSub">Chance Vought · US Navy · Pacific 1944</small>
+  <label>Aircraft <span id="typeLabel">F4U-1D</span></label>
+  <select id="type" style="width:100%">
+    <option value="f4u">F4U-1D Corsair</option>
+    <option value="zero">A6M2 Zero · silver</option>
+  </select>
   <label>View <span id="camLabel">Orbit</span></label>
   <select id="camera" style="width:100%">
     <option value="orbit">Orbit / inspect</option>
@@ -76,12 +104,22 @@ body.bp #bpTitle{display:block}
     <button id="flyAir">Fly: air start</button>
     <button id="flaps">Flaps: UP</button>
     <button id="brakes">Brake: OFF</button>
+    <button id="fight" class="wide">Dogfight: Corsair vs Zero</button>
+    <button id="watch" class="wide">Watch: computer against computer</button>
+    <button id="autoBtn">Autopilot: OFF</button>
+    <button id="cleanBtn">Clean view</button>
+    <button id="camStyleBtn">Cam: Chase</button>
+    <button id="camSubjBtn">Follow: You</button>
+    <button id="photoBtn">Photo</button>
+    <button id="recBtn">● Rec</button>
   </div>
 </div>
-<div id="help">Drag orbit · Wheel zoom · Right-drag pan · 1–6 views (6 cockpit) · R reset · P pause<br>Enter fly from runway · Shift+Enter air start · Space circuit (in flight: hold for brakes)<br>W/S ↑/↓ pitch · A/D ←/→ roll · Q/E rudder · =/− throttle · G gear · V flaps · B park brake<br>I island · T storm · N rain · F fog · L lightning · M sound · Shift+L freeze a strike · . step</div>
+<div id="help">Drag orbit · Wheel zoom · Right-drag pan · 1–6 views (6 cockpit) · V/Tab camera · Shift+V follow you/wingman/Zero · Esc pause · Shift+R reset<br>Enter fly from runway · Shift+Enter air start · Space circuit (in flight: hold for brakes)<br>W/S ↑/↓ pitch · A/D ←/→ roll · Q/E rudder · =/− throttle · G gear · F flaps · B park brake<br>K dogfight · Shift+K watch · J autopilot · X guns · P photo · R record · C clean view · Z Corsair/Zero<br>I island · T storm · N rain · Shift+F fog · L lightning · M sound · Shift+L freeze a strike · . step</div>
 <div id="status"></div>
+<div id="tgt"></div><div id="wing"></div><div id="pip"></div><div id="lead"></div>
 <div id="msg"></div>
-<div id="pause">PAUSED · P resume · . step · orbit/zoom still live</div>
+<div id="pause">PAUSED · Esc resume · . step · orbit/zoom still live · P photo</div>
+<div id="recdot"></div><div id="shotflash"></div><button id="unclean" type="button">Show HUD</button>
 <div id="bpTitle"></div>
 <div id="error"></div>
 
@@ -414,7 +452,7 @@ M.hull = addCockpitCut(M.paint.clone());
 fuselage.material = M.hull;
 fuselage.customDepthMaterial = addCockpitCut(new THREE.MeshDepthMaterial({depthPacking: THREE.RGBADepthPacking}));
 
-const cockpitGroup = new THREE.Group(); cockpitGroup.visible = false; aircraft.add(cockpitGroup);
+const cockpitGroup = new THREE.Group(); cockpitGroup.name = 'ccockpit'; cockpitGroup.visible = false; aircraft.add(cockpitGroup);
 const CK = {
   tub: new THREE.MeshStandardMaterial({color: 0x232822, roughness: .95, side: THREE.DoubleSide}),
   console: new THREE.MeshStandardMaterial({color: 0x1a1d1b, roughness: .8, metalness: .2}),
@@ -639,19 +677,19 @@ for (const s of [-1, 1]) cyl([s * .2, .83, .98], [s * .17, 1.125, .56], .014, .0
 const gear = {main: [], tail: null, t: 1, target: 1};
 for (const s of [-1, 1]) {
   const x = 2.05, pivot = new THREE.Group();
-  pivot.position.set(s * x, wingY(x) - .02, 2.05);
+  pivot.position.set(s * x, wingY(x) - .02, 2.05); pivot.name = 'cgear';
   aircraft.add(pivot);
   cyl([0, 0, 0], [0, -.75, 0], .075, .07, M.metal, 12, pivot);
   cyl([0, -.75, 0], [0, -1.35, 0], .055, .055, M.metal, 12, pivot);
   const door = mk(new THREE.BoxGeometry(.5, .9, .03), M.paint, pivot); door.position.set(0, -.45, .17);
-  const wheel = new THREE.Group(); wheel.position.y = -1.35; pivot.add(wheel);
+  const wheel = new THREE.Group(); wheel.name = 'cwheel'; wheel.position.y = -1.35; pivot.add(wheel);
   const tire = mk(new THREE.CylinderGeometry(.4, .4, .2, 36), M.tire, wheel); tire.rotation.z = Math.PI / 2; tire.position.x = -s * .13;
   const hub = mk(new THREE.CylinderGeometry(.2, .2, .215, 20), M.metal, wheel); hub.rotation.z = Math.PI / 2; hub.position.x = -s * .13;
   gear.main.push({pivot, wheel, s});
 }
 {
   const z = -4.35, pivot = new THREE.Group();
-  pivot.position.set(0, botY(z) + .05, z); aircraft.add(pivot);
+  pivot.position.set(0, botY(z) + .05, z); pivot.name = 'ctail'; aircraft.add(pivot);
   cyl([0, 0, 0], [0, -.42, 0], .035, .03, M.metal, 8, pivot);
   const t = mk(new THREE.CylinderGeometry(.14, .14, .09, 20), M.tire, pivot); t.rotation.z = Math.PI / 2; t.position.y = -.42;
   gear.tail = pivot;
@@ -662,7 +700,7 @@ function applyGear(e) {
 }
 
 // ---------------------------------------------------------------- propeller (Hamilton Standard, 3 blades, 4.06 m)
-const propGroup = new THREE.Group();
+const propGroup = new THREE.Group(); propGroup.name = 'cprop';
 propGroup.position.z = 4.59;
 aircraft.add(propGroup);
 cyl([0, 0, -.16], [0, 0, .06], .2, .2, M.metal, 24, propGroup);
@@ -728,7 +766,7 @@ const numberTex = canvasTex(256, 128, x => {
 const decalMat = map => new THREE.MeshStandardMaterial({map, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, roughness: .4, metalness: 0});
 const insigniaMat = decalMat(insigniaTex), numberMat = decalMat(numberTex);
 const raycaster = new THREE.Raycaster();
-function placeDecal(target, origin, dir, upHint, size, mat) {
+function placeDecal(target, origin, dir, upHint, size, mat, parent = aircraft) {
   raycaster.set(origin, dir.normalize());
   const hit = raycaster.intersectObject(target, false)[0];
   if (!hit) return;
@@ -736,7 +774,7 @@ function placeDecal(target, origin, dir, upHint, size, mat) {
   const y = upHint.clone().addScaledVector(n, -upHint.dot(n)).normalize(), xA = new THREE.Vector3().crossVectors(y, n);
   const e = new THREE.Euler().setFromRotationMatrix(new THREE.Matrix4().makeBasis(xA, y, n));
   const d = new THREE.Mesh(new DecalGeometry(target, hit.point, e, size), mat);
-  d.receiveShadow = true; aircraft.add(d); decals.push(d);
+  d.receiveShadow = true; parent.add(d); decals.push(d);
 }
 {
   const up = V3(0, 1, 0), fwd = V3(0, 0, 1), z = -2.45, zc = (topY(z) + botY(z)) / 2;
@@ -1270,6 +1308,224 @@ function parkedCorsair(x, z, heading) {
   const hull = new THREE.Mesh(new THREE.BoxGeometry(3.3, 1.8, 11), stdMat(0x59646b, .7)); hull.position.set(x0 + 4.4, .5, zs + len - 14); hull.rotation.y = .04; base.add(hull);
   const ramp = new THREE.Mesh(new THREE.BoxGeometry(3.2, 1.9, .2), stdMat(0x4c565c, .7)); ramp.position.set(x0 + 4.4, .55, zs + len - 19.6); base.add(ramp);
 }
+
+// ---------------------------------------------------------------- A6M2 Type 0 Model 21 "Zero" (natural metal / silver)
+// Same frame and helpers as the Corsair: 1 unit = 1 m, +z nose, +y up, +x port. Span 12.0 m, length 9.06 m, prop 2.9 m.
+// The Corsair's parts move into corsairBody and the Zero is built into zeroBody beside it, both inside `aircraft`, so
+// either rides the same transform (orbit, chase circuit, blueprints). Built after the parked Corsairs are cloned.
+const corsairBody = new THREE.Group();
+for (const c of [...aircraft.children]) corsairBody.add(c);
+aircraft.add(corsairBody);
+const zeroBody = new THREE.Group(); aircraft.add(zeroBody);
+const MZ = {
+  skin:    new THREE.MeshPhysicalMaterial({color: 0xc3c7ca, roughness: .3, metalness: .82, clearcoat: .15, clearcoatRoughness: .35}),
+  cowl:    new THREE.MeshPhysicalMaterial({color: 0x121417, roughness: .4, metalness: .3, clearcoat: .35, clearcoatRoughness: .3}),
+  red:     new THREE.MeshStandardMaterial({color: 0xa8161b, roughness: .5, metalness: .08}),
+  prop:    new THREE.MeshStandardMaterial({color: 0x2b2520, roughness: .6, metalness: .3, transparent: true}),
+  spinner: new THREE.MeshStandardMaterial({color: 0xc9ced2, roughness: .22, metalness: .95}),
+};
+const ZERO = {fusMeshes: {}, wing: {}, prop: null, disc: null, gear: [], tail: null};
+
+// ---- fuselage: [z, half-width, top y, bottom y, widest-point y]; round cowl joins at z 2.05, tail cone ends at -5.55
+const ZFUS = [
+  [-5.55, .03, .27, .13, .20],
+  [-5.30, .08, .31, .03, .17],
+  [-4.90, .15, .37, -.11, .13],
+  [-4.30, .22, .43, -.25, .09],
+  [-3.60, .30, .50, -.38, .06],
+  [-2.80, .38, .56, -.50, .03],
+  [-2.00, .45, .60, -.59, .01],
+  [-1.20, .50, .61, -.65, .00],
+  [-0.40, .525, .62, -.67, .00],
+  [ 0.40, .535, .63, -.66, .00],
+  [ 1.10, .55, .62, -.63, .00],
+  [ 1.60, .565, .60, -.60, .00],
+  [ 2.05, .585, .585, -.585, .00],
+];
+const zTop = z => interp(ZFUS, 2, z), zBot = z => interp(ZFUS, 3, z);
+const zRing = (z, grow = 0) => {
+  const yc = interp(ZFUS, 4, z), n = 2 + .2 * sstep(1.4, .6, z);
+  return fusRing(z, interp(ZFUS, 1, z) + grow, zTop(z) - yc + grow, yc - zBot(z) + grow, yc, n, 2);
+};
+{
+  const rings = [], NZ = 110;
+  for (let i = 0; i <= NZ; i++) rings.push(zRing(-5.55 + 7.6 * (.5 - .5 * Math.cos(Math.PI * i / NZ))));
+  ZERO.fus = loft(rings, MZ.skin, {parent: zeroBody});
+  // red fuselage band aft of the hinomaru, wrapping the fuselage
+  const band = []; for (let i = 0; i <= 6; i++) band.push(zRing(-3.52 + .26 * i / 6, .005));
+  loft(band, MZ.red, {parent: zeroBody, shadow: false});
+}
+
+// ---- cowling (NACA, black), lip rolling into the intake; Sakae 14-cylinder two-row radial behind it
+{
+  const rings = [];
+  for (const [z, r] of [[2.03, .585], [2.3, .605], [2.7, .62], [2.98, .614], [3.1, .6], [3.17, .578], [3.2, .548], [3.19, .52], [3.14, .503], [3.0, .497]]) rings.push(fusRing(z, r, r, r, 0, 2));
+  loft(rings, MZ.cowl, {parent: zeroBody});
+  for (let k = 0; k < 7; k++) {                                     // front row
+    const a = k / 7 * Math.PI * 2 + .2;
+    cyl([Math.cos(a) * .17, Math.sin(a) * .17, 3.05], [Math.cos(a) * .44, Math.sin(a) * .44, 3.05], .075, .062, M.engine, 10, zeroBody);
+  }
+  for (let k = 0; k < 7; k++) {                                     // rear row, staggered
+    const a = (k + .5) / 7 * Math.PI * 2 + .2;
+    cyl([Math.cos(a) * .17, Math.sin(a) * .17, 3.01], [Math.cos(a) * .43, Math.sin(a) * .43, 3.01], .06, .05, M.engine, 8, zeroBody);
+  }
+  ellipsoid([0, 0, 3.1], [.2, .2, .12], M.engine, zeroBody);       // reduction gear housing
+  // oil cooler intake in the lower cowl lip
+  const oil = mk(new THREE.BoxGeometry(.3, .11, .34), MZ.cowl, zeroBody); oil.position.set(0, -.6, 3.0);
+  const oilMouth = mk(new THREE.PlaneGeometry(.26, .07), M.dark, zeroBody); oilMouth.position.set(0, -.6, 3.172);
+  // 7.7 mm gun troughs along the upper cowl
+  for (const s of [-1, 1]) { const tr = mk(new THREE.BoxGeometry(.045, .03, .78), M.dark, zeroBody); tr.position.set(s * .13, .598, 2.62); tr.rotation.x = -.012; }
+  // exhaust stubs, lower rear of the cowl
+  for (const s of [-1, 1]) cyl([s * .44, -.42, 2.18], [s * .52, -.48, 1.94], .045, .04, M.exhaust, 8, zeroBody);
+}
+
+// ---- wing: one piece, low-mounted, 6.5° dihedral outboard of the root, straight LE, TE swept forward, rounded tips
+const ZW = {half: 6.0, root: 2.55, roundAt: 4.85, rootY: -.5, dih: 6.5 * D, kink: .55, s: .12};
+const zWingY = x => { const sp = u => Math.log1p(Math.exp(u)); return ZW.rootY + Math.tan(ZW.dih) * ZW.s * (sp((x - ZW.kink) / ZW.s) - sp(-ZW.kink / ZW.s)); };
+const zLE0 = x => 1.25 - .07 * x, zTE0 = x => -1.30 + .17 * x;
+function zWingSec(x) {                                              // -> {le, c}
+  if (x <= ZW.roundAt) return {le: zLE0(x), c: zLE0(x) - zTE0(x)};
+  const c0 = zLE0(ZW.roundAt) - zTE0(ZW.roundAt), piv = zLE0(ZW.roundAt) - .38 * c0 - .07 * (x - ZW.roundAt);
+  const c = Math.max(.01, c0 * Math.pow(Math.max(0, 1 - ((x - ZW.roundAt) / (ZW.half - ZW.roundAt)) ** 2.2), .5));
+  return {le: piv + .38 * c, c};
+}
+for (const s of [-1, 1]) {
+  const rings = [];
+  for (let i = 0; i <= 72; i++) {
+    const x = ZW.half * (1 - Math.pow(1 - i / 72, 1.6)), {le, c} = zWingSec(x), yr = zWingY(x);
+    const af = airfoil(28, .155 - .07 * x / ZW.half, .02);
+    rings.push(af.map(([u, v]) => V3(s * x, yr + v * c, le - u * c)));
+  }
+  ZERO.wing[s] = loft(rings, MZ.skin, {parent: zeroBody});
+  // 20 mm Type 99 cannon barrels, outboard of the gear
+  const xc = 2.35, lc = zWingSec(xc).le, yc = zWingY(xc) - .02;
+  cyl([s * xc, yc, lc - .12], [s * xc, yc, lc + .34], .03, .022, M.dark, 8, zeroBody);
+}
+// pitot tube under the port wing
+{ const x = 4.6, le = zWingSec(x).le, y = zWingY(x) - .1; cyl([x, y + .08, le - .25], [x, y, le - .05], .012, .012, MZ.skin, 6, zeroBody); cyl([x, y, le - .3], [x, y, le + .4], .011, .009, M.metal, 6, zeroBody); }
+
+// ---- tail
+for (const s of [-1, 1]) {
+  const rings = [], half = 2.37;
+  for (let i = 0; i <= 30; i++) {
+    const x = half * (1 - Math.pow(1 - i / 30, 1.6)), f = x / half;
+    let le = -4.15 - .28 * f, c = 1.3 - .55 * f;
+    if (x > 1.8) { const k = Math.sqrt(Math.max(0, 1 - ((x - 1.8) / (half - 1.8)) ** 2)), qc = le - .35 * c; c = Math.max(.01, c * k); le = qc + .35 * c; }
+    rings.push(airfoil(20, .09).map(([u, v]) => V3(s * (.04 + x), .12 + v * c, le - u * c)));
+  }
+  loft(rings, MZ.skin, {parent: zeroBody});
+}
+{
+  const rings = [], H = 1.58;
+  for (let i = 0; i <= 34; i++) {
+    const y = H * (1 - Math.pow(1 - i / 34, 1.5)), f = y / H;
+    let le = -3.95 - 1.0 * Math.pow(f, 1.15), te = -5.64 + .05 * f, c = le - te;
+    if (y > 1.25) { const k = Math.sqrt(Math.max(0, 1 - ((y - 1.25) / (H - 1.25)) ** 2)), qc = le - .45 * c; c = Math.max(.01, c * k); le = qc + .45 * c; }
+    rings.push(airfoil(20, .1).map(([u, v]) => V3(v * c, y, le - u * c)));
+  }
+  ZERO.fin = loft(rings, MZ.skin, {parent: zeroBody});
+}
+
+// ---- canopy: windscreen, long framed sliding hood, rear glazing tapering into the spine
+{
+  const BASE = .4;
+  const CW = [[-2.45, .04], [-2.1, .2], [-1.7, .31], [-1.2, .37], [-.6, .39], [0, .39], [.35, .36], [.6, .27], [.75, .12]];
+  const CT = [[-2.45, .62], [-2.1, .76], [-1.7, .9], [-1.2, 1.0], [-.6, 1.04], [0, 1.035], [.35, .97], [.6, .82], [.75, .66]];
+  const pt = (z, a, grow = 0) => {
+    const cw = interp(CW, 1, z) + grow, ch = Math.max(.004, interp(CT, 1, z) - BASE) + grow, c = Math.cos(a), sn = Math.sin(a);
+    return V3(cw * Math.sign(c) * Math.abs(c) ** .75, BASE + ch * sn, z);
+  };
+  const arc = (z, grow = 0) => { const p = []; for (let j = 0; j <= 24; j++) p.push(pt(z, Math.PI * j / 24, grow)); return p; };
+  const rings = [];
+  for (let i = 0; i <= 50; i++) rings.push(arc(.75 - 3.2 * i / 50));
+  loft(rings, M.glass, {closed: false, parent: zeroBody, shadow: false});
+  const tube = (pts, r = .014) => mk(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), Math.max(8, pts.length * 2), r, 6), MZ.skin, zeroBody);
+  for (const z of [.6, .35, -.05, -.45, -.85, -1.25, -1.7, -2.1]) tube(arc(z, .01), z === .35 || z === -1.25 ? .02 : .013);
+  for (const a of [.62, Math.PI - .62]) { const p = []; for (let i = 0; i <= 20; i++) p.push(pt(.6 - 2.7 * i / 20, a, .01)); tube(p, .011); }
+  for (const a of [1.05, Math.PI - 1.05]) { const p = []; for (let i = 0; i <= 6; i++) p.push(pt(.6 - .25 * i / 6, a, .01)); tube(p, .012); }
+  // cockpit opening, pilot, seat back
+  const deck = zTop(-.3);
+  ZERO.pilot = [ellipsoid([0, deck - .012, -.35], [.34, .03, .95], M.cockpit, zeroBody), ellipsoid([0, deck + .04, -.55], [.23, .13, .16], M.flight, zeroBody), ellipsoid([0, deck + .2, -.5], [.115, .13, .13], M.helmet, zeroBody)];
+  const seat = mk(new THREE.BoxGeometry(.3, .26, .04), M.cockpit, zeroBody); seat.position.set(0, deck + .1, -.8); seat.rotation.x = -.12;
+  // radio mast behind the canopy, raked forward, wire to the fin
+  const mz = -2.6, mt = V3(0, zTop(mz) + .62, mz + .1);
+  cyl([0, zTop(mz) - .02, mz], mt.toArray(), .022, .01, MZ.skin, 6, zeroBody);
+  cyl(mt.toArray(), [0, 1.5, -5.1], .004, .004, M.dark, 4, zeroBody);
+}
+
+// ---- landing gear: mains retract inward into the centre section, tailwheel retracts aft
+for (const s of [-1, 1]) {
+  const x = 1.79, pivot = new THREE.Group();
+  pivot.position.set(s * x, zWingY(x) - .12, .55); pivot.name = 'zgear'; zeroBody.add(pivot);
+  cyl([0, 0, 0], [0, -.62, 0], .06, .058, M.metal, 12, pivot);
+  cyl([0, -.62, 0], [0, -1.05, 0], .045, .045, M.metal, 12, pivot);
+  const door = mk(new THREE.BoxGeometry(.025, 1.0, .44), MZ.skin, pivot); door.position.set(s * .07, -.58, .02);
+  const wheel = new THREE.Group(); wheel.position.y = -1.05; pivot.add(wheel);
+  const tire = mk(new THREE.CylinderGeometry(.3, .3, .17, 32), M.tire, wheel); tire.rotation.z = Math.PI / 2; tire.position.x = -s * .11;
+  const hub = mk(new THREE.CylinderGeometry(.15, .15, .18, 18), M.metal, wheel); hub.rotation.z = Math.PI / 2; hub.position.x = -s * .11;
+  ZERO.gear.push({pivot, s});
+}
+{
+  const z = -4.85, pivot = new THREE.Group();
+  pivot.position.set(0, zBot(z) + .05, z); pivot.name = 'ztail'; zeroBody.add(pivot);
+  cyl([0, 0, 0], [0, -.4, 0], .03, .026, M.metal, 8, pivot);
+  const t = mk(new THREE.CylinderGeometry(.12, .12, .07, 18), M.tire, pivot); t.rotation.z = Math.PI / 2; t.position.y = -.4;
+  ZERO.tail = pivot;
+}
+function applyZeroGear(e) {
+  for (const g of ZERO.gear) g.pivot.rotation.z = -g.s * (1 - e) * Math.PI / 2;
+  ZERO.tail.rotation.x = lerp(1.45, .18, e);
+}
+
+// ---- propeller: Sumitomo 3-blade constant-speed, 2.9 m, big silver spinner
+{
+  const pg = new THREE.Group(); pg.name = 'zprop'; pg.position.z = 3.28; zeroBody.add(pg); ZERO.prop = pg;
+  const L = .62, R0 = .27, sp = [];
+  for (let i = 0; i <= 24; i++) { const y = L * i / 24; sp.push(new THREE.Vector2(Math.max(.001, R0 * Math.pow(1 - (y / L) ** 2, .6)), y)); }
+  sp.unshift(new THREE.Vector2(.001, -.08), new THREE.Vector2(R0, -.08));
+  const sg = new THREE.LatheGeometry(sp, 40); sg.rotateX(Math.PI / 2);
+  mk(sg, MZ.spinner, pg);
+  const R = 1.45, af = airfoil(14, 1), ring = f => {
+    const r = f * R, beta = Math.atan(2.6 / (2 * Math.PI * Math.max(r, .25)));
+    let c = .1 + .13 * Math.sin(Math.PI * f ** .9);
+    if (f > .86) c *= Math.sqrt(Math.max(0, 1 - ((f - .86) / .14) ** 2));
+    c = Math.max(c, .006);
+    const t = .06 + .35 * (1 - sstep(.15, .4, f));
+    const cd = V3(Math.cos(beta), 0, -Math.sin(beta)), nd = V3(Math.sin(beta), 0, Math.cos(beta));
+    return af.map(([u, v]) => V3(0, r, 0).addScaledVector(cd, (u - .35) * c).addScaledVector(nd, v * t * c));
+  };
+  for (let b = 0; b < 3; b++) {
+    const g = new THREE.Group(); g.rotation.z = b * Math.PI * 2 / 3; pg.add(g);
+    const blade = []; for (let i = 0; i <= 34; i++) blade.push(ring(.15 + .85 * (1 - (1 - i / 34) ** 1.3)));
+    loft(blade, MZ.prop, {parent: g});
+  }
+  const c = document.createElement('canvas'); c.width = c.height = 256;
+  const x = c.getContext('2d'), gr = x.createRadialGradient(128, 128, 0, 128, 128, 128);
+  gr.addColorStop(0, 'rgba(40,34,28,0)'); gr.addColorStop(.18, 'rgba(40,34,28,0)'); gr.addColorStop(.22, 'rgba(40,34,28,.26)');
+  gr.addColorStop(.7, 'rgba(40,34,28,.2)'); gr.addColorStop(.97, 'rgba(40,34,28,.1)'); gr.addColorStop(1, 'rgba(40,34,28,0)');
+  x.fillStyle = gr; x.fillRect(0, 0, 256, 256);
+  const tx = new THREE.CanvasTexture(c); tx.colorSpace = THREE.SRGBColorSpace;
+  ZERO.disc = new THREE.Mesh(new THREE.CircleGeometry(R, 64), new THREE.MeshBasicMaterial({map: tx, transparent: true, depthWrite: false, side: THREE.DoubleSide, opacity: 0}));
+  ZERO.disc.position.z = .01; pg.add(ZERO.disc);
+}
+
+// ---- markings: hinomaru (fuselage, upper and lower wings), red fin code
+applyZeroGear(1); aircraft.updateMatrixWorld(true);
+{
+  const hino = decalMat(canvasTex(256, 256, x => { x.fillStyle = '#b3171d'; x.beginPath(); x.arc(128, 128, 124, 0, Math.PI * 2); x.fill(); }));
+  const code = decalMat(canvasTex(512, 128, x => {
+    x.fillStyle = '#b3171d'; x.font = '700 92px "Arial Narrow",Arial,sans-serif'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText('EII-142', 256, 68);
+  }));
+  const up = V3(0, 1, 0), fwdZ = V3(0, 0, 1), z = -2.78, zc = (zTop(z) + zBot(z)) / 2 + .02;
+  for (const s of [-1, 1]) {
+    placeDecal(ZERO.fus, V3(s * 5, zc, z), V3(-s, 0, 0), up, V3(.84, .84, 1.0), hino, zeroBody);
+    placeDecal(ZERO.fin, V3(s * 5, .78, -4.98), V3(-s, 0, 0), up, V3(1.05, .26, .12), code, zeroBody);
+    const wx = 4.0, {le, c} = zWingSec(wx), wz = le - .46 * c;
+    placeDecal(ZERO.wing[s], V3(s * wx, 6, wz), V3(0, -1, 0), fwdZ, V3(1.15, 1.15, .3), hino, zeroBody);
+    placeDecal(ZERO.wing[s], V3(s * wx, -6, wz), V3(0, 1, 0), fwdZ, V3(1.15, 1.15, .3), hino, zeroBody);
+  }
+}
+zeroBody.visible = false;
 
 // ---------------------------------------------------------------- clouds (sprite cumulus)
 const cloudTex = canvasTex(128, 128, x => {
@@ -2074,6 +2330,7 @@ function updateWeather(dt, bp, speed) {
   WAVE.a.x += dt * .006 * k; WAVE.b.y -= dt * .004 * k;
   M.paint.clearcoat = lerp(.35, .9, WX.kRain); M.paint.clearcoatRoughness = lerp(.3, .08, WX.kRain);
   M.hull.clearcoat = M.paint.clearcoat; M.hull.clearcoatRoughness = M.paint.clearcoatRoughness;
+  MZ.skin.clearcoat = lerp(.15, .9, WX.kRain); MZ.skin.clearcoatRoughness = lerp(.35, .08, WX.kRain);
   island.userData.reef.material.color.setScalar(lerp(1, .42, k) * (1 + .5 * f));   // lagoon dulls under the deck
   const ax = aircraft.position.x, az = aircraft.position.z;
   for (const cl of cloudClusters) {                                       // puffs dissolve and grey as the deck reaches them
@@ -2145,7 +2402,7 @@ function setBlueprint(on) {
   decals.forEach(d => d.visible = !on);
   env.forEach(o => o.visible = !on);
   island.visible = !on && showIsland;
-  propDisc.visible = !on;
+  propDisc.visible = !on; ZERO.disc.visible = !on;
   scene.fog = on ? null : fog;
   document.body.classList.toggle('bp', on);
 }
@@ -2228,7 +2485,9 @@ function renderCockpit() {
   renderer.autoClear = true; renderer.shadowMap.autoUpdate = true;
 }
 function setCam(m) {
-  mode = m; CHASE.init = false;
+  if (m === 'cockpit' && zeroShown) { showMsg('ZERO COCKPIT NOT BUILT YET · Z for the Corsair', 3); fmHud(0); $('camera').value = mode; return; }
+  if ((m === 'cockpit' || m === 'top' || m === 'front' || m === 'side') && CAM.subj !== 'player') { CAM.subj = 'player'; CAM.havePrev = false; }
+  mode = m; CHASE.init = false; CAM.init = false; CAM.park = null; CAM.havePrev = false;
   const names = {orbit: 'Orbit', chase: 'Chase', top: 'Plan', front: 'Front', side: 'Side', cockpit: 'Cockpit'};
   const wasCockpit = inCockpit; setCockpit(m === 'cockpit');
   if (wasCockpit && m !== 'cockpit') camera.position.copy(aircraft.position).add(ORBIT_OFFSET.clone().applyQuaternion(yawQ));
@@ -2236,11 +2495,13 @@ function setCam(m) {
   const bp = m === 'top' || m === 'front' || m === 'side';
   setBlueprint(bp);
   controls.enabled = m === 'orbit';
-  if (bp) { ortho.zoom = 1; ortho.updateProjectionMatrix(); $('bpTitle').innerHTML = `F4U-1D CORSAIR<br>${BP_TITLES[m]}<br>SPAN 12.50 m · LENGTH 10.10 m`; }
-  if (m === 'orbit') { camera.up.set(0, 1, 0); controls.target.copy(aircraft.position); controls.update(); }
+  if (bp) { ortho.zoom = 1; ortho.updateProjectionMatrix(); $('bpTitle').innerHTML = zeroShown ? `A6M2 TYPE 0 MODEL 21<br>${BP_TITLES[m]}<br>SPAN 12.00 m · LENGTH 9.06 m` : `F4U-1D CORSAIR<br>${BP_TITLES[m]}<br>SPAN 12.50 m · LENGTH 10.10 m`; }
+  if (m === 'orbit') { camera.up.set(0, 1, 0); subjectPose(); orbitNear(); controls.target.copy(SP.pos); controls.update(); }
+  if (!inCockpit) setFov(45);
+  camLabel();
 }
 function resetView() {
-  fmStop();
+  fmStop(); fightStop(); CAM.subj = 'player'; CAM.style = 'chase';
   flying = false; blend = 0; phi = 0; t = 0; updateFlightButton();
   for (const [id, txt] of [['bank', '0°'], ['pitch', '0°']]) { $(id).value = 0; ui[id] = 0; $(id + 'Text').textContent = txt; }
   placeAircraft();
@@ -2248,9 +2509,20 @@ function resetView() {
   setCam('orbit');
 }
 function updateFlightButton() { $('flight').textContent = 'Flight: ' + (flying ? 'ON' : 'OFF'); $('flight').classList.toggle('active', flying); }
+let zeroShown = false;
+function setType(z) {
+  if (z && inCockpit) setCam('orbit');
+  zeroShown = z; corsairBody.visible = !z; zeroBody.visible = z;
+  $('type').value = z ? 'zero' : 'f4u'; $('typeLabel').textContent = z ? 'A6M2' : 'F4U-1D';
+  $('typeName').textContent = z ? 'A6M2 ZERO' : 'F4U-1D CORSAIR';
+  $('typeSub').textContent = z ? 'Mitsubishi · IJN · Pacific 1942' : 'Chance Vought · US Navy · Pacific 1944';
+  document.title = (z ? 'A6M2 Zero' : 'F4U-1D Corsair') + ' | Interactive 3D';
+  if (document.body.classList.contains('bp')) setCam(mode);
+}
 function setGear(down) { gear.target = down ? 1 : 0; $('gear').textContent = 'Gear: ' + (down ? 'DOWN' : 'UP'); $('gear').classList.toggle('active', down); }
 
 $('camera').onchange = e => { setCam(e.target.value); e.target.blur(); };
+$('type').onchange = e => { if (FM.on && e.target.value === 'zero') { e.target.value = 'f4u'; showMsg('THE FLIGHT MODEL IS THE CORSAIR\'S FOR NOW', 3); } else setType(e.target.value === 'zero'); e.target.blur(); };
 document.querySelectorAll('#panel button, #panel input').forEach(el => el.addEventListener('pointerup', () => setTimeout(() => el.blur(), 0)));   // keep keys on the sim
 $('reset').onclick = resetView;
 $('rpm').oninput = e => { ui.rpm = +e.target.value; $('rpmText').textContent = ui.rpm; if (FM.on) FM.thr = clamp((ui.rpm - 600) / 2100, 0, 1); };
@@ -2271,6 +2543,15 @@ $('flaps').onclick = () => { FM.flaps = FM.flaps ? 0 : 1; flapsUI(); };
 $('brakes').onclick = () => { FM.park = !FM.park; brakesUI(); };
 $('flyRwy').onclick = () => fmStart(false);
 $('flyAir').onclick = () => fmStart(true);
+$('fight').onclick = () => fmStart('fight');
+$('watch').onclick = () => { fmStart('fight'); autoOn(); };
+$('autoBtn').onclick = () => { if (AUTO.on) autoOff(); else autoOn(); };
+$('camStyleBtn').onclick = nextCamStyle;
+$('camSubjBtn').onclick = nextSubject;
+$('photoBtn').onclick = photo;
+$('recBtn').onclick = toggleRec;
+$('cleanBtn').onclick = toggleClean;
+$('unclean').onclick = toggleClean;
 $('storm').oninput = e => { WX.p = +e.target.value / 100; WX.rate = 0; stormUI(); };
 $('stormBtn').onclick = () => {
   if (WX.rate > 0 || WX.p > .99) { WX.target = 0; WX.rate = -Math.max(WX.p, .01) / 40; }   // clear over ~40 s
@@ -2297,21 +2578,27 @@ $('terrain').onclick = () => {
 addEventListener('keydown', e => {
   if (e.target.tagName === 'SELECT') return;
   if (e.code === 'Space') { e.preventDefault(); if (!FM.on && !e.repeat) $('flight').click(); }
+  if (e.code === 'Tab') e.preventDefault();
   if (e.repeat && e.key !== '.') return;
   if (e.key === 'Enter') { e.preventDefault(); fmStart(e.shiftKey); }
+  if (e.key === 'Escape') { setPause(!paused); return; }
   const k = e.key.toLowerCase();
-  if (k === 'v') $('flaps').click();
+  if (k === 'v' || e.code === 'Tab') { if (e.shiftKey && k === 'v') nextSubject(); else nextCamStyle(); }
+  if (k === 'f') { if (e.shiftKey) $('fogBtn').click(); else $('flaps').click(); }
   if (k === 'b') $('brakes').click();
-  if (k === 'r') resetView();
+  if (k === 'r') { if (e.shiftKey) resetView(); else toggleRec(); }
+  if (k === 'p') photo();
+  if (k === 'c') toggleClean();
+  if (k === 'j') { if (AUTO.on) autoOff(); else autoOn(); }
   if (k === 'g') $('gear').click();
   if (k === 'i') $('terrain').click();
+  if (k === 'k') { fmStart('fight'); if (e.shiftKey) autoOn(); }
+  if (k === 'z') { $('type').value = zeroShown ? 'f4u' : 'zero'; $('type').onchange({target: $('type')}); }
   if (k === 't') $('stormBtn').click();
   if (k === 'l') { if (e.shiftKey) { strike(true, true); WX.flashT = .082; setPause(true); } else strike(true); }   // .082 s = peak of the main return stroke
-  if (k === 'p') setPause(!paused);
   if (e.key === '.' && paused) stepFrames++;
   if (k === 'm') $('sound').click();
   if (k === 'n') $('rainBtn').click();
-  if (k === 'f') $('fogBtn').click();
   const modes = ['orbit', 'chase', 'top', 'front', 'side', 'cockpit'];
   if (k >= '1' && k <= '6') setCam(modes[+k - 1]);
 });
@@ -2339,7 +2626,7 @@ const FM = {
   thr: 0, pwr: 0, flaps: 0, flapT: 0, park: false, brake: 0, padBrake: false,
   key: {elev: 0, ail: 0, rud: 0}, inp: {elev: 0, ail: 0, rud: 0},
   ias: 0, alpha: 0, beta: 0, g: 1, gRaw: 1, stall: 0, wow: 0, agl: 0, trimA: 0, shake: 0, time: 0,
-  msg: '', msgT: 0, msgWarn: false, airborne: false, lastVy: 0,
+  msg: '', msgT: 0, msgWarn: false, airborne: false, lastVy: 0, hp: 60, killed: '', padFire: false,
 };
 const clBase = f => .2 + .45 * f, clMax = f => 1.45 + .45 * f, clMin = f => -.95 + .2 * f;
 const aStall = f => (clMax(f) - clBase(f)) / FM.CLA, aNeg = f => (clMin(f) - clBase(f)) / FM.CLA;
@@ -2381,6 +2668,7 @@ const _va = new THREE.Vector3(), _vb = new THREE.Vector3(), _F = new THREE.Vecto
 const _r = new THREE.Vector3(), _p = new THREE.Vector3(), _vp = new THREE.Vector3(), _f = new THREE.Vector3(), _s = new THREE.Vector3(), _u = new THREE.Vector3(), _wW = new THREE.Vector3();
 
 function crash(why) {
+  if (FM.killed) why = FM.killed;
   FM.crashed = why; FM.vel.set(0, 0, 0); FM.w.set(0, 0, 0); FM.thr = FM.pwr = 0;
   showMsg(why.toUpperCase() + '\nEnter: runway · Shift+Enter: air start · R: reset', 1e9, true);
 }
@@ -2424,7 +2712,10 @@ function fmStep(h) {
   FM.trimA += (clamp(a1g, -.05, FM.wow ? 10 * D : aStall(f) - 2.5 * D) - FM.trimA) * Math.min(1, h * 2.5);
   const eRange = Math.min(12 * D, 6 * m * 9.81 / (Math.max(qbar, 1) * S * FM.CLA));   // full stick ≈ +6 g over trim
   const ac = clamp(alpha, -.5, .5), bc = clamp(beta, -.5, .5), kd = WX.kDark;
-  const pUp = -FM.w.x;
+  // pitch damping acts on the nose moving relative to the flight path (alpha rate), not on the turn itself:
+  // damping the whole body pitch rate ate ~5° of the stick's alpha in a steady pull and capped it near 4 g
+  const wPath = FM.wow ? 0 : sstep(25, 45, V) * (cl * qbar * S / m - 9.81 * _Y.y) / Math.max(V, 20);
+  const pUp = -FM.w.x - wPath;
   const dPitchUp = 2.0e-3 * (qbar * (FM.trimA - ac) + qT * FM.inp.elev * eRange) - (.058 * sqT + .3) * pUp + (fbm(T0 * 1.6, 5.3, 3) - .5) * 1.2 * kd;
   const dYaw = 1.0e-3 * (qbar * bc - qT * FM.inp.rud * .3) - (.032 * sqT + .3) * FM.w.y;
   const eff = sstep(0, 70, V) * (1 - .35 * sstep(130, 185, V)) * (1 - .6 * st);
@@ -2482,7 +2773,7 @@ function fmStep(h) {
 
 // ---- input: keyboard ramps, gamepad overrides when deflected further
 const KEYS = new Set();
-const FLY_CODES = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyQ', 'KeyE', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Equal', 'Minus', 'NumpadAdd', 'NumpadSubtract', 'PageUp', 'PageDown', 'Space']);
+const FLY_CODES = new Set(['KeyX', 'KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyQ', 'KeyE', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Equal', 'Minus', 'NumpadAdd', 'NumpadSubtract', 'PageUp', 'PageDown', 'Space']);
 addEventListener('keydown', e => {
   if (e.target.tagName === 'SELECT' || e.target.tagName === 'INPUT') return;
   if (FLY_CODES.has(e.code)) { KEYS.add(e.code); if (FM.on) e.preventDefault(); }
@@ -2495,7 +2786,7 @@ function fmInput(dt) {
   const e = k('KeyS', 'ArrowDown') - k('KeyW', 'ArrowUp'), a = k('KeyD', 'ArrowRight') - k('KeyA', 'ArrowLeft'), r = k('KeyE') - k('KeyQ');
   K.elev = toward(K.elev, e, (e ? 2.2 : 4) * dt); K.ail = toward(K.ail, a, (a ? 3.5 : 6) * dt); K.rud = toward(K.rud, r, (r ? 2.5 : 4) * dt);
   FM.thr = clamp(FM.thr + (k('Equal', 'NumpadAdd', 'PageUp') - k('Minus', 'NumpadSubtract', 'PageDown')) * .45 * dt, 0, 1);
-  let pe = 0, pa = 0, pr = 0; FM.padBrake = false;
+  let pe = 0, pa = 0, pr = 0; FM.padBrake = false; FM.padFire = false;
   for (const gp of navigator.getGamepads ? navigator.getGamepads() : []) {
     if (!gp || !gp.connected) continue;
     const dz = v => Math.abs(v) < .08 ? 0 : (v - Math.sign(v) * .08) / .92, ax = i => i < gp.axes.length ? dz(gp.axes[i]) : 0;
@@ -2503,17 +2794,21 @@ function fmInput(dt) {
     if (gp.mapping === 'standard') {                            // right stick X rudder, RT/LT throttle, A brakes
       pr = ax(2);
       FM.thr = clamp(FM.thr + ((gp.buttons[7]?.value ?? 0) - (gp.buttons[6]?.value ?? 0)) * .6 * dt, 0, 1);
-      FM.padBrake = !!gp.buttons[0]?.pressed;
+      FM.padBrake = !!gp.buttons[0]?.pressed; FM.padFire = !!(gp.buttons[5]?.pressed || gp.buttons[1]?.pressed);
     }
     break;
   }
   const pick = (kv, pv) => Math.abs(kv) >= Math.abs(pv) ? kv : pv;
   if (FM.crashed) { pe = pa = pr = 0; K.elev = K.ail = K.rud = 0; }
   FM.inp.elev = pick(K.elev, pe); FM.inp.ail = pick(K.ail, pa); FM.inp.rud = pick(K.rud, pr);
+  if (FM.killed) { FM.thr = 0; FM.inp.elev = .15; FM.inp.ail = .45; FM.inp.rud = .3; }   // engine gone, controls shot away
+  else if (FM.hp < 30) FM.thr = Math.min(FM.thr, .65);
 }
 
 // ---- frame driver, start / stop
 function fmFrame(dt) {
+  if (AUTO.on && FIGHT.on && !FM.crashed) autoFly(dt);
+  if (AUTO.on && FIGHT.on && !FM.crashed) {} else {
   fmInput(dt);
   FM.flapT = toward(FM.flapT, FM.flaps, dt / 4);
   if (FM.park && FM.thr > .4 && !FM.crashed) { FM.park = false; brakesUI(); showMsg('PARKING BRAKE RELEASED', 2); }   // can't hold takeoff power anyway
@@ -2524,6 +2819,7 @@ function fmFrame(dt) {
   if (!FM.crashed) {
     if (!FM.airborne && !FM.wow && FM.agl > 3) FM.airborne = true;
     if (FM.airborne && !wasWow && FM.wow) { const fpm = Math.round(-FM.lastVy * 196.85 / 10) * 10; showMsg(`TOUCHDOWN · ${fpm} fpm`, 3, fpm > 700); FM.airborne = false; }
+  }
   }
   aircraft.quaternion.copy(FM.q);
   aircraft.position.copy(FM.CG).negate().applyQuaternion(FM.q).add(FM.pos);
@@ -2539,6 +2835,11 @@ function flapsUI() { $('flaps').textContent = 'Flaps: ' + (FM.flaps ? 'DOWN' : '
 function brakesUI() { $('brakes').textContent = 'Brake: ' + (FM.park ? 'SET' : 'OFF'); $('brakes').classList.toggle('active', FM.park); }
 function fmStart(air) {
   if (paused) setPause(false);
+  if (AUTO.on) { AUTO.on = false; autoUI(); }
+  if (zeroShown) setType(false);
+  const fight = air === 'fight';
+  FM.hp = 60; FM.killed = '';
+  if (!fight) fightStop();                              // manual flight is the Corsair's model; the Zero flies in the circuit
   flying = false; blend = 0; updateFlightButton();
   Object.assign(FM, {on: true, crashed: '', airborne: air, time: 0, wow: 0, g: 1, gRaw: 1, stall: 0, flaps: 0, flapT: 0, msgT: 0});
   FM.w.set(0, 0, 0); Object.assign(FM.key, {elev: 0, ail: 0, rud: 0}); Object.assign(FM.inp, {elev: 0, ail: 0, rud: 0});
@@ -2547,11 +2848,11 @@ function fmStart(air) {
   const c = Math.cos(RW.ang), s = Math.sin(RW.ang), X = V3(1, 0, 0);
   const qY = new THREE.Quaternion().setFromAxisAngle(Y, Math.atan2(c, s)), qP = new THREE.Quaternion();   // nose along the runway, eastbound
   if (air) {                                                  // straight-in: 4.4 km west on the extended centreline, 1,000 ft, clean
-    const p = rwWorld(-4400, 0), V = 95, a = (FM.mass * 9.81 / (.5 * 1.225 * V * V * FM.S) - clBase(0)) / FM.CLA;
+    const p = rwWorld(fight ? -6500 : -4400, 0), V = fight ? 130 : 95, a = (FM.mass * 9.81 / (.5 * 1.225 * V * V * FM.S) - clBase(0)) / FM.CLA;
     FM.q.copy(qY).multiply(qP.setFromAxisAngle(X, -a));
-    FM.pos.set(ISLE.x + p.x, WATER_Y + 300, ISLE.z + p.z);
+    FM.pos.set(ISLE.x + p.x, WATER_Y + (fight ? 1220 : 300), ISLE.z + p.z);
     FM.vel.set(c, 0, s).multiplyScalar(V);
-    FM.thr = FM.pwr = .5; FM.trimA = a; FM.park = false;
+    FM.thr = FM.pwr = fight ? .85 : .5; FM.trimA = a; FM.park = false;
     gear.t = 0; setGear(false);
   } else {                                                    // west end of the strip, three-point attitude, brake set
     const p = rwWorld(-RW.half + 30, 0), mainP = GEAR_PTS[0].p, tailP = GEAR_PTS[2].p;
@@ -2572,31 +2873,20 @@ function fmStart(air) {
   ui.rpm = 600 + 2100 * FM.pwr;
   fmFrame(0); CHASE.init = false;
   if (mode !== 'cockpit' && mode !== 'chase') setCam('chase');
+  if (fight) { fightStart(); showMsg('ZERO LOW AHEAD · CROSSING · HASN\'T SEEN YOU\nyou have 2,000 ft on him: dive, shoot, zoom back up\nnever turn with him · wingman on your right · X fires', 8); return; }
   showMsg(air ? 'AIR START · straight-in for the strip, 1,000 ft\nG gear · V flaps · =/− throttle' : 'ON THE STRIP · BRAKE SET\nhold = for power (brake lets go at 40%)\nrotate ~100 kt clean, ~90 kt with flaps', 7);
 }
 function fmStop() {
+  fightStop();
   if (!FM.on) return;
   FM.on = false; FM.crashed = ''; FM.msgT = 0; FM.shake = 0;
   for (const id of ['bank', 'pitch']) $(id).disabled = false;
 }
 const CHASE = {off: new THREE.Vector3(), up: new THREE.Vector3(0, 1, 0), init: false};
-const _cw = new THREE.Vector3(), _cu = new THREE.Vector3();
-function chaseManual(dt) {
-  _cw.set(0, 3.3, -15).applyQuaternion(aircraft.quaternion);
-  if (!CHASE.init) { CHASE.off.copy(_cw); CHASE.up.set(0, 1, 0); CHASE.init = true; }
-  CHASE.off.lerp(_cw, 1 - Math.exp(-dt * 3.5));
-  camera.position.copy(aircraft.position).add(CHASE.off);
-  camera.position.y = Math.max(camera.position.y, surfaceAt(camera.position.x, camera.position.z).y + 1.2);
-  _cu.set(0, 1, 0).applyQuaternion(aircraft.quaternion).multiplyScalar(.55); _cu.y += .45; _cu.normalize();
-  CHASE.up.lerp(_cu, 1 - Math.exp(-dt * 3)).normalize(); camera.up.copy(CHASE.up);
-  camera.lookAt(_cw.copy(aircraft.position).addScaledVector(fwd, 6));
-  const sh = FM.shake * .25 + WX.kDark * .3;
-  camera.position.y += (fbm(t * 7, 2.2, 2) - .5) * sh; camera.position.x += (fbm(t * 6, 5.5, 2) - .5) * sh;
-}
 function fmHud(dt) {
   const el = $('msg'); let txt = '', warn = false;
   if (FM.msgT > 0) { FM.msgT -= dt; txt = FM.msg; warn = FM.msgWarn; }
-  else if (FM.on && !FM.crashed) {
+  else if (FM.on && !FM.crashed && !AUTO.on) {
     if (!FM.wow && FM.stall > .05) { txt = 'STALL'; warn = true; }
     else if (!FM.wow && FM.ias > 15 && FM.alpha > aStall(FM.flapT) - 2.5 * D) { txt = 'STALL WARNING'; warn = true; }
     else if (!FM.wow && gear.target < .5 && FM.agl < 90 && FM.ias < 70 && FM.thr < .35) { txt = 'GEAR UP'; warn = true; }
@@ -2612,7 +2902,7 @@ function fmHud(dt) {
   $('status').innerHTML = `IAS ${Math.round(FM.ias * 1.944)} kt · ALT ${alt.toLocaleString()} ft · VS ${vs >= 0 ? '+' : ''}${vs} fpm`
     + `<br>HDG ${String(Math.round(headingDeg()) % 360).padStart(3, '0')} · G ${FM.g.toFixed(1)} · AoA ${Math.round(FM.alpha / D)}° · THR ${Math.round(FM.thr * 100)}%`
     + `<br>GEAR ${gs} · FLAPS ${fs}${FM.wow ? ' · ON GROUND' : ''}${FM.brake ? ' · BRAKES' : ''}`
-    + (rngM > 1500 ? `<br>STRIP ${(rngM / 1852).toFixed(1)} nm · BRG ${String(brg).padStart(3, '0')}` : '');
+    + (rngM > 1500 ? `<br>STRIP ${(rngM / 1852).toFixed(1)} nm · BRG ${String(brg).padStart(3, '0')}` : '') + fightStatus();
 }
 
 // ---------------------------------------------------------------- photo mode: freeze the simulation, cameras stay live
@@ -2621,6 +2911,801 @@ function setPause(on) {
   paused = on; document.body.classList.toggle('paused', on);
   if (AU.ctx) on ? AU.ctx.suspend() : (AU.on && AU.ctx.resume());
 }
+
+
+// ---------------------------------------------------------------- dogfight: AI Zero, AI wingman, guns, tracers, damage, smoke
+// Both AI aircraft fly the same point-mass energy model with their own numbers: lift along the aircraft's up vector,
+// load factor limited by CLmax and structure, induced + parasite drag, constant-power thrust. Each rolls its lift
+// vector toward the turn it wants (roll rate falls off with speed, sharply for the Zero) and pulls.
+// The Zero's float carburettor starves under negative g: push over with one on your tail and, if it follows you
+// down with a pushover instead of a half-roll, its engine cuts for a couple of seconds (the Akutan Zero finding).
+// The wingman flies combat spread on your right and turns into a Zero that's chasing you: the Thach Weave idea.
+const AIT = {
+  zero: {m: 2410, S: 22.44, AR: 6.4, e: .78, CD0: .022, P: 700e3, eta: .8, Tmax: 11000, CLmax: 1.45, nMax: 6.5, nMin: -1.6,
+    hp: 20, roll0: 1.7, roll1: .45, rv0: 95, rv1: 150, rollAcc: 7, vm: 750, floatCarb: true, span: 5.8, cg: 0, smoke: [0, .2, 1.5], rpm: 1300},
+  f4u:  {m: 5450, S: 29.17, AR: 5.36, e: .78, CD0: .021, P: 1.49e6, eta: .85, Tmax: 30000, CLmax: 1.45, nMax: 7, nMin: -2,
+    hp: 60, roll0: 1.5, roll1: 1.1, rv0: 100, rv1: 190, rollAcc: 6, vm: 870, floatCarb: false, span: 6.1, cg: 1.55, smoke: [0, .3, 3.6], rpm: 1200},
+};
+const GUN = {v: 870, conv: 300};
+const FIGHT = {on: false, kills: 0, wingKills: 0, ammo: 30, fireT: 0, side: 1, hitFlash: 0, callT: 0, cutT: 0, smokeT: 0};
+const PLAYER = {team: 0, isPlayer: true, P: {span: 6.1, cg: 0}, get pos() { return FM.pos; }, get vel() { return FM.vel; }, get quat() { return FM.q; }};
+const alive = e => e && (e.isPlayer ? FM.on && !FM.crashed && !FM.killed : e.state === 'alive');
+function aiBrain(type, team) {
+  return {type, P: AIT[type], team, pos: V3(0, 0, 0), vel: V3(0, 0, 0), up: V3(0, 1, 0), upCmd: V3(0, 1, 0),
+    lastD: V3(0, 0, 1), los: V3(0, 0, 0), haveD: false, n: 1, nCmd: 1, hp: 0, state: 'off', mode: 'fight', evade: 0, tgt: null, threat: null,
+    t7: 0, t20: 0, cannon: 0, ammo: 0, fireT: 0, side: 1, smokeT: 0, respawn: 0, spin: 0, alpha: 0, thr: 1, cut: 0, negT: 0, pusher: true, lastHitBy: null, patrolT: 0, pushT: 0, noPush: 0, extend: 0, extendT: 0, p: 0};
+}
+function makeAI(type, team, src) {
+  const g = src.clone(true); g.visible = false;
+  const e = Object.assign(aiBrain(type, team), {g, quat: g.quaternion});
+  e.propMats = new Map();
+  g.traverse(o => {
+    if (!o.isMesh) return;
+    if (o.material === M.hull) { o.material = M.paint; o.customDepthMaterial = undefined; }        // no cockpit cut-away on clones
+    if (o.material === M.prop || o.material === M.tip || o.material === MZ.prop || o.material === propDisc.material || o.material === ZERO.disc.material) {
+      const disc = o.material === propDisc.material || o.material === ZERO.disc.material;
+      if (!e.propMats.has(o.material)) e.propMats.set(o.material, {m: o.material.clone(), disc});
+      o.material = e.propMats.get(o.material).m;
+    }
+  });
+  if (type === 'zero') {
+    for (const p of g.getObjectsByProperty('name', 'zgear')) p.rotation.z = -Math.sign(p.position.x) * Math.PI / 2;
+    g.getObjectByName('ztail').rotation.x = 1.45;
+    e.prop = g.getObjectByName('zprop');
+  } else {
+    for (const p of g.getObjectsByProperty('name', 'cgear')) { const s = Math.sign(p.position.x); p.rotation.x = Math.PI / 2; p.getObjectByName('cwheel').rotation.y = s * Math.PI / 2; }
+    g.getObjectByName('ctail').rotation.x = 1.5;
+    e.prop = g.getObjectByName('cprop');
+    g.getObjectByName('ccockpit').visible = false;
+  }
+  g.traverse(o => o.layers.set(0));
+  scene.add(g);
+  return e;
+}
+
+// ---- particles: smoke, fire, splashes, hit sparks (one Points cloud, soft round sprites, fogged in the shader)
+const PFX = (() => {
+  const N = 2400, pos = new Float32Array(N * 3), size = new Float32Array(N), alpha = new Float32Array(N), col = new Float32Array(N * 3);
+  const vel = new Float32Array(N * 3), life = new Float32Array(N), max = new Float32Array(N), s0 = new Float32Array(N), s1 = new Float32Array(N);
+  const a0 = new Float32Array(N), drag = new Float32Array(N), acc = new Float32Array(N);
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3).setUsage(THREE.DynamicDrawUsage));
+  geo.setAttribute('aSize', new THREE.BufferAttribute(size, 1).setUsage(THREE.DynamicDrawUsage));
+  geo.setAttribute('aAlpha', new THREE.BufferAttribute(alpha, 1).setUsage(THREE.DynamicDrawUsage));
+  geo.setAttribute('aColor', new THREE.BufferAttribute(col, 3).setUsage(THREE.DynamicDrawUsage));
+  const U = {uScale: {value: 600}, uLit: {value: 1}, uFogCol: {value: new THREE.Color()}, uFogD: {value: 0}};
+  const mat = new THREE.ShaderMaterial({uniforms: U, transparent: true, depthWrite: false,
+    vertexShader: `attribute float aSize; attribute float aAlpha; attribute vec3 aColor; uniform float uScale; uniform float uFogD;
+      varying float vA; varying vec3 vC; varying float vF;
+      void main() { vec4 mv = modelViewMatrix * vec4(position, 1.); gl_Position = projectionMatrix * mv;
+        gl_PointSize = aAlpha > 0. ? clamp(aSize * uScale / -mv.z, 0., 320.) : 0.;
+        vA = aAlpha * smoothstep(5., 18., -mv.z); vC = aColor; float d = uFogD * -mv.z; vF = 1. - exp(-d * d); }`,   // fade puffs right at the lens
+    fragmentShader: `uniform float uLit; uniform vec3 uFogCol; varying float vA; varying vec3 vC; varying float vF;
+      void main() { float d = length(gl_PointCoord - .5), a = smoothstep(.5, .1, d) * vA; if (a < .004) discard;
+        gl_FragColor = vec4(mix(vC * uLit, uFogCol, vF), a * (1. - .6 * vF)); }`});
+  const pts = new THREE.Points(geo, mat); pts.frustumCulled = false; scene.add(pts);
+  let head = 0, live = 0;
+  // emit(p, v, life, size0, size1, alpha, [r,g,b] display colour, drag, vertical accel)
+  function emit(p, v, l, sa, sb, al, c, dr = .6, ac = 1.2) {
+    const i = head; head = (head + 1) % N;
+    pos[i * 3] = p.x; pos[i * 3 + 1] = p.y; pos[i * 3 + 2] = p.z; vel[i * 3] = v.x; vel[i * 3 + 1] = v.y; vel[i * 3 + 2] = v.z;
+    life[i] = max[i] = l; s0[i] = sa; s1[i] = sb; a0[i] = al; col[i * 3] = c[0]; col[i * 3 + 1] = c[1]; col[i * 3 + 2] = c[2]; drag[i] = dr; acc[i] = ac;
+    live = N;
+  }
+  function update(dt) {
+    U.uScale.value = renderer.getDrawingBufferSize(_pv2).y / (2 * Math.tan(camera.fov * D / 2));
+    U.uLit.value = clamp(sunLight.intensity / 3.2 * .8 + hemi.intensity * .25, .12, 1.15);
+    U.uFogCol.value.copy(scene.fog ? scene.fog.color : _pc.set(0, 0, 0)).convertLinearToSRGB(); U.uFogD.value = scene.fog ? scene.fog.density : 0;
+    if (!live) return;
+    let any = 0;
+    for (let i = 0; i < N; i++) {
+      if (life[i] <= 0) { if (alpha[i]) alpha[i] = 0; continue; }
+      any++; life[i] -= dt;
+      const k = Math.exp(-drag[i] * dt), j = i * 3;
+      vel[j] *= k; vel[j + 1] = vel[j + 1] * k + acc[i] * dt; vel[j + 2] *= k;
+      pos[j] += vel[j] * dt; pos[j + 1] += vel[j + 1] * dt; pos[j + 2] += vel[j + 2] * dt;
+      const t = 1 - Math.max(life[i], 0) / max[i];
+      size[i] = lerp(s0[i], s1[i], Math.sqrt(t)); alpha[i] = life[i] > 0 ? a0[i] * Math.min(1, t * 12) * (1 - t) ** 1.3 : 0;
+    }
+    if (!any) live = 0;
+    for (const n of ['position', 'aSize', 'aAlpha', 'aColor']) geo.attributes[n].needsUpdate = true;
+  }
+  return {emit, update, pts};
+})();
+const _pv2 = new THREE.Vector2(), _pc = new THREE.Color(), _pe = V3(0, 0, 0), _pz = V3(0, 0, 0);
+const C_SMOKE = [.33, .33, .32], C_BLACK = [.09, .085, .08], C_FIRE = [1, .55, .16], C_SPARK = [1, .86, .5], C_SPLASH = [.92, .95, .97], C_DUST = [.55, .48, .36];
+function burst(p, n, spd, l, sa, sb, al, c, dr, ac) {
+  for (let i = 0; i < n; i++) PFX.emit(p, _pe.set(Math.random() - .5, Math.random() - .5, Math.random() - .5).normalize().multiplyScalar(spd * (.3 + .7 * Math.random())), l * (.6 + .4 * Math.random()), sa, sb, al, c, dr, ac);
+}
+
+
+const _ha = V3(0, 0, 0), _hb = V3(0, 0, 0), _hc = V3(0, 0, 0), _hp = V3(0, 0, 0), _hq = new THREE.Quaternion();
+// segment a->b against an airframe at centre c with orientation q: wing slab + fuselage box, tested at the closest approach
+function hitAirframe(a, b, c, q, span) {
+  _hb.subVectors(b, a); const L2 = _hb.lengthSq();
+  const t = L2 > 0 ? clamp(_hc.subVectors(c, a).dot(_hb) / L2, 0, 1) : 0;
+  _ha.copy(a).addScaledVector(_hb, t).sub(c);
+  if (_ha.lengthSq() > 49) return null;
+  _ha.applyQuaternion(_hq.copy(q).invert());
+  const x = Math.abs(_ha.x), y = Math.abs(_ha.y), z = _ha.z;
+  if ((x < span && y < .55 && z > -1.4 && z < 1.4) || (x < .65 && y < .85 && z > -5 && z < 4.2)) return _hc.copy(a).addScaledVector(_hb, t);
+  return null;
+}
+
+// ---- the two AI aircraft (built after the particle system; cloned from the hero airframes)
+const bandit = makeAI('zero', 1, zeroBody);
+const wing = makeAI('f4u', 0, corsairBody);
+const AIS = [bandit, wing];
+const _wc = V3(0, 0, 0);
+const hitCentre = e => e.isPlayer ? FM.pos : _wc.set(0, 0, e.P.cg).applyQuaternion(e.quat).add(e.pos);
+
+// ---- bullets: pooled rounds with gravity, tracers drawn as short streaks; no friendly fire
+const BUL = (() => {
+  const MAX = 1200, pool = [];
+  for (let i = 0; i < MAX; i++) pool.push({on: false, p: V3(0, 0, 0), v: V3(0, 0, 0), life: 0, team: 0, src: null, dmg: 0});
+  const lp = new Float32Array(MAX * 6), lg = new THREE.BufferGeometry();
+  lg.setAttribute('position', new THREE.BufferAttribute(lp, 3).setUsage(THREE.DynamicDrawUsage));
+  const line = new THREE.LineSegments(lg, new THREE.LineBasicMaterial({color: 0xffc070, transparent: true, opacity: .95, toneMapped: false, fog: false}));
+  line.frustumCulled = false; scene.add(line);
+  let next = 0;
+  function fire(o, dir, inherit, speed, dmg, team, src, life = 2.2) {
+    const b = pool[next]; next = (next + 1) % MAX;
+    b.on = true; b.p.copy(o); b.v.copy(dir).multiplyScalar(speed).add(inherit); b.life = life; b.team = team; b.src = src; b.dmg = dmg;
+  }
+  return {pool, line, lg, lp, fire};
+})();
+function stepBullets(dt) {
+  let k = 0;
+  const lp = BUL.lp, blue = [PLAYER, wing], red = [bandit];
+  for (const b of BUL.pool) {
+    if (!b.on) continue;
+    _hp.copy(b.p);
+    b.v.y -= 9.81 * dt; b.p.addScaledVector(b.v, dt); b.life -= dt;
+    let hit = false;
+    for (const t of b.team === 0 ? red : blue) {
+      if (!alive(t)) continue;
+      const h = hitAirframe(_hp, b.p, hitCentre(t), t.quat, t.P.span);
+      if (h) { b.on = false; hit = true; damage(t, h, b.dmg, b.src); break; }
+    }
+    if (hit) continue;
+    const s = surfaceAt(b.p.x, b.p.z);
+    if (b.p.y < s.y) {
+      b.on = false;
+      if (camera.position.distanceToSquared(b.p) < 2.5e6) burst(_pz.set(b.p.x, s.y + .3, b.p.z), 2, 3, .9, 1.2, 3.5, .7, s.water ? C_SPLASH : C_DUST, 1.5, s.water ? -3 : .5);
+      continue;
+    }
+    if (b.life <= 0) { b.on = false; continue; }
+    lp[k++] = b.p.x; lp[k++] = b.p.y; lp[k++] = b.p.z;
+    lp[k++] = b.p.x - b.v.x * .028; lp[k++] = b.p.y - b.v.y * .028; lp[k++] = b.p.z - b.v.z * .028;
+  }
+  BUL.lg.setDrawRange(0, k / 3); BUL.lg.attributes.position.needsUpdate = true;
+}
+
+// ---- damage and radio calls
+function call(txt, sec = 3, warn = false) { if (FM.on && !FM.killed && !FM.crashed) showMsg(txt, sec, warn); }
+function damage(t, p, dmg, src) {
+  burst(p, 3, 8, .22, .25, .6, 1, C_SPARK, 2, 0);
+  if (t.isPlayer) {
+    if (FM.killed) return;
+    FM.hp -= dmg; FIGHT.hitFlash = -.2;
+    if (FM.hp <= 0) { FM.killed = 'Shot down by the Zero'; showMsg('YOU\'RE HIT · GOING DOWN\nK: new fight · Enter: runway · R: reset', 1e9, true); }
+    return;
+  }
+  t.hp -= dmg; t.lastHitBy = src;
+  if (t.team === 1) { FIGHT.hitFlash = .15; if (t.mode === 'patrol') t.mode = 'fight'; }
+  if (t === wing && (wing.hitCall = (wing.hitCall || 0) - 1) < 0) { wing.hitCall = 12; call('WINGMAN: I\'M HIT'); }
+  if (t.hp <= 0 && t.state === 'alive') aiDown(t);
+}
+function aiDown(e, boom = false) {
+  e.state = 'down'; e.spin = (Math.random() < .5 ? -1 : 1) * (1.2 + Math.random() * 1.6);
+  burst(e.pos, boom ? 40 : 14, boom ? 22 : 9, 1.2, 1.5, boom ? 9 : 5, 1, C_FIRE, 1.2, 1);
+  if (boom) burst(e.pos, 30, 14, 3, 3, 12, .9, C_BLACK, .8, 1.5);
+  if (e.team === 1) {
+    if (e.lastHitBy === wing) { FIGHT.wingKills++; call('WINGMAN: SPLASH ONE ZERO!'); }
+    else { FIGHT.kills++; call('SPLASH ONE ZERO'); }
+  } else call('WINGMAN\'S GOING DOWN', 3, true);
+}
+
+// ---- spawn
+const _sf = V3(0, 0, 0), _sr = V3(0, 0, 0);
+function placeAI(e, pos, vel, mode) {
+  e.pos.copy(pos); e.vel.copy(vel); e.up.set(0, 1, 0); e.upCmd.set(0, 1, 0); e.haveD = false; if (e.tr) e.tr.on = false;
+  Object.assign(e, {n: 1, nCmd: 1, hp: e.P.hp, state: 'alive', mode, evade: 0, tgt: null, threat: null, t7: 0, t20: 0, cannon: 7.5, ammo: 30,
+    smokeT: 0, respawn: 0, alpha: 0, thr: 1, cut: 0, negT: 0, pusher: Math.random() < .75, lastHitBy: null, patrolT: 0, hitCall: 0, pushT: 0, noPush: 0, extend: 0, extendT: 0, p: 0});
+  e.g.visible = true;
+}
+function playerAxes() {                               // horizontal forward and right of the player
+  _sf.set(fwd.x, 0, fwd.z).normalize(); _sr.set(-_sf.z, 0, _sf.x); return _sf;
+}
+function spawnBandit(bounce) {
+  playerAxes();
+  if (bounce) {                                       // unaware, 2,000 ft below, crossing ahead from left to right
+    const side = Math.random() < .5 ? -1 : 1;
+    _pe.copy(FM.pos).addScaledVector(_sf, 3400).addScaledVector(_sr, side * -1300);
+    _pe.y = Math.max(FM.pos.y - 610, WATER_Y + 400);
+    placeAI(bandit, _pe, _pz.copy(_sr).multiplyScalar(side * 118), 'patrol');
+  } else {                                            // aware, roughly co-altitude, closing
+    const yaw = Math.atan2(fwd.x, fwd.z) + (Math.random() - .5) * 1.6, d = 3000;
+    _pe.set(FM.pos.x + Math.sin(yaw) * d, Math.max(FM.pos.y + 250 * (Math.random() - .35), WATER_Y + 450), FM.pos.z + Math.cos(yaw) * d);
+    _pz.set(FM.pos.x - _pe.x, 0, FM.pos.z - _pe.z).normalize().multiplyScalar(120);
+    placeAI(bandit, _pe, _pz, 'fight');
+  }
+}
+function spawnWing() {
+  playerAxes();
+  _pe.copy(FM.pos).addScaledVector(_sr, 220).addScaledVector(_sf, -15);
+  placeAI(wing, _pe, FM.vel, 'form');
+}
+
+// ---- AI: targets, threats, collision avoidance, ground, then a turn demand turned into a lift vector and load
+const _bf = V3(0, 0, 0), _bd = V3(0, 0, 0), _ba = V3(0, 0, 0), _bx = V3(0, 0, 0), _bt = V3(0, 0, 0), _bm = new THREE.Matrix4(), _WUP = V3(0, 1, 0), _bq = new THREE.Quaternion();
+const _ld = V3(0, 0, 0), _cr = V3(0, 0, 0), _cv = V3(0, 0, 0);
+function leadDir(out, from, vf, to, vt, vm) {          // where a gun must point to meet `to`: first-order lead + drop
+  out.subVectors(to, from); const t = out.length() / vm;
+  return out.addScaledVector(_ld.subVectors(vt, vf), t).addScaledVector(_WUP, 4.9 * t * t);
+}
+const gunLine = (e, out) => out.set(0, 0, 1).applyQuaternion(e.quat);
+// Corsair discipline: never get slow in a fight with a Zero. Below ~170 kt and not about to shoot, break off, dive away
+// to rebuild speed (to ~260 kt or 12 s), then come back. Returns true while extending, with _bd set.
+function extendCheck(e, V, d, dt) {
+  if (e.extend > 0) { if (V > 132 || (e.extendT += dt) > 16) e.extend = 0; }
+  else if (V < 88 && d > 250) { e.extend = 1; e.extendT = 0; }
+  if (e.extend <= 0) return false;
+  _bd.subVectors(e.pos, bandit.pos); _bd.y = 0; _bd.normalize().addScaledVector(_bf, 1.5); _bd.y = 0; _bd.normalize();
+  const h = e.pos.y - surfaceAt(e.pos.x, e.pos.z).y; _bd.y = h > 450 ? -.22 : h > 260 ? -.1 : 0;
+  return true;
+}
+function attackDir(e, t) {
+  const d = _bx.subVectors(t.pos, e.pos).length();
+  if (d < 1000) leadDir(_bd, e.pos, e.vel, t.pos, t.vel, e.P.vm).normalize().addScaledVector(e.upCmd, -e.alpha);   // guns ride the nose
+  else _bd.subVectors(t.pos, e.pos).addScaledVector(t.vel, clamp(d / 280, 1, 4)).addScaledVector(e.vel, -.5);       // lead pursuit
+  return d;
+}
+function aiThink(e, dt) {
+  const P = e.P, V = Math.max(e.vel.length(), 1); _bf.copy(e.vel).divideScalar(V);
+  const foes = e.team === 1 ? [PLAYER, wing] : [bandit];
+  // target: nearest, weighted toward what's already ahead of us; sticky
+  let best = 1e12, tgt = null;
+  for (const f of foes) {
+    if (!alive(f)) continue;
+    _bx.subVectors(f.pos, e.pos); const d = _bx.length();
+    let sc = d * (1.6 - .6 * _bx.dot(_bf) / Math.max(d, 1)); if (f === e.tgt) sc *= .6;
+    if (sc < best) { best = sc; tgt = f; }
+  }
+  e.tgt = tgt;
+  // threat: a foe behind us pointing at us
+  const me = e.role === 'lead' ? PLAYER : e;                            // the autopilot flies the player's airplane
+  if (e.evade <= 0 && e.mode !== 'patrol') for (const f of foes) {
+    if (!alive(f) || (!f.isPlayer && f.tgt !== me)) continue;                    // only a foe that's actually after us
+    _bx.subVectors(e.pos, f.pos); const d = _bx.length(); if (d > 900) continue; _bx.divideScalar(d);
+    if (_bx.dot(gunLine(f, _ba)) > .975 && _bx.dot(_bf) > .3) { e.evade = 2.5 + Math.random() * 2; e.threat = f; }
+  }
+  // patrol: the Zero cruises unaware until something gets close, it's hit, or it's been 25 s
+  if (e.mode === 'patrol') { e.patrolT += dt; if (e.patrolT > 25 || (tgt && _bx.subVectors(tgt.pos, e.pos).length() < 1500)) e.mode = 'fight'; }
+  let fire = null;
+  e.thr = 1;
+  if (e.mode === 'patrol') _bd.set(_bf.x, 0, _bf.z);
+  else if (e.evade > 0 && alive(e.threat)) {
+    // break: turn hard toward the attacker; the wingman turns toward the player instead, to drag the Zero across his nose
+    const to = e.role === 'lead' ? (alive(wing) && e.pos.distanceTo(wing.pos) < 2500 ? wing : e.threat)
+      : e.team === 0 && alive(PLAYER) && e.pos.distanceTo(FM.pos) < 2500 ? PLAYER : e.threat;
+    _bx.subVectors(to.pos, e.pos); _bx.addScaledVector(_bf, -_bx.dot(_bf)).normalize();
+    _bd.copy(_bx).addScaledVector(_bf, .15).addScaledVector(_WUP, e.team === 0 ? -.1 : .2);
+  } else if (e.role === 'lead') {
+    // the autopilot: go after the Zero (a bounce if it hasn't seen us), cruise level otherwise
+    const dz = alive(bandit) ? e.pos.distanceTo(bandit.pos) : 1e9;
+    if (alive(bandit) && !extendCheck(e, V, dz, dt)) { const d = attackDir(e, bandit); if (d < 650) fire = bandit; }
+    else if (!alive(bandit)) _bd.set(_bf.x, 0, _bf.z).normalize().addScaledVector(_bx.set(-_bf.z, 0, _bf.x).normalize(), .15);
+  } else if (e.team === 0) {
+    // wingman: engage the Zero when it's near either of us, otherwise hold combat spread on the player's right
+    const bz = alive(bandit) && bandit.mode !== 'patrol' ? bandit : null;
+    const engage = bz && (bz.pos.distanceTo(e.pos) < 1800 || (alive(PLAYER) && bz.pos.distanceTo(FM.pos) < 1500)) || (alive(bandit) && !alive(PLAYER));
+    // the weave: when the Zero is on the player's tail and behind us, turn in toward the player first;
+    // the Zero following him gets dragged across our nose, and we shoot when it's there
+    const onLead = bz && bz.tgt === PLAYER && alive(PLAYER) && bz.pos.distanceTo(FM.pos) < 1200;
+    if (engage && onLead && _bx.subVectors(bandit.pos, e.pos).normalize().dot(_bf) < -.1) {
+      _bd.subVectors(FM.pos, e.pos).addScaledVector(FM.vel, .6);
+    } else if (engage) { if (!extendCheck(e, V, e.pos.distanceTo(bandit.pos), dt)) { const d = attackDir(e, bandit); if (d < 650) fire = bandit; } }
+    else if (alive(PLAYER)) {
+      playerAxes();
+      _pe.copy(FM.pos).addScaledVector(_sr, 220).addScaledVector(_sf, -15);
+      _bx.subVectors(_pe, e.pos); const along = _bx.dot(_sf);
+      _bd.copy(_pe).addScaledVector(FM.vel, 2.5).sub(e.pos);
+      e.thr = clamp(.62 + along * .012 + (FM.vel.length() - V) * .05, .15, 1);
+    } else _bd.set(_bf.x, 0, _bf.z).addScaledVector(_bx.set(-_bf.z, 0, _bf.x), .3);
+  } else if (alive(tgt)) {
+    const d = attackDir(e, tgt); if (d < 650) fire = tgt;
+  } else _bd.set(_bf.x, 0, _bf.z).normalize().addScaledVector(_bx.set(-_bf.z, 0, _bf.x).normalize(), .4);
+  _bd.normalize();
+  if (V < 70) { _bd.y = Math.min(_bd.y, lerp(-.35, .1, sstep(45, 70, V))); _bd.normalize(); }
+  // collision avoidance against every other aircraft: closest approach inside 2.5 s and 35 m -> turn away from it
+  for (const o of [PLAYER, wing, bandit]) {
+    if (o === e || (o.isPlayer && e.role === 'lead') || !(o.isPlayer ? FM.on && !FM.crashed : o.state === 'alive' || o.state === 'down')) continue;
+    _cr.subVectors(o.pos, e.pos); _cv.subVectors(o.vel, e.vel);
+    const vv = _cv.lengthSq(); if (vv < 1) continue;
+    const tca = -_cr.dot(_cv) / vv; if (tca < 0 || tca > 2.5) continue;
+    _cr.addScaledVector(_cv, tca); const miss = _cr.length();
+    if (miss < 35) {
+      if (miss < 1) _cr.copy(e.up); else _cr.divideScalar(-miss);
+      _bd.multiplyScalar(.2).add(_cr).addScaledVector(e.up, .3).normalize(); fire = null; break;
+    }
+  }
+  // terrain / sea: the pull-out needs ~V²/(g·(n-1)) of height, so look ahead in time and add that margin
+  const agl = e.pos.y - surfaceAt(e.pos.x, e.pos.z).y, la = 3 + V / 40;
+  const ahead = e.pos.y + e.vel.y * la - surfaceAt(e.pos.x + e.vel.x * la, e.pos.z + e.vel.z * la).y;
+  const floor = 120 + Math.max(0, -e.vel.y) * V / (9.81 * 4.5);
+  if (ahead < floor || agl < floor) { const k = sstep(floor, floor * .4, Math.min(agl, ahead)); _bd.set(_bf.x, 0, _bf.z).normalize(); _bd.y = .35 + .75 * k; _bd.normalize(); e.evade = 0; fire = null; }
+  // turn rate: proportional to the angle off, plus the line-of-sight rate as feedforward
+  const cosE = clamp(_bd.dot(_bf), -1, 1), ang = Math.acos(cosE);
+  _bx.copy(_bd).addScaledVector(_bf, -cosE); const lat = _bx.length();
+  if (e.haveD && dt > 0) { _bt.subVectors(_bd, e.lastD).divideScalar(dt); e.los.lerp(_bt, Math.min(1, dt * 4)); } else e.los.set(0, 0, 0);
+  e.lastD.copy(_bd); e.haveD = true;
+  _bt.copy(e.los).addScaledVector(_bf, -e.los.dot(_bf));
+  if (lat > 1e-4) _bt.addScaledVector(_bx, 1.6 * ang / lat);
+  const wMax = e.mode === 'patrol' ? .1 : 1.2, wl = _bt.length(); if (wl > wMax) _bt.multiplyScalar(wMax / wl);
+  _ba.copy(_WUP).addScaledVector(_bf, -_bf.y).multiplyScalar(9.81).addScaledVector(_bt, V);
+  const aL = _ba.length();
+  // the commanded lift direction is smoothed (~0.12 s), so a noisy aim point can't snap the bank back and forth
+  if (aL > 1e-3) { _bt.copy(_ba).divideScalar(aL); if (_bt.dot(e.upCmd) < -.3) e.upCmd.copy(_bt); else e.upCmd.lerp(_bt, Math.min(1, dt * 8)).normalize(); }
+  e.nCmd = aL / 9.81;
+  // a Zero chasing something below it pushes over (most pilots did) instead of half-rolling: that's what starves the float carb
+  _bx.copy(e.up).addScaledVector(_bf, -e.up.dot(_bf)).normalize();
+  // ...but only briefly: after ~1.2 s of pushing he rolls instead, for a few seconds
+  e.noPush -= dt;
+  if (P.floatCarb && e.pusher && e.noPush <= 0 && e.evade <= 0 && alive(tgt) && e.upCmd.dot(_bx) < -.35 && tgt.pos.distanceTo(e.pos) < 1100) {
+    e.nCmd = Math.max(P.nMin, _ba.dot(_bx) / 9.81); e.upCmd.copy(_bx);
+    if ((e.pushT += dt) > 1.2) { e.pushT = 0; e.noPush = 4; }
+  } else e.pushT = Math.max(0, e.pushT - dt);
+  // guns
+  if (fire && alive(fire) && e.evade <= 0 && e.mode !== 'patrol') {
+    leadDir(_bt, e.pos, e.vel, fire.pos, fire.vel, P.vm).normalize();
+    // the wingman takes snap shots: fire as the nose sweeps through the lead at close range (6° inside 400 m)
+    const gate = e.team === 0 && fire.pos.distanceTo(e.pos) < 400 ? .9945 : .9985;
+    if (_bt.dot(gunLine(e, _ba)) > gate) aiGuns(e);
+  }
+}
+const _zm = V3(0, 0, 0), _zd = V3(0, 0, 0);
+function aiGuns(e) {
+  const shoot = (lx, ly, lz, speed, dmg, spread, aimZ = 0) => {
+    _zm.set(lx, ly, lz);
+    if (aimZ) _zd.set(0, 0, aimZ).sub(_zm).normalize(); else _zd.set(0, 0, 1);
+    _zd.x += (Math.random() - .5) * spread; _zd.y += (Math.random() - .5) * spread; _zd.normalize().applyQuaternion(e.quat);
+    _zm.applyQuaternion(e.quat).add(e.pos);
+    BUL.fire(_zm, _zd, e.vel, speed, dmg, e.team, e);
+  };
+  if (e.type === 'zero') {
+    if (e.t7 <= 0) { e.t7 = 1 / 12; for (const s of [-1, 1]) shoot(s * .13, .6, 3.0, 750, .25, .022); }
+    if (e.cannon > 0 && e.t20 <= 0) { e.t20 = 1 / 5; e.cannon -= .2; for (const s of [-1, 1]) shoot(s * 2.35, zWingY(2.35), 1.4, 600, 2.2, .022); }
+  } else if (e.ammo > 0 && e.t7 <= 0) {
+    e.t7 = 1 / 28; e.ammo -= 1 / 28; e.side = -e.side;
+    shoot(e.side * 2.74, wingY(2.74), wingLE(2.74) + .3, GUN.v, .9, .012, GUN.conv);
+  }
+}
+function aiStep(e, h) {
+  const P = e.P, V = Math.max(e.vel.length(), 1); _bf.copy(e.vel).divideScalar(V);
+  const live = e.state === 'alive';
+  const rho = 1.225 * Math.exp(-Math.max(0, e.pos.y - WATER_Y) / 8500), qS = .5 * rho * V * V * P.S, W = P.m * 9.81;
+  // roll the lift vector toward the command
+  const ref = live ? e.upCmd : e.up;
+  _bx.copy(ref).addScaledVector(_bf, -ref.dot(_bf)).normalize();
+  const rollMax = live ? lerp(P.roll0, P.roll1, sstep(P.rv0, P.rv1, V)) : 0;
+  let th = Math.atan2(_ba.crossVectors(e.up, _bx).dot(_bf), clamp(e.up.dot(_bx), -1, 1));
+  // a near-180° roll keeps going the way it's already rolling instead of flipping direction frame to frame
+  if (Math.abs(th) > 2.6 && Math.abs(e.p) > .2 && Math.sign(th) !== Math.sign(e.p)) th += Math.sign(e.p) * 2 * Math.PI;
+  // roll has inertia: the roll rate chases the demand at a limited roll acceleration (no instant left-right swaps)
+  const pDes = live ? clamp(th * 3.5, -rollMax, rollMax) : e.spin;
+  e.p += clamp(pDes - e.p, -P.rollAcc * h, P.rollAcc * h);
+  e.up.applyAxisAngle(_bf, e.p * h);
+  // load factor: commanded, limited by stall and structure, with onset rate
+  const nAv = P.CLmax * qS / W, nT = live ? clamp(e.nCmd, Math.max(P.nMin, -nAv * .7), Math.min(P.nMax, nAv)) : .35 * nAv;
+  e.n += clamp(nT - e.n, -6 * h, 6 * h);
+  // float carburettor: sustained negative g starves the engine
+  if (P.floatCarb && live) {
+    e.negT = e.n < -.15 ? e.negT + h : Math.max(0, e.negT - 2 * h);
+    if (e.negT > .3 && e.cut <= 0) {
+      e.cut = 1.6 + Math.random() * 1.2; e.negT = 0;
+      _pe.set(0, -.4, 2.3).applyQuaternion(e.quat).add(e.pos); burst(_pe, 3, 2, .7, .5, 1.8, .45, C_BLACK, 2, .3);   // a short sputter
+      if (FIGHT.cutT <= 0 && e.pos.distanceTo(FM.pos) < 2500) { FIGHT.cutT = 5; call('ZERO\'S ENGINE CUT OUT · negative g'); }
+    }
+  }
+  if (e.cut > 0) e.cut -= h;
+  const CL = e.n * W / Math.max(qS, 1), CD = P.CD0 + CL * CL / (Math.PI * P.AR * P.e) + (live ? 0 : .05);
+  const T = live && e.cut <= 0 ? Math.min(P.P * P.eta / Math.max(V, 35), P.Tmax) * e.thr : 0;
+  _ba.copy(_bf).multiplyScalar((T - CD * qS) / P.m).addScaledVector(e.up, e.n * 9.81);
+  _ba.y -= 9.81;
+  e.vel.addScaledVector(_ba, h); e.pos.addScaledVector(e.vel, h);
+  _bf.copy(e.vel).normalize(); e.up.addScaledVector(_bf, -e.up.dot(_bf)).normalize();
+  e.alpha = clamp((CL - .15) / 5, -.15, .3);
+}
+function aiPose(e, dt) {
+  const g = e.g;
+  _bf.copy(e.vel).normalize(); _bx.crossVectors(e.up, _bf);
+  _bm.makeBasis(_bx, e.up, _bf); g.quaternion.setFromRotationMatrix(_bm).multiply(_bq.setFromAxisAngle(_bx.set(1, 0, 0), -e.alpha));
+  g.position.copy(e.pos);
+  g.visible = !document.body.classList.contains('bp');
+  const running = e.state === 'alive' && e.cut <= 0;
+  e.prop.rotation.z += (running ? e.P.rpm : 250) * Math.PI * 2 / 60 * dt;
+  const blur = running ? 1 : .35;
+  for (const {m, disc} of e.propMats.values()) m.opacity = disc ? blur : 1 - blur * .92;
+  const hurt = e.hp < e.P.hp * .55;
+  if (!e.tr) e.tr = {prev: V3(0, 0, 0), on: false, acc: 0, k: 0};
+  if (hurt || e.state === 'down') trail(e.tr, _pe.set(...e.P.smoke).applyQuaternion(g.quaternion).add(e.pos), e.vel, e.state === 'down');
+  else e.tr.on = false;
+}
+// smoke trails: puffs laid at a fixed spacing along the path flown since the last frame, so they join into one trail at
+// any speed or frame rate instead of hanging in the air as separate balls
+const _tp = V3(0, 0, 0);
+function trail(st, p, v, down) {
+  if (!st.on) { st.prev.copy(p); st.on = true; st.acc = 0; return; }
+  const d = st.prev.distanceTo(p), sp = down ? 2 : 3;
+  let at = sp - st.acc, n = 0;
+  while (at <= d && n < 60) {
+    _tp.lerpVectors(st.prev, p, d > 0 ? at / d : 1);
+    _tp.x += (Math.random() - .5) * .4; _tp.y += (Math.random() - .5) * .4; _tp.z += (Math.random() - .5) * .4;
+    if (down) {
+      PFX.emit(_tp, _pz.set(0, 0, 0), 3.6, 1.1, 5.5, .5, C_BLACK, .5, 1.2);
+      if ((st.k++ & 1) === 0) PFX.emit(_tp, _pz.copy(v).multiplyScalar(.15), .3, 1.1, 1.7, .9, C_FIRE, 2, 0);
+    } else PFX.emit(_tp, _pz.set(0, 0, 0), 2.4, .7, 3.2, .32, C_SMOKE, .5, .8);
+    at += sp; n++;
+  }
+  st.acc = d - (at - sp);
+  st.prev.copy(p);
+}
+function aiImpact(e) {
+  const s = surfaceAt(e.pos.x, e.pos.z);
+  _pe.set(e.pos.x, s.y + 1, e.pos.z);
+  if (s.water) { burst(_pe, 40, 16, 2.4, 2, 7, .9, C_SPLASH, .8, -8); for (let i = 0; i < 16; i++) PFX.emit(_pe, _pz.set((Math.random() - .5) * 6, 18 + Math.random() * 14, (Math.random() - .5) * 6), 2.5, 2, 5, .9, C_SPLASH, .3, -12); }
+  else { burst(_pe, 40, 14, 1.4, 2, 8, 1, C_FIRE, 1, 2); burst(_pe, 30, 8, 6, 3, 16, .8, C_BLACK, .5, 2); }
+  if (e.state === 'alive') {                         // flew into it
+    if (e.team === 1) { FIGHT.kills++; call('THE ZERO WENT IN'); } else call('WINGMAN WENT IN', 3, true);
+  }
+  e.state = 'wreck'; e.g.visible = false; e.respawn = 6;
+}
+function playerGuns(dt) {
+  const firing = (KEYS.has('KeyX') || FM.padFire) && FM.on && !FM.crashed && !FM.killed && FIGHT.ammo > 0;
+  if (!firing) return;
+  FIGHT.ammo = Math.max(0, FIGHT.ammo - dt); FIGHT.fireT -= dt;
+  while (FIGHT.fireT <= 0) {                                   // two streams (port / starboard batteries of three .50s), 14 Hz each
+    FIGHT.fireT += 1 / 28; FIGHT.side = -FIGHT.side;
+    const x = FIGHT.side * 2.74;
+    _zm.set(x, wingY(2.74), wingLE(2.74) + .3).sub(FM.CG);
+    _zd.set(0, 0, GUN.conv).sub(_zm).normalize();
+    _zd.x += (Math.random() - .5) * .006; _zd.y += (Math.random() - .5) * .006; _zd.normalize().applyQuaternion(FM.q);
+    _zm.applyQuaternion(FM.q).add(FM.pos);
+    BUL.fire(_zm, _zd, FM.vel, GUN.v, .9, 0, PLAYER);
+  }
+}
+function fightFrame(dt) {
+  if (dt <= 0) return;
+  if (FIGHT.on) {
+    FIGHT.callT -= dt; FIGHT.cutT -= dt;
+    for (const e of AIS) {
+      if (e.state === 'alive' || e.state === 'down') {
+        e.t7 -= dt; e.t20 -= dt; e.evade -= dt;
+        if (e.state === 'alive') aiThink(e, dt);
+        const n = Math.ceil(dt * 120);
+        for (let i = 0; i < n; i++) aiStep(e, dt / n);
+        if (e.pos.y < surfaceAt(e.pos.x, e.pos.z).y + 1) aiImpact(e);
+        else if (e.state === 'alive' && FM.on && !FM.crashed && !FM.killed && hitCentre(e).distanceToSquared(FM.pos) < 42) {
+          FM.killed = 'Mid-air collision'; showMsg('MID-AIR COLLISION', 1e9, true); aiDown(e, true);
+        }
+      }
+      if (e.state === 'alive' || e.state === 'down') aiPose(e, dt); else e.g.visible = false;
+    }
+    if (alive(wing) && alive(bandit) && hitCentre(wing).distanceToSquared(bandit.pos) < 36) { aiDown(bandit, true); aiDown(wing, true); }
+    if (bandit.state === 'wreck' && (bandit.respawn -= dt) <= 0 && alive(PLAYER)) {
+      const bounce = Math.random() < .5; spawnBandit(bounce);
+      call(bounce ? 'NEW ZERO · LOW, CROSSING AHEAD' : 'NEW ZERO · INBOUND', 3);
+    }
+    // wingman's call: a Zero on the player's tail -> break toward the wingman
+    if (FIGHT.callT <= 0 && alive(wing) && alive(bandit) && bandit.tgt === PLAYER && alive(PLAYER)) {
+      _bx.subVectors(FM.pos, bandit.pos); const d = _bx.length();
+      if (d < 900 && _bx.divideScalar(d).dot(gunLine(bandit, _ba)) > .94) {
+        playerAxes(); const side = _bx.subVectors(wing.pos, FM.pos).dot(_sr) > 0 ? 'RIGHT' : 'LEFT';
+        FIGHT.callT = 8; call(`WINGMAN: ZERO ON YOUR TAIL!\nBREAK ${side} · drag him across my nose\nor push over hard: his engine cuts under negative g`, 4, true);
+      }
+    }
+    playerGuns(dt);
+    if (!FIGHT.tr) FIGHT.tr = {prev: V3(0, 0, 0), on: false, acc: 0, k: 0};
+    if (FM.on && !FM.crashed && (FM.hp < 35 || FM.killed)) trail(FIGHT.tr, _pe.set(0, .3, 3.6).sub(FM.CG).applyQuaternion(FM.q).add(FM.pos), FM.vel, !!FM.killed);
+    else FIGHT.tr.on = false;
+  }
+  stepBullets(dt);
+  PFX.update(dt);
+}
+function fightStart() {
+  FIGHT.on = true; FIGHT.kills = FIGHT.wingKills = 0; FIGHT.ammo = 30; FIGHT.fireT = 0; FIGHT.callT = 4; FIGHT.cutT = 0;
+  for (const b of BUL.pool) b.on = false;
+  spawnWing(); spawnBandit(true);
+}
+function fightStop() {
+  if (AUTO.on) { AUTO.on = false; autoUI(); }
+  FIGHT.on = false; if (CAM.subj !== 'player') setSubject('player');
+  for (const e of AIS) { e.state = 'off'; e.g.visible = false; }
+  for (const b of BUL.pool) b.on = false;
+  ['tgt', 'pip', 'lead', 'wing'].forEach(id => $(id).style.display = 'none');
+}
+
+// ---- screen cues: bandit box (edge arrow when off screen), wingman marker, gun cross at convergence, lead ring
+const _sp = V3(0, 0, 0);
+function toScreen(w) {
+  _sp.copy(w).project(camera);
+  const behind = _sp.z > 1, x = (_sp.x + 1) / 2 * innerWidth, y = (1 - _sp.y) / 2 * innerHeight;
+  return {x, y, behind, on: !behind && x > 0 && x < innerWidth && y > 0 && y < innerHeight};
+}
+function marker(el, e, fmt) {
+  const s = toScreen(e.pos), dist = e.pos.distanceTo(FM.pos);
+  el.classList.toggle('off', !s.on);
+  if (s.on) { el.style.transform = `translate(${s.x}px,${s.y}px)`; el.dataset.d = fmt(dist); }
+  else {
+    let dx = s.x - innerWidth / 2, dy = s.y - innerHeight / 2; if (s.behind) { dx = -dx; dy = -dy; }
+    const a = Math.atan2(dy, dx), rx = innerWidth * .42, ry = innerHeight * .4;
+    el.style.transform = `translate(${innerWidth / 2 + Math.cos(a) * rx}px,${innerHeight / 2 + Math.sin(a) * ry}px) rotate(${a}rad)`; el.dataset.d = '';
+  }
+}
+const rangeTxt = d => d < 1852 ? `${Math.round(d / 10) * 10} m` : `${(d / 1852).toFixed(1)} nm`;
+function fightHud() {
+  const show = (id, s) => { const e = $(id); e.style.display = s ? 'block' : 'none'; return e; };
+  const live = FIGHT.on && FM.on && !document.body.classList.contains('bp');
+  const bOn = live && (bandit.state === 'alive' || bandit.state === 'down');
+  const sub = camSubject();
+  const tg = show('tgt', bOn && sub !== bandit); if (bOn && sub !== bandit) marker(tg, bandit, rangeTxt);
+  const wOn = live && (wing.state === 'alive' || wing.state === 'down');
+  const wg = show('wing', wOn && sub !== wing); if (wOn && sub !== wing) marker(wg, wing, d => 'WING');
+  const own = !camSubject() && (mode === 'cockpit' || (mode === 'chase' && CAM.style === 'chase'));
+  const pp = show('pip', live && !FM.crashed && own && mode !== 'cockpit');
+  if (pp.style.display === 'block') { const s = toScreen(_pe.set(0, 0, GUN.conv).applyQuaternion(FM.q).add(FM.pos)); pp.style.transform = `translate(${s.x}px,${s.y}px)`; if (s.behind) pp.style.display = 'none'; }
+  const dist = bOn ? bandit.pos.distanceTo(FM.pos) : 1e9;
+  const ld = show('lead', bOn && own && bandit.state === 'alive' && dist < 1100 && !FM.crashed);
+  if (ld.style.display === 'block') {
+    const t = dist / GUN.v;
+    _pe.copy(bandit.pos).addScaledVector(_bt.subVectors(bandit.vel, FM.vel), t).addScaledVector(_WUP, 4.9 * t * t);
+    const s = toScreen(_pe); if (!s.on) ld.style.display = 'none'; else ld.style.transform = `translate(${s.x}px,${s.y}px)`;
+  }
+  FIGHT.hitFlash += FIGHT.hitFlash > 0 ? -.016 : .016;
+  if (Math.abs(FIGHT.hitFlash) < .02) FIGHT.hitFlash = 0;
+  tg.classList.toggle('hit', FIGHT.hitFlash > 0);
+  document.body.classList.toggle('ouch', FIGHT.hitFlash < 0);
+}
+function clockOf(p) {
+  _pe.subVectors(p, FM.pos).applyQuaternion(_hq.copy(FM.q).invert());
+  const clock = ((Math.round(Math.atan2(-_pe.x, _pe.z) / (30 * D)) % 12) + 12) % 12 || 12;
+  const el = Math.atan2(_pe.y, Math.hypot(_pe.x, _pe.z)) / D;
+  return `${(Math.hypot(_pe.x, _pe.y, _pe.z) / 1852).toFixed(1)} nm · ${clock} o'clock ${el > 12 ? 'high' : el < -12 ? 'low' : 'level'}`;
+}
+function fightStatus() {
+  if (!FIGHT.on) return '';
+  const b = bandit.state === 'alive' || bandit.state === 'down'
+    ? `BANDIT ${clockOf(bandit.pos)}${bandit.state === 'down' ? ' · GOING DOWN' : bandit.mode === 'patrol' ? ' · UNAWARE' : ''}${bandit.cut > 0 ? ' · ENGINE OUT' : ''}` : 'BANDIT · splashed';
+  const w = wing.state === 'alive' ? `WINGMAN ${clockOf(wing.pos)}${wing.hp < AIT.f4u.hp * .55 ? ' · DAMAGED' : ''}` : wing.state === 'down' ? 'WINGMAN · GOING DOWN' : 'WINGMAN · lost';
+  return `<br>${b}<br>${w}<br>GUNS ${Math.ceil(FIGHT.ammo)} s · DAMAGE ${Math.round(100 - Math.max(FM.hp, 0) / 60 * 100)}% · KILLS ${FIGHT.kills}${FIGHT.wingKills ? ` (+${FIGHT.wingKills} wingman)` : ''}`;
+}
+
+
+// ---------------------------------------------------------------- spectating: autopilot (J), watch mode, camera rig, photo, recording, clean view
+// Ported from Six Fleets' arcade skirmish. J hands the player's Corsair to an AI captain (the same brain the wingman
+// uses, as a flight lead) and back; Watch starts a fight with the captain already flying, so it's computer against
+// computer. V / Tab cycle the camera style (chase, target, fly-by); Shift+V cycles who it follows (you, wingman, Zero).
+// P saves a photo, R records, C hides the HUD.
+const AUTO = {on: false};
+const LEAD = Object.assign(aiBrain('f4u', 0), {role: 'lead', quat: new THREE.Quaternion()});
+const _lq = new THREE.Matrix4(), _lx = V3(0, 0, 0), _lf = V3(0, 0, 0);
+function leadPose(e) {
+  _lf.copy(e.vel).normalize(); _lx.crossVectors(e.up, _lf);
+  _lq.makeBasis(_lx, e.up, _lf); e.quat.setFromRotationMatrix(_lq).multiply(_bq.setFromAxisAngle(_lx.set(1, 0, 0), -e.alpha));
+}
+function autoOn(quiet) {
+  if (!FIGHT.on || !FM.on || FM.crashed || FM.killed) { showMsg('THE AUTOPILOT FLIES THE DOGFIGHT · K to start one', 3); return; }
+  const e = LEAD;
+  e.pos.copy(aircraft.position); e.vel.copy(FM.vel);
+  _lf.copy(FM.vel).normalize();
+  e.up.set(0, 1, 0).applyQuaternion(FM.q).addScaledVector(_lf, -e.up.dot(_lf)).normalize(); e.upCmd.copy(e.up);
+  Object.assign(e, {state: 'alive', mode: 'fight', n: FM.g, nCmd: FM.g, haveD: false, evade: 0, tgt: null, threat: null, thr: 1, cut: 0,
+    alpha: FM.alpha, ammo: FIGHT.ammo, t7: 0, side: 1, pushT: 0, noPush: 0, hp: FM.hp, extend: 0, extendT: 0, p: 0});
+  e.los.set(0, 0, 0);
+  AUTO.on = true; autoUI();
+  if (!quiet) showMsg('AUTOPILOT · the captain has it · J to take the stick', 3);
+}
+function autoOff(quiet) {
+  if (!AUTO.on) return;
+  AUTO.on = false; autoUI();
+  FM.w.set(0, 0, 0); FM.trimA = FM.alpha; FM.thr = FM.pwr = Math.max(FM.thr, .85);
+  Object.assign(FM.key, {elev: 0, ail: 0, rud: 0}); Object.assign(FM.inp, {elev: 0, ail: 0, rud: 0});
+  if (!quiet && !FM.killed) showMsg('YOU HAVE THE STICK', 2);
+}
+function autoUI() { $('autoBtn').textContent = 'Autopilot: ' + (AUTO.on ? 'ON' : 'OFF'); $('autoBtn').classList.toggle('active', AUTO.on); }
+// one frame of the captain flying the player's aircraft; the flight-model state follows so HUD, cameras and the AI see it
+function autoFly(dt) {
+  const e = LEAD;
+  e.t7 -= dt; e.evade -= dt;
+  aiThink(e, dt);
+  const n = Math.ceil(dt * 120);
+  for (let i = 0; i < n; i++) aiStep(e, dt / n);
+  leadPose(e);
+  FM.q.copy(e.quat); FM.pos.copy(FM.CG).applyQuaternion(FM.q).add(e.pos); FM.vel.copy(e.vel); FM.w.set(0, 0, 0);
+  const V = e.vel.length(), rho = 1.225 * Math.exp(-Math.max(0, e.pos.y - WATER_Y) / 8500);
+  FM.alpha = e.alpha; FM.gRaw = e.n; FM.ias = V * Math.sqrt(rho / 1.225); FM.thr = FM.pwr = e.thr; FM.wow = 0; FM.stall = 0; FM.trimA = e.alpha;
+  FM.agl = FM.pos.y - surfaceAt(FM.pos.x, FM.pos.z).y;
+  FIGHT.ammo = e.ammo;
+  if (FM.killed) autoOff(true);                                   // shot down: the stick goes slack, the airframe falls on its own
+  else if (FM.agl < 3) autoOff();
+}
+
+// ---- camera rig: style (chase / target / fly-by) and subject (you / wingman / Zero)
+const CAM = {style: 'chase', subj: 'player', park: null, parkT: 0, prev: V3(0, 0, 0), havePrev: false, init: false, off: V3(0, 0, 0), up: V3(0, 1, 0), acc: V3(0, 0, 0), prevV: V3(0, 0, 0), havePrevV: false};
+const CAM_STYLES = ['chase', 'target', 'flyby'], CAM_NAMES = {chase: 'Chase', target: 'Target', flyby: 'Fly-by'}, SUBJ_NAMES = {player: 'You', wing: 'Wingman', bandit: 'Zero'};
+const inAir = e => e.state === 'alive' || e.state === 'down';
+function camSubject() {
+  if (FIGHT.on && CAM.subj === 'wing' && inAir(wing)) return wing;
+  if (FIGHT.on && CAM.subj === 'bandit' && inAir(bandit)) return bandit;
+  return null;
+}
+const SP = {pos: V3(0, 0, 0), quat: new THREE.Quaternion(), vel: V3(0, 0, 0), fwd: V3(0, 0, 1), up: V3(0, 1, 0)};
+function subjectPose() {
+  const s = camSubject();
+  if (s) { SP.pos.copy(s.g.position); SP.quat.copy(s.g.quaternion); SP.vel.copy(s.vel); }
+  else { SP.pos.copy(aircraft.position); SP.quat.copy(aircraft.quaternion); if (FM.on) SP.vel.copy(FM.vel); else SP.vel.copy(fwd).multiplyScalar(FLY.V * blend); }
+  SP.fwd.set(0, 0, 1).applyQuaternion(SP.quat); SP.up.set(0, 1, 0).applyQuaternion(SP.quat);
+  return s;
+}
+// what the subject is fighting, for the target camera
+function subjectTarget(s) {
+  if (!FIGHT.on) return null;
+  if (!s || s === wing) return inAir(bandit) ? bandit.g.position : null;
+  if (s === bandit) return bandit.tgt === wing && inAir(wing) ? wing.g.position : alive(PLAYER) ? aircraft.position : null;
+  return null;
+}
+function camLabel() {
+  const names = {orbit: 'Orbit', chase: 'Chase', top: 'Plan', front: 'Front', side: 'Side', cockpit: 'Cockpit'};
+  const subj = FIGHT.on && camSubject() ? ' · ' + SUBJ_NAMES[CAM.subj] : '';
+  $('camLabel').textContent = (mode === 'chase' ? CAM_NAMES[CAM.style] : names[mode]) + subj;
+  $('camStyleBtn').textContent = 'Cam: ' + CAM_NAMES[CAM.style];
+  $('camSubjBtn').textContent = 'Follow: ' + SUBJ_NAMES[camSubject() ? CAM.subj : 'player'];
+}
+function nextCamStyle() {
+  if (mode !== 'chase') setCam('chase');
+  else { CAM.style = CAM_STYLES[(CAM_STYLES.indexOf(CAM.style) + 1) % CAM_STYLES.length]; CAM.park = null; CAM.init = false; }
+  camLabel();
+}
+function nextSubject() {
+  if (!FIGHT.on) { showMsg('FOLLOW THE WINGMAN OR THE ZERO IN A DOGFIGHT · K', 2.5); return; }
+  const order = ['player', 'wing', 'bandit'];
+  let i = order.indexOf(CAM.subj);
+  for (let k = 0; k < 3; k++) { i = (i + 1) % 3; if (order[i] === 'player' || inAir(order[i] === 'wing' ? wing : bandit)) break; }
+  setSubject(order[i]);
+}
+function setSubject(s) {
+  if (s !== 'player' && mode === 'cockpit') setCam('chase');
+  if (s !== 'player' && document.body.classList.contains('bp')) setCam('chase');
+  const rel = V3(0, 0, 0).subVectors(camera.position, controls.target);
+  CAM.subj = s; CAM.park = null; CAM.init = false; CAM.havePrev = false; CAM.havePrevV = false; CAM.acc.set(0, 0, 0);
+  subjectPose();
+  if (mode === 'orbit') { controls.target.copy(SP.pos); camera.position.copy(SP.pos).add(rel); orbitNear(); controls.update(); }
+  camLabel();
+}
+// orbit starts close in on whatever it follows (the default inspect offset, turned to the subject's heading)
+function orbitNear() {
+  if (camera.position.distanceTo(SP.pos) < 60) return;
+  const yq = new THREE.Quaternion().setFromAxisAngle(Y, Math.atan2(SP.fwd.x, SP.fwd.z));
+  camera.position.copy(SP.pos).add(ORBIT_OFFSET.clone().applyQuaternion(yq));
+}
+const _cc = V3(0, 0, 0), _cl = V3(0, 0, 0);
+function setFov(f) { if (camera.fov !== f) { camera.fov = f; camera.updateProjectionMatrix(); } }
+function chaseOn(dt, P, Q, F, shake) {
+  _cc.set(0, 3.3, -15).applyQuaternion(Q);
+  if (!CAM.init) { CAM.off.copy(_cc); CAM.up.set(0, 1, 0); CAM.init = true; }
+  CAM.off.lerp(_cc, 1 - Math.exp(-dt * 3.5));
+  camera.position.copy(P).add(CAM.off);
+  camera.position.y = Math.max(camera.position.y, surfaceAt(camera.position.x, camera.position.z).y + 1.2);
+  _cl.set(0, 1, 0).applyQuaternion(Q).multiplyScalar(.55); _cl.y += .45; _cl.normalize();
+  CAM.up.lerp(_cl, 1 - Math.exp(-dt * 3)).normalize(); camera.up.copy(CAM.up);
+  camera.lookAt(_cl.copy(P).addScaledVector(F, 6));
+  if (shake) { camera.position.y += (fbm(t * 7, 2.2, 2) - .5) * shake; camera.position.x += (fbm(t * 6, 5.5, 2) - .5) * shake; }
+}
+// the styled cameras; returns false when the old chase camera (player, no fight, no style) should run instead
+function styledCamera(dt) {
+  const s = subjectPose();
+  setFov(CAM.style === 'flyby' ? 36 : 45);
+  if (CAM.style === 'flyby') {
+    // parked where the subject will be in ~1.6 s (velocity plus its current turn), off to one side of its flight path;
+    // it flies past and the camera re-parks once it's clear, or as soon as it turns away
+    if (dt > 0 && CAM.havePrevV) CAM.acc.lerp(_cc.subVectors(SP.vel, CAM.prevV).divideScalar(dt), Math.min(1, dt * 6));
+    CAM.prevV.copy(SP.vel); CAM.havePrevV = true;
+    const V = Math.max(SP.vel.length(), 20), vdir = _cl.copy(SP.vel).divideScalar(V);
+    let redo = !CAM.park || CAM.parkT > 5;
+    if (!redo) {
+      const rel = _cc.subVectors(SP.pos, CAM.park), d = rel.length();
+      redo = d > 380 || rel.dot(vdir) > 45 || (d > 60 && -rel.dot(vdir) / d < .55);   // gone past, too far, or turning away
+    }
+    if (redo) {
+      const T = 1.6, side = V3(0, 0, 0).crossVectors(vdir, Math.abs(vdir.y) > .9 ? V3(1, 0, 0) : Y).normalize();
+      CAM.park = (CAM.park || V3(0, 0, 0)).copy(SP.pos).addScaledVector(SP.vel, T).addScaledVector(CAM.acc, .5 * T * T)
+        .addScaledVector(side, (Math.random() < .5 ? -1 : 1) * (14 + Math.random() * 20));
+      CAM.park.y += (Math.random() - .35) * 10;
+      CAM.park.y = Math.max(CAM.park.y, surfaceAt(CAM.park.x, CAM.park.z).y + 4);
+      CAM.parkT = 0;
+    }
+    CAM.parkT += dt;
+    camera.position.copy(CAM.park);
+    const tg = subjectTarget(s);
+    _cc.copy(SP.pos); if (tg) _cc.lerp(tg, Math.min(.1, 20 / Math.max(tg.distanceTo(SP.pos), 1)));   // lean toward the fight, at most ~20 m
+    const look = V3(0, 0, 0).subVectors(_cc, camera.position).normalize();
+    camera.up.copy(Math.abs(look.y) > .92 ? SP.up : Y);
+    camera.lookAt(_cc);
+    return true;
+  }
+  if (CAM.style === 'target') {
+    const tg = subjectTarget(s);
+    if (tg) {
+      // behind the subject on the line from its target, looking past it at the target
+      _cc.subVectors(SP.pos, tg); const d = _cc.length(); _cc.divideScalar(Math.max(d, 1));
+      const want = _cl.copy(SP.pos).addScaledVector(_cc, 22).add(V3(0, 5, 0));
+      want.y = Math.max(want.y, surfaceAt(want.x, want.z).y + 2);
+      if (!CAM.init) { camera.position.copy(want); CAM.init = true; } else camera.position.lerp(want, 1 - Math.exp(-dt * 4));
+      camera.up.set(0, 1, 0);
+      camera.lookAt(_cc.copy(tg).lerp(SP.pos, .35));
+      return true;
+    }
+  }
+  if (!s && !FM.on) return false;                                   // the circuit: the original chase camera
+  chaseOn(dt, SP.pos, SP.quat, SP.fwd, s ? 0 : FM.shake * .25 + WX.kDark * .3);
+  return true;
+}
+// orbit view rides along with whichever aircraft it follows
+function orbitFollow() {
+  subjectPose();
+  if (CAM.havePrev) { const d = _cc.subVectors(SP.pos, CAM.prev); camera.position.add(d); controls.target.add(d); controls.update(); }
+  CAM.prev.copy(SP.pos); CAM.havePrev = true;
+}
+
+// ---- photo (P), recording (R), clean view (C) — from Six Fleets
+const REC = {mr: null, chunks: [], t0: 0, type: '', stream: null, bad: {}, onSaved: null};
+function recType() {
+  if (!window.MediaRecorder) return '';
+  for (const ty of ['video/mp4;codecs=avc1.640028', 'video/mp4;codecs=avc1', 'video/mp4', 'video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm'])
+    if (!REC.bad[ty.split(';')[0]] && MediaRecorder.isTypeSupported(ty)) return ty;
+  return '';
+}
+function stamp() { const d = new Date(), p = n => String(n).padStart(2, '0'); return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`; }
+function download(blob, name) { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 8000); }
+const shotName = () => (zeroShown ? 'zero' : 'corsair') + '-' + stamp();
+function toggleRec() {
+  if (REC.mr) { REC.mr.stop(); return; }
+  const type = recType(), cv = renderer.domElement;
+  if (!type || !cv.captureStream) { showMsg('RECORDING ISN\'T SUPPORTED IN THIS BROWSER', 3); fmHud(0); return; }
+  const stream = cv.captureStream(60);
+  let mr;
+  try { mr = new MediaRecorder(stream, {mimeType: type, videoBitsPerSecond: 16e6}); }
+  catch (err) { stream.getTracks().forEach(tr => tr.stop()); showMsg('RECORDING FAILED TO START', 3); fmHud(0); return; }
+  Object.assign(REC, {mr, stream, chunks: [], type, t0: performance.now()});
+  mr.ondataavailable = ev => { if (ev.data && ev.data.size) REC.chunks.push(ev.data); };
+  mr.onstop = () => {
+    const ext = type.startsWith('video/mp4') ? 'mp4' : 'webm', blob = new Blob(REC.chunks, {type: type.split(';')[0]});
+    REC.stream.getTracks().forEach(tr => tr.stop()); REC.mr = null; REC.stream = null; recUI();
+    // an encoder that claims a format but writes nothing is passed over from now on
+    if (blob.size < 2048) { REC.bad[type.split(';')[0]] = true; showMsg(`RECORDING CAME OUT EMPTY (${ext.toUpperCase()}) · the next one uses another format`, 3); fmHud(0); return; }
+    download(blob, `${shotName()}.${ext}`);
+    showMsg(`RECORDING SAVED · ${ext.toUpperCase()} · ${(blob.size / 1048576).toFixed(1)} MB`, 3); fmHud(0);
+  };
+  mr.start(1000); recUI();
+}
+function recUI() {
+  const on = !!REC.mr; document.body.classList.toggle('rec', on);
+  $('recBtn').textContent = on ? '■ Stop rec' : '● Rec';
+  if (!on) $('recdot').textContent = '';
+}
+function recTick() { if (REC.mr) { const s = Math.floor((performance.now() - REC.t0) / 1000); $('recdot').textContent = `● REC ${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; } }
+// a still: asked for here, taken right after the next frame is drawn — in the same task, before the browser clears the
+// WebGL buffer (toBlob snapshots the canvas when it's called). Simpler and steadier than Six Fleets' capture stream.
+const PHOTO = {want: false};
+function photo() { PHOTO.want = true; }
+function photoGrab() {
+  if (!PHOTO.want) return;
+  PHOTO.want = false;
+  renderer.domElement.toBlob(b => { if (b) { download(b, `${shotName()}.png`); flashShot(); } }, 'image/png');
+}
+function flashShot() { const f = $('shotflash'); f.classList.remove('go'); void f.offsetWidth; f.classList.add('go'); }
+function toggleClean() { document.body.classList.toggle('clean'); }
 
 // ---------------------------------------------------------------- loop
 const prevPos = new THREE.Vector3(), tmp = new THREE.Vector3(), WAVE = {a: new THREE.Vector2(), b: new THREE.Vector2()};
@@ -2644,10 +3729,11 @@ function animate() {
     aircraft.rotation.set(-(ui.pitch * D + Math.sin(t * .5) * .012 * blend + tPitch), -phi, ui.bank * D + autoBank + Math.sin(t * .7) * .02 * blend + tBank, 'YXZ');
     curIAS = FLY.V * blend;
   }
+  fightFrame(dt);
 
   const step = dt / 2.4;
   gear.t = gear.t < gear.target ? Math.min(gear.target, gear.t + step) : Math.max(gear.target, gear.t - step);
-  applyGear(sstep(0, 1, gear.t));
+  applyGear(sstep(0, 1, gear.t)); applyZeroGear(sstep(0, 1, gear.t));
 
   const bp = document.body.classList.contains('bp');
   const propRpm = ui.rpm * .5;                       // R-2800 reduction gear 2:1
@@ -2655,11 +3741,14 @@ function animate() {
   const blur = sstep(140, 650, propRpm);
   M.prop.opacity = M.tip.opacity = 1 - blur * .92;
   propDisc.material.opacity = blur;
+  if (zeroShown) {
+    if (!bp) ZERO.prop.rotation.z += propRpm * Math.PI * 2 / 60 * dt;
+    MZ.prop.opacity = 1 - blur * .92; ZERO.disc.material.opacity = blur;
+  }
 
   // cameras
-  const delta = tmp.subVectors(aircraft.position, prevPos);
-  if (mode === 'orbit') { camera.position.add(delta); controls.target.add(delta); controls.update(); }
-  else if (mode === 'chase' && FM.on) chaseManual(dt);
+  if (mode === 'orbit') orbitFollow();
+  else if (mode === 'chase' && styledCamera(dt)) {}
   else if (mode === 'chase') {
     const want = aircraft.position.clone().addScaledVector(fwd, -14).add(V3(0, 3.6, 0)).addScaledVector(left, -2.2);
     camera.position.lerp(want, 1 - Math.exp(-dt * 6));
@@ -2678,8 +3767,9 @@ function animate() {
   }
 
   updateWeather(dt, bp, curIAS);
-  sunLight.position.copy(aircraft.position).addScaledVector(sunDir, 60);
-  sunLight.target.position.copy(aircraft.position);
+  const sunAt = mode === 'orbit' || mode === 'chase' ? SP.pos : aircraft.position;   // shadows follow what the camera follows
+  sunLight.position.copy(sunAt).addScaledVector(sunDir, 60);
+  sunLight.target.position.copy(sunAt);
   // the sea and sky travel with the aircraft; wave textures counter-scroll so the water stays put
   water.position.set(aircraft.position.x, WATER_Y, aircraft.position.z);
   sky.position.copy(bp ? aircraft.position : camera.position);
@@ -2696,16 +3786,20 @@ function animate() {
   if ($('msg').textContent) fmHud(dt);
   $('status').innerHTML = blend > .05
     ? `IAS ${Math.round(FLY.V * blend * 1.944)} kt · ALT ${Math.round((aircraft.position.y - WATER_Y) * 3.281)} ft · BANK ${bankDeg}°<br>PROP ${Math.round(propRpm)} rpm`
+    : zeroShown ? `Nakajima Sakae 12 · 940 hp · 3-blade Sumitomo<br>ENGINE ${Math.round(ui.rpm)} rpm · GEAR ${gear.target ? 'DOWN' : 'UP'}`
     : `R-2800-8W · 2,000 hp · 3-blade Hamilton Standard<br>PROP ${Math.round(propRpm)} rpm · GEAR ${gear.target ? 'DOWN' : 'UP'}`;
   }
   if (WX.p > .005) $('status').innerHTML += `<br>STORM ${Math.round(WX.p * 100)}% · RAIN ${Math.round(WX.kRain * 100)}% · VIS ${Math.round(1.73 / fog.density / 100) / 10} km`;
 
+  fightHud(); recTick(); camLabel();
   if (mode === 'cockpit') renderCockpit(); else renderer.render(scene, bp ? ortho : camera);
+  photoGrab();
 }
 
 setSun(38);
 resetView();
 applyGear(1);
+if (new URLSearchParams(location.search).has('watch')) { fmStart('fight'); autoOn(true); }
 animate();
 </script>
 </body>
