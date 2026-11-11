@@ -40,7 +40,7 @@ Six races, one war over the QIN drive. Fly a cruiser or a destroyer in real-time
 - **Skirmish:** any two of the twelve ships, at any of the seven locations.
 - **Campaign:** one cruiser through seven missions, from first contact at Tauri-B to the Rayzine star base. Wins are saved in the browser and unlock the next mission.
 
-[Play Six Fleets](games/six-fleets/)
+[Play Six Fleets](https://scottpeterman.github.io/arcade/lab/six-fleets/)
 
 ## Games
 
