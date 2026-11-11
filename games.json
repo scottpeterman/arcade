@@ -88,6 +88,17 @@
       "shelf": "featured"
     },
     {
+      "slug": "six-fleets",
+      "title": "Six Fleets",
+      "tagline": "Real-time 3D starship combat. Skirmish any matchup, or fly the seven-mission campaign.",
+      "path": "games/six-fleets/",
+      "thumb": "games/six-fleets/thumb.webp",
+      "tags": ["shooter", "3d", "webgl"],
+      "input": ["keyboard", "mouse"],
+      "players": "1",
+      "shelf": "featured"
+    },
+    {
       "slug": "piece-lab",
       "title": "Piece Lab",
       "tagline": "Banrion's wireframe piece designer.",

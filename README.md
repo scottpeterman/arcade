@@ -42,6 +42,7 @@ More per game in each `docs/screenshots/` folder.
 | [Vector Command](games/vector-command/) | Defense console against incoming waves |
 | [Phosphor Field](games/phosphor-field/) | Vector rock shooter with a simulated XY-monitor phosphor; V flips to an LCD |
 | [Puppis Echo](games/puppis-echo/) | WebGL flight and combat in deep space |
+| [Six Fleets](games/six-fleets/) | Real-time 3D starship combat: skirmish, or a seven-mission campaign from Tauri-B to the Rayzine star base |
 
 ## Lab
 
@@ -119,7 +120,7 @@ The games themselves still open straight from disk.
 ## Network use
 
 - Banrion online play uses an outbound WebSocket to a public MQTT broker. Hot-seat and vs-computer need no network.
-- Puppis Echo, Ringworld and the F4U Corsair lab load three.js from jsDelivr.
+- Puppis Echo, Ringworld, Six Fleets and the F4U Corsair lab load three.js from jsDelivr.
 - Several games request Google Fonts and fall back to system fonts without it.
 
 ## License
