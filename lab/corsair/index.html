@@ -1599,7 +1599,7 @@ const GRASS = (() => {
 const _gw = new THREE.Vector2();
 const CU_BASE = 610, CU_TOPS = 1500;               // m above the sea: bases ~2,000 ft, tallest tops ~4,900 ft
 const CU = createCumulus(THREE, {renderer, noise: cloudNoise, tile: 26000, seaY: WATER_Y, base: CU_BASE, quality: QUAL.tier, seed: 11});
-RIDGE.forEach(([rx, rz], i) => { if (i % 2 === 0) CU.addCluster({x: ISLE.x + rx + 140, z: ISLE.z + rz - 60, w: 640 + 140 * (i % 3), h: 480 + 70 * i, base: CU_BASE + 30}); });
+RIDGE.forEach(([rx, rz], i) => { if (i % 2 === 0) CU.addCluster({x: ISLE.x + rx + 140, z: ISLE.z + rz - 60, w: 760 + 160 * (i % 3), h: 300 + 30 * i, base: CU_BASE + 30}); });   // the ridge's own clouds: broad, a little taller than the field's
 scene.add(CU.mesh);
 const skyOver = createSkyOverlay(THREE, {noise: cloudNoise});
 scene.add(skyOver.mesh);

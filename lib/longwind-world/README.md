@@ -9,7 +9,7 @@ for that game but not for an aircraft that flies past and through them. The pack
 
 | module | what | from Long Wind |
 |---|---|---|
-| `createCumulus` | Fair-weather cumulus you can fly past and through. Each cloud is a cluster of lit sphere impostors (one instanced quad per puff). Real scale: flat bases at the condensation level, 300 m–1.5 km across, humilis / mediocris / congestus. Lighting: per-puff sun transmittance (CPU march through the cluster, re-baked when the sun moves), grey bases, bright cauliflower tops, a silver lining toward the sun. Edges are eroded by world-locked noise. Sorted far to near each frame. | Lighting approach and noise texture; the impostor field is new |
+| `createCumulus` | Fair-weather cumulus you can fly past and through. Each cloud is a cluster of lit sphere impostors (one instanced quad per puff), built as a long low loaf on a flat base with broad humps and cauliflower only along the top. Clouds come in families along the wind (`streets`): a dominant cloud, a loose row of neighbours that sometimes chain, and ragged scraps; a few (`towers`) build a congestus turret. One noise field per cloud, so the puffs merge into one surface instead of reading as balls. Lighting: per-puff sun transmittance (CPU march, re-baked when the sun moves), bright shaded sides from multiple scattering, grey bases, a silver lining toward the sun. Sorted far to near each frame. | Lighting approach and noise texture; the impostor field is new |
 | `createCloudShadow` | Each cloud body projected along the sun into a small top-down map. `patch(material)` makes lit materials (standard, physical, lambert, phong) scale the sun's direct light by it. Chains existing `onBeforeCompile` hooks. | Long Wind darkens the sun under a procedural noise deck; here the shadows come from the actual clouds |
 | `installHeightFog` | Exponential height fog for every material that uses three's fog chunks, keeping `FogExp2` semantics. The fog distance is the view depth times the mean density `exp(-h/H)` along the ray, so haze thins with altitude. | The exact height-fog integral in `atmosphere.js` |
 | `createSkyOverlay` | High cirrus, a painted band of distant cumulus just above the horizon, and the night sky (two star layers, the Milky Way, the moon with maria). A transparent dome over any base sky. | Long Wind's `sky.js` GLSL, unchanged apart from uniforms |
@@ -91,12 +91,12 @@ nothing, so these are GPU-independent counts.
 
 | view | cloud fragments per pixel (screen average) | draw calls (whole frame) |
 |---|---|---|
-| air start, 1,000 ft | 1.2 (was 0.45 with sprite puffs) | 618 (was 734) |
-| dogfight altitude, 4,000 ft | 0.55 (was 0.2) | 700 (was 1,140) |
+| air start, 1,000 ft | 0.22 (sprite puffs were 0.45) | 618 (was 734) |
+| dogfight altitude, 4,000 ft | 0.23 (was 0.2) | 700 (was 1,140) |
 | island from 5,000 ft | — | 621 (was 1,499) |
-| right beside a big cloud | 3.7 over 52% of the screen (worst case) | — |
+| right beside a big cloud | 1.8 over 52% of the screen (worst case) | — |
 
-Fill goes up because the clouds are now real-sized. Draw calls go down because the whole field is one instanced
+Fill stays low: the clouds are real-sized, but long and low, so most puffs are small and the sky between families is open. Draw calls go down because the whole field is one instanced
 draw; the old sprites were one call each. The fragment shader does 3 noise texture taps and a few dozen arithmetic operations.
 Puffs fade out inside about 1.6 radii of the camera, so flying into a cloud doesn't flood the screen. Hosts handle
 the whiteout with fog via `inside()`.
@@ -105,7 +105,7 @@ Ground pieces, same measurement: the grass ring is one draw call and one program
 about 36k triangles visible, all culled to nothing off grass). `patchFoliage` adds a handful of ALU to leaf fragments,
 `patchGroundDetail` adds 3 noise taps to terrain fragments. Whole-frame draw calls at the strip went from 500 to 501.
 
-Quality tiers: `low` 70 clouds / ~2,600 puffs, `med` 105 / ~4,300, `high` 150 / ~6,700. On integrated GPUs the
+Quality tiers (puff budgets): `low` ~2,200 puffs in ~100 clouds plus ~190 scraps, `med` ~4,200 in ~190 + ~320, `high` ~5,600 in ~210 + ~380. On integrated GPUs the
 other big lever is the host's pixel ratio: fill scales with it.
 
 ## Tests
