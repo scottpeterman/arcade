@@ -58,7 +58,8 @@ body.clean.ouch::after{display:none}
 <script type="importmap">
 {"imports":{
   "three":"https://cdn.jsdelivr.net/npm/three@0.161.0/build/three.module.js",
-  "three/addons/":"https://cdn.jsdelivr.net/npm/three@0.161.0/examples/jsm/"
+  "three/addons/":"https://cdn.jsdelivr.net/npm/three@0.161.0/examples/jsm/",
+  "longwind-world/":"../../lib/longwind-world/src/"
 }}
 </script>
 </head>
@@ -128,6 +129,7 @@ import * as THREE from 'three';
 import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
 import {Sky} from 'three/addons/objects/Sky.js';
 import {DecalGeometry} from 'three/addons/geometries/DecalGeometry.js';
+import {installHeightFog, heightFogRatio, bakeCloudNoise, createCumulus, createSkyOverlay, createCloudShadow, pickQuality, tuneSky} from 'longwind-world/index.js';
 
 const showError = m => { const e = document.getElementById('error'); e.style.display = 'block'; e.textContent = String(m); };
 window.addEventListener('error', e => showError(e.message));
@@ -790,9 +792,14 @@ function placeDecal(target, origin, dir, upHint, size, mat, parent = aircraft) {
 
 // ---------------------------------------------------------------- sky, sun, water
 const WATER_Y = -80;                     // sea level: the flight circle runs ~260 ft above it
+// Haze thins with height (exponential height fog in three's fog chunks, from Long Wind via lib/longwind-world): the
+// sea under a climbing aircraft clears and the horizon band thins, as tropical boundary-layer haze does.
+const HAZE_H = 1100, FOG_CLEAR = .00015;  // haze scale height (m); clear-air sea-level density (FogExp2, ~11 km vis)
+installHeightFog(THREE, {seaY: WATER_Y, scale: HAZE_H});
 const sky = new Sky(); sky.scale.setScalar(10000); scene.add(sky);
 const su = sky.material.uniforms;
 su.turbidity.value = 6; su.mieCoefficient.value = .005; su.mieDirectionalG.value = .8;
+const skyTune = tuneSky(sky);            // pre-saturated open sky (Long Wind's wx_skySat idea): Preetham + ACES alone stays pale
 
 // Tileable wave normal map: periodic gradient-ish value noise (octaves with integer periods, domain-warped) plus a
 // few weak directional swells. No sine-lattice interference, so a single tile has no visible regular pattern.
@@ -868,8 +875,9 @@ function setSun(elev) {
   const s = sstep(0, 28, elev);
   sunDir.setFromSphericalCoords(1, (90 - elev) * D, 75 * D);
   su.sunPosition.value.copy(sunDir);
-  su.rayleigh.value = lerp(3.0, 1.4, s);
-  su.turbidity.value = lerp(9, 5, s);
+  su.rayleigh.value = lerp(2.4, 1.0, s);            // clear tropical air: deep blue overhead, low turbidity
+  su.turbidity.value = lerp(5.5, 2.0, s);
+  skyTune.sat.value = lerp(1.5, 2.4, s); skyTune.zen.value = lerp(.92, .8, s);
   sunLight.color.copy(cWarm).lerp(cDay, s);
   sunLight.intensity = lerp(.9, 3.2, s);
   hemi.intensity = lerp(.35, .9, s);
@@ -1527,43 +1535,59 @@ applyZeroGear(1); aircraft.updateMatrixWorld(true);
 }
 zeroBody.visible = false;
 
-// ---------------------------------------------------------------- clouds (sprite cumulus)
-const cloudTex = canvasTex(128, 128, x => {
-  const r = rng(3);
-  for (let i = 0; i < 14; i++) {
-    const cx = 64 + (r() - .5) * 46, cy = 64 + (r() - .5) * 34, rad = 22 + r() * 22, g = x.createRadialGradient(cx, cy, 0, cx, cy, rad);
-    g.addColorStop(0, 'rgba(255,255,255,.55)'); g.addColorStop(1, 'rgba(255,255,255,0)');
-    x.fillStyle = g; x.beginPath(); x.arc(cx, cy, rad, 0, Math.PI * 2); x.fill();
-  }
-});
-const cloudMats = [0, 1, 2, 3].map(i => new THREE.SpriteMaterial({map: cloudTex, transparent: true, depthWrite: false, rotation: i * 1.57, fog: false}));
-const CLOUD_TILE = 5200;                   // fair-weather field repeats on this tile, wrapped around the aircraft
-const cloudClusters = [];                  // {x, z, mats[4]}: fair-weather puffs fade where the storm deck covers them
-const clouds = new THREE.Group(); scene.add(clouds);
-{
-  const r = rng(11);
-  const place = (n, rMin, rMax, yMin, yMax) => {
-    for (let i = 0; i < n; i++) {
-      const a = r() * Math.PI * 2, d = rMin + r() * (rMax - rMin), S = 30 + r() * 60, cx = Math.cos(a) * d, cz = Math.sin(a) * d, cy = yMin + r() * (yMax - yMin);
-      const cl = {x: cx, z: cz, bx: cx, bz: cz, g: new THREE.Group(), mats: cloudMats.map(m => m.clone())}; cloudClusters.push(cl);
-      cl.g.position.set(cx, 0, cz); clouds.add(cl.g);
-      for (let k = 0, m = 12 + (r() * 14 | 0); k < m; k++) {
-        const ly = r() * S * .45, mi = (ly / (S * .45) < .3 ? 0 : 2) + (r() < .5 ? 0 : 1);
-        const sp = new THREE.Sprite(cl.mats[mi]);
-        const sz = S * (.7 + r() * .6);
-        sp.scale.set(sz * 1.3, sz, 1);
-        sp.position.set((r() - .5) * S * 2.2, cy + ly, (r() - .5) * S * 1.3);
-        cl.g.add(sp);
-      }
-    }
-  };
-  place(40, 450, 2600, 140, 260);
-  place(10, 280, 700, 55, 90);
+// ---------------------------------------------------------------- clouds: lit cumulus field, sky overlay, cloud shadows
+// From lib/longwind-world (sky and cloud pieces of jbang2004/long-wind, MIT, adapted for flight). Trade-wind cumulus at
+// real scale: flat bases at ~2,000 ft (the condensation level), 300 m to 1.3 km across, mostly humilis and mediocris
+// with the odd congestus, and a few building over the island's ridge. Each cloud is a cluster of lit sphere
+// impostors: sun self-shadowing, grey bases, a silver lining toward the sun, edges eroded by Long Wind's baked noise.
+// Long Wind's painted sky adds faint high cirrus (its painted far-cumulus band is off: the 3D field reaches the haze).
+// The clouds' own shadows fall on the sea, the island and the aircraft. Quality: ?q=low|med|high, otherwise from the GPU.
+const QUAL = pickQuality(renderer);
+const cloudNoise = bakeCloudNoise(THREE, renderer);
+const CU_BASE = 610, CU_TOPS = 1500;               // m above the sea: bases ~2,000 ft, tallest tops ~4,900 ft
+const CU = createCumulus(THREE, {renderer, noise: cloudNoise, tile: 26000, seaY: WATER_Y, base: CU_BASE, quality: QUAL.tier, seed: 11});
+RIDGE.forEach(([rx, rz], i) => { if (i % 2 === 0) CU.addCluster({x: ISLE.x + rx + 140, z: ISLE.z + rz - 60, w: 640 + 140 * (i % 3), h: 480 + 70 * i, base: CU_BASE + 30}); });
+scene.add(CU.mesh);
+const skyOver = createSkyOverlay(THREE, {noise: cloudNoise});
+scene.add(skyOver.mesh);
+const CS = createCloudShadow(THREE, {renderer, noise: cloudNoise, size: QUAL.tier === 'low' ? 256 : 512, extent: 18000, strength: .55});
+const CLD = {sunCol: new THREE.Color(), top: new THREE.Color(), bot: new THREE.Color(), hazeLin: new THREE.Color(), hazeAvg: new THREE.Color(), inside: 0, warm: new THREE.Color()};
+function cloudTint() {}                            // cloud colours follow the lights every frame (updateClouds)
+const _lwC = new THREE.Color(), _lwV = new THREE.Vector3();
+function hazeAvg(out) {                            // mean horizon sky colour all round: cloud ambient (the view azimuth would tint it toward the sun)
+  if (!HZ.ok) return out.copy(BASE.fog);
+  out.setRGB(0, 0, 0); for (const c of HZ.col) out.add(c);
+  return out.multiplyScalar(1 / HZ.n);
 }
-function cloudTint(s) {
-  const top = new THREE.Color(0xffffff).lerp(cWarm, (1 - s) * .55);
-  cloudMats.forEach((m, i) => m.color.copy(top).multiplyScalar(i < 2 ? lerp(.62, .84, s) : lerp(.9, 1, s)));
-  cloudClusters.forEach(cl => cl.mats.forEach((m, i) => m.color.copy(cloudMats[i].color)));
+function horizonLin(out) {                         // linear horizon sky colour toward the view azimuth (from the IBL bake)
+  if (!HZ.ok) return out.copy(BASE.fog);
+  camera.getWorldDirection(_lwV);
+  const t = ((Math.atan2(_lwV.z, _lwV.x) / (Math.PI * 2) * HZ.n) % HZ.n + HZ.n) % HZ.n, i = Math.floor(t);
+  return out.copy(HZ.col[i % HZ.n]).lerp(HZ.col[(i + 1) % HZ.n], t - i);
+}
+function updateClouds(dt, k, f, hE, bp) {
+  for (const c of CU.clusters) {                   // fair-weather clouds dissolve and grey as the storm deck reaches them
+    const cov = WX.p > .001 ? coverAt(c.x, c.z) : 0;
+    c.op = (1 - sstep(.05, .5, cov)) * (1 - sstep(.3, .8, k));
+  }
+  // light a white cloud (albedo ~.92) the way three lights a white surface: sun / pi, plus sky above and sea below
+  horizonLin(CLD.hazeLin); hazeAvg(CLD.hazeAvg);
+  CLD.sunCol.copy(sunLight.color).multiplyScalar(sunLight.intensity / Math.PI * .92);
+  CLD.top.copy(hemi.color).multiplyScalar(hemi.intensity * .42).add(_lwC.copy(CLD.hazeAvg).multiplyScalar(.55));
+  CLD.bot.copy(bounce.color).multiplyScalar(bounce.intensity * .3).add(_lwC.copy(hemi.groundColor).multiplyScalar(hemi.intensity * .16));
+  CU.mesh.visible = skyOver.mesh.visible = !bp;
+  CU.update(camera, aircraft.position, {sunDir, sunCol: CLD.sunCol, skyTop: CLD.top, skyBot: CLD.bot, silver: 1.1 * (1 - k), sunGain: 2.1, dt});
+  const u = skyOver.uniforms, s = BASE.s;
+  u.uSunDir.value.copy(sunDir); u.uSunCol.value.set(CLD.sunCol.r, CLD.sunCol.g, CLD.sunCol.b).multiplyScalar(1.6);
+  u.uCloudLit.value.set(CLD.sunCol.r * 1.7 + CLD.top.r * 1.2, CLD.sunCol.g * 1.7 + CLD.top.g * 1.2, CLD.sunCol.b * 1.7 + CLD.top.b * 1.2);
+  u.uCloudShade.value.set(CLD.top.r + CLD.bot.r * .6, CLD.top.g + CLD.bot.g * .6, CLD.top.b + CLD.bot.b * .6);
+  CLD.warm.copy(cWarm).multiplyScalar((1 - s) * .35); u.uHorizonGlow.value.set(CLD.warm.r, CLD.warm.g, CLD.warm.b);
+  u.uHaze.value.set(CLD.hazeLin.r, CLD.hazeLin.g, CLD.hazeLin.b); u.uHazeD.value.copy(domeMat.uniforms.uFogD.value);
+  u.uHazeH.value = lerp(.012, .05, WX.fogK);
+  u.uStorm.value = k; u.uTime.value = WX.uTime.value; u.uWind.value.set(-WX.front.x, -WX.front.y, 1, 0);
+  u.uCloudCover.value.set(-.04, 1 - k, .06, .45 * (1 - k)); u.uEye.value.set(hE, CU_BASE, CU_TOPS, 0);   // w = 0: no painted far band (the 3D field reaches the haze)
+  CS.strength = .55 * (1 - k) * sstep(2, 14, BASE.elev);
+  CS.update(CU.casters(), aircraft.position, sunDir, WATER_Y);
 }
 
 // ---------------------------------------------------------------- weather: storm front, rain, sea state, lightning
@@ -1627,7 +1651,7 @@ const domeMat = new THREE.ShaderMaterial({
       float fl = uFlash * (0.18 + 1.7 * exp(-bd * bd / 490000.0) + 0.45 * exp(-bd / 2200.0));
       col += vec3(0.74, 0.7, 1.0) * fl * (0.45 + 0.9 * (1.0 - shade));
       float aS = max(max(clamp(cover * (0.84 + 0.45 * n2), 0.0, 1.0), uK), uIn) * (1.0 - uAbove);   // storm deck (inside the storm no clear sky shows; none overhead once above the tops)
-      float aH = 1.0 - smoothstep(-0.004, mix(0.01, 0.085 + 0.2 * uK, uFogK), d.y);   // horizon haze: a thin line with Fog off, deeper in rain with it on
+      float aH = 1.0 - smoothstep(-0.004, mix(0.01, 0.045 + 0.24 * uK, uFogK), d.y);   // horizon haze: a thin line with Fog off, deeper in rain with it on
       float a = 1.0 - (1.0 - aS) * (1.0 - aH);
       gl_FragColor = vec4(col, 1.0);
       #include <tonemapping_fragment>
@@ -1681,7 +1705,7 @@ function horizonFog(exp) {
   camera.getWorldDirection(_vd);
   const t = ((Math.atan2(_vd.z, _vd.x) / (Math.PI * 2) * HZ.n) % HZ.n + HZ.n) % HZ.n, i = Math.floor(t);
   _hz.copy(HZ.col[i % HZ.n]).lerp(HZ.col[(i + 1) % HZ.n], t - i);
-  return acesJS(_hz, exp).multiplyScalar(lerp(.07, 1, sstep(-1, 12, BASE.elev)));   // after sunset the horizon goes dark
+  return acesJS(_hz, exp).multiplyScalar(lerp(.07, 1, sstep(-2, 6, BASE.elev)));    // after sunset the horizon goes dark
 }
 
 // ---- deck tops: a world-space layer at DECK.top, drawn only when the eye is above it (same cover field as the dome)
@@ -1689,6 +1713,7 @@ const deckTopMat = new THREE.ShaderMaterial({
   uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, {
     uIsle: {value: new THREE.Vector2(ISLE.x, ISLE.z)}, uFront: {value: WX.front.clone()}, uD: {value: 7000}, uP: {value: 0}, uFlash: {value: 0},
     uLit: {value: new THREE.Color()}, uShade: {value: new THREE.Color()},
+    tCN: {value: null}, uSun: {value: new THREE.Vector3(0, 1, 0)},
   }]),
   vertexShader: /* glsl */`
     #include <fog_pars_vertex>
@@ -1700,25 +1725,37 @@ const deckTopMat = new THREE.ShaderMaterial({
     }`,
   fragmentShader: /* glsl */`
     #include <fog_pars_fragment>
-    uniform vec2 uIsle, uFront; uniform float uD, uTime, uP, uFlash; uniform vec3 uLit, uShade;
+    uniform vec2 uIsle, uFront; uniform float uD, uTime, uP, uFlash; uniform vec3 uLit, uShade, uSun;
+    uniform sampler2D tCN;
     varying vec3 vW;
     ${GLSL_NOISE}
+    // billowed tops from Long Wind's baked cloud noise (lib/longwind-world): masses, billows, cauliflower puffs
+    float deckH(vec2 p) {
+      return texture2D(tCN, p * 0.00009).r * 0.55 + texture2D(tCN, p * 0.00032 + 0.37).b * 0.3 + texture2D(tCN, p * 0.0011 + 0.71).a * 0.15;
+    }
     void main() {
       vec2 p = vW.xz + -uFront * uTime * 9.0;
-      float n1 = rfbm(p * 0.00045), n2 = rfbm(p * 0.0021 + 3.7), n3 = rfbm(p * 0.0085 + 9.1);
+      float n1 = rfbm(p * 0.00045);                                            // the front's edge field (same as the dome)
+      vec4 B = texture2D(tCN, p * 0.00045 + 0.37);
+      float n2 = B.r;
       float edge = dot(vW.xz - uIsle, uFront) - uD + (n1 - 0.5) * 2600.0;
       float a = clamp(smoothstep(-900.0, 900.0, edge) * smoothstep(0.0, 0.04, uP) * (0.84 + 0.45 * n2) * 1.2 - 0.1, 0.0, 1.0);
       if (a < 0.003) discard;
-      float lum = smoothstep(0.25, 0.85, n2 * 0.55 + n3 * 0.55);              // billow tops catch the sun, the gaps sit in shade
+      // relief: sunlit billow faces, shaded troughs (gradient of the height field, three taps)
+      float h0 = deckH(p), e = 90.0, rk = 1.0 - smoothstep(4000.0, 16000.0, length(vW - cameraPosition));   // relief fades with distance (no aliasing)
+      vec3 N = normalize(vec3(-(deckH(p + vec2(e, 0.0)) - h0) * 4.5 * rk, 0.012 * e, -(deckH(p + vec2(0.0, e)) - h0) * 4.5 * rk));
+      float lum = clamp(dot(N, normalize(uSun)) * 0.55 + 0.5, 0.0, 1.0) * mix(0.78, 1.0, smoothstep(0.2, 0.75, h0));
       vec3 col = mix(uShade, uLit, lum) + vec3(0.74, 0.7, 1.0) * uFlash * (0.25 + 0.5 * (1.0 - lum));
       gl_FragColor = vec4(col, a);
       #include <tonemapping_fragment>
       #include <colorspace_fragment>
       #include <fog_fragment>
+      // up at the tops the height fog is thin: fade the far deck into the horizon haze so it never ends at the far plane
+      gl_FragColor.rgb = mix(gl_FragColor.rgb, fogColor, smoothstep(6000.0, 34000.0, length(vW - cameraPosition)));
     }`,
   transparent: true, depthWrite: false, fog: true,
 });
-deckTopMat.uniforms.uTime = WX.uTime;
+deckTopMat.uniforms.uTime = WX.uTime; deckTopMat.uniforms.tCN.value = cloudNoise;
 const deckTop = new THREE.Mesh(new THREE.PlaneGeometry(SEA, SEA), deckTopMat);
 deckTop.rotation.x = -Math.PI / 2; deckTop.position.y = WATER_Y + DECK.top; deckTop.frustumCulled = false; deckTop.renderOrder = 2; deckTop.visible = false;
 scene.add(deckTop);
@@ -2283,6 +2320,7 @@ function updateWeather(dt, bp, speed) {
   WX.kDark += (sstep(-3200, 1200, c) * (1 - above) - WX.kDark) * Math.min(1, dt * 2);
   WX.kRain += (sstep(-150, 2200, c) * (WX.rainOn ? 1 : 0) * (1 - sstep(DECK.top - 500, DECK.top, hE)) - WX.kRain) * Math.min(1, dt * 2);   // Rain: OFF = dry squall, eased out; none above the tops
   WX.inCloud = (WX.inCloud ?? 0) + (inCloud - (WX.inCloud ?? 0)) * Math.min(1, dt * 3);
+  CLD.inside += (CU.inside(eye) - CLD.inside) * Math.min(1, dt * 4 + (dt === 0 ? 0 : .05));   // inside a cumulus: whiteout
   WX.above = above;
   WX.uRain.value = WX.kRain; WX.uStorm.value = WX.kDark;
   domeMat.uniforms.uEye.value.copy(eye); dome.position.copy(eye);
@@ -2305,7 +2343,8 @@ function updateWeather(dt, bp, speed) {
   fog.color.copy(HZ.ok ? horizonFog(BASE.exp * (1 + .45 * k)) : BASE.fog).lerp(_tmpC.copy(cStormFog).multiplyScalar(L), k).add(_tmpC.copy(cFlash).multiplyScalar(f * .35));
   fog.color.lerp(_tmpC.copy(cStormLit).multiplyScalar(L * lerp(.8, 1.8, sstep(DECK.base, DECK.top, hE))), WX.inCloud);   // inside the deck: grey, lighter toward the tops
   WX.fogK += ((WX.fogOn ? 1 : 0) - WX.fogK) * Math.min(1, dt * 2);   // Fog: OFF eases to clear air (a trace stays so the far sea edge never shows)
-  fog.density = lerp(.00005, lerp(.00035, .0021, k) * (1 + .2 * WX.kRain), WX.fogK) + .011 * WX.inCloud;
+  fog.color.lerp(_tmpC.setRGB(.8, .83, .86).multiplyScalar(L), CLD.inside);
+  fog.density = lerp(.00005, lerp(FOG_CLEAR, .0021, k) * (1 + .2 * WX.kRain), WX.fogK) + (.011 * WX.inCloud + .009 * CLD.inside) / heightFogRatio(eye.y);   // in-cloud fog stays full strength at any height
   renderer.toneMappingExposure = BASE.exp * (1 + .45 * k);
   flashLight.intensity = 6 * f;
   flashLight.position.copy(aircraft.position).addScaledVector(WX.flashDir, 100); flashLight.target.position.copy(aircraft.position);
@@ -2319,7 +2358,7 @@ function updateWeather(dt, bp, speed) {
   const tu = deckTopMat.uniforms;
   deckTop.visible = !bp && WX.p > .001 && hE > DECK.top - 60;
   deckTop.position.set(eye.x, WATER_Y + DECK.top, eye.z);
-  tu.uD.value = WX.D; tu.uP.value = WX.p; tu.uFlash.value = f;
+  tu.uD.value = WX.D; tu.uP.value = WX.p; tu.uFlash.value = f; tu.uSun.value.copy(sunDir);
   tu.uLit.value.copy(BASE.sunCol).multiplyScalar(lerp(.12, 2.1, sstep(-1, 20, BASE.elev))); tu.uShade.value.copy(tu.uLit.value).multiplyScalar(.5).lerp(_tmpC.set(.34, .4, .5), .25);
   if (Math.abs(WX.p - WX.envP) > .012) { WX.envP = WX.p; envDirty = true; }
 
@@ -2333,14 +2372,7 @@ function updateWeather(dt, bp, speed) {
   MZ.skin.clearcoat = lerp(.15, .9, WX.kRain); MZ.skin.clearcoatRoughness = lerp(.35, .08, WX.kRain);
   island.userData.reef.material.color.setScalar(lerp(1, .42, k) * (1 + .5 * f));   // lagoon dulls under the deck
   const ax = aircraft.position.x, az = aircraft.position.z;
-  for (const cl of cloudClusters) {                                       // puffs dissolve and grey as the deck reaches them
-    let dx = cl.bx - ax, dz = cl.bz - az;                                 // wrap the field around the aircraft
-    dx -= CLOUD_TILE * Math.round(dx / CLOUD_TILE); dz -= CLOUD_TILE * Math.round(dz / CLOUD_TILE);
-    cl.x = ax + dx; cl.z = az + dz; cl.g.position.set(cl.x, 0, cl.z);
-    const edge = 1 - sstep(.78, .98, Math.max(Math.abs(dx), Math.abs(dz)) / (CLOUD_TILE / 2));
-    const c = WX.p > .001 ? coverAt(cl.x, cl.z) : 0, op = (1 - sstep(.05, .5, c)) * (1 - sstep(.3, .8, k)) * edge, g = 1 - .55 * sstep(0, .4, c);
-    cl.mats.forEach((m, i) => { m.opacity = op; m.color.copy(cloudMats[i].color).multiplyScalar(g * (1 + 1.2 * f)); });
-  }
+  updateClouds(dt, k, f, hE, bp);
 
   // curtains under the advancing deck
   for (const sp of curtains.children) {
@@ -2390,7 +2422,7 @@ function placeAircraft() {
   yawQ.setFromAxisAngle(Y, -phi);
   fwd.set(0, 0, 1).applyQuaternion(yawQ); left.set(1, 0, 0).applyQuaternion(yawQ);
 }
-const env = [sky, water, clouds];
+const env = [sky, water, CU.mesh, skyOver.mesh];
 const BP_TITLES = {top: 'PLAN VIEW', front: 'FRONT ELEVATION', side: 'SIDE ELEVATION — PORT'};
 function setBlueprint(on) {
   for (const m of partMeshes) {
@@ -3796,6 +3828,8 @@ function animate() {
   photoGrab();
 }
 
+CS.patch(water.material, {indirect: .35});         // the sea is lit mostly by sky reflection: shadows dim that too
+CS.patchScene(scene);                            // cloud shadows on the island and the aircraft
 setSun(38);
 resetView();
 applyGear(1);

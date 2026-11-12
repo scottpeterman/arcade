@@ -32,3 +32,12 @@ Single-file three.js page (`index.html`); three.js 0.161 loads from jsDelivr thr
 - The camera code only runs in the render loop. To check framing while stepping the sim, add a test hook that calls the camera each step: `window.__simCam = sec => { for (...) { t += h; if (FM.on) fmFrame(h); fightFrame(h); if (mode === 'chase') styledCamera(h); } }`. Then screenshot, and project `bandit.g.position` with the camera to check it's on screen.
 - The photo is `renderer.domElement.toBlob` right after `renderer.render` (`photoGrab()` in the loop). To verify a real download, call `Browser.setDownloadBehavior` with a `downloadPath` through a CDP session, then press P. Six Fleets' `captureStream` approach never starts playing in headless Chrome, which is why the Corsair doesn't use it.
 - `?watch` starts a computer-against-computer fight on load. Esc pauses, C hides the HUD.
+
+## Sky and clouds (lib/longwind-world)
+
+- The page imports `lib/longwind-world/src/` through the import map key `longwind-world/` (`../../lib/longwind-world/src/`). In a test copy, keep the same layout: serve a root that holds `lab/corsair/index.html` and `lib/longwind-world/` (a symlink is fine) next to the local `three/`.
+- Library tests: `cd lib/longwind-world && npm install && npm test` (node, no GPU). `THREE_DIRS=<three r161>:<three r186> npm run test:browser` compiles and renders `examples/flight.html` in headless Chrome against each three.js build.
+- Handles for headless checks: `CU` (cumulus field: `CU.stats()`, `CU.clusters`, `CU.inside(pos)`), `CS` (cloud shadows: `CS.coverage()` reads back the shadow map), `skyOver`, `skyTune`, `QUAL` (the quality tier and GPU string). Expose them in the test copy's `window.T` the same way as `FM`.
+- Cost check that means something under SwiftShader: count the fragments the cloud pass shades per pixel. Render `CU.mesh.geometry` with a ShaderMaterial that shares `CU.uniforms` and `CU.material.vertexShader`, an additive 1/255 fragment output, `depthTest: false`, into a 640x360 target, then read it back. Frame times under SwiftShader are meaningless.
+- `?q=low|med|high` forces the cloud tier. Under SwiftShader `pickQuality` returns `low`.
+- `installHeightFog` patches `THREE.ShaderChunk` fog chunks at load, so every fogged material's fog distance is height-weighted. If a new custom ShaderMaterial includes `<fog_vertex>`, it must declare `vec4 mvPosition` before that include.

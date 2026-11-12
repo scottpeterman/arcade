@@ -1,0 +1,22 @@
+<!doctype html><html><body>
+<script>
+  const T = new URLSearchParams(location.search).get('three') || 'https://cdn.jsdelivr.net/npm/three@0.161.0/';
+  document.write(`<script type="importmap">${JSON.stringify({ imports: { three: T + 'build/three.module.js' } })}<\/script>`);
+</script>
+<script type="module">
+// Cloud-shadow map orientation, read back through the same uv mapping the material patch uses (test/browser.mjs).
+import * as THREE from 'three';
+import { createCloudShadow } from '../src/cloudShadow.js';
+const r = new THREE.WebGLRenderer(); r.setSize(64, 64); document.body.appendChild(r.domElement);
+const tex = new THREE.DataTexture(new Uint8Array([200, 200, 200, 255]), 1, 1); tex.needsUpdate = true;
+const cs = createCloudShadow(THREE, { renderer: r, noise: tex, size: 128, extent: 4000 });
+const cloud = [{ x: 1000, z: 500, y0: 600, y1: 900, rx: 250, rz: 250, op: 1 }], O = new THREE.Vector3();
+cs.update(cloud, O, new THREE.Vector3(0, 1, 0), 0);
+const overhead = { under: cs.sampleAt(1000, 500), mirrorZ: cs.sampleAt(1000, -500), mirrorX: cs.sampleAt(-1000, 500) };
+cs.update(cloud, O, new THREE.Vector3(1, 1, 0).normalize(), 0);       // sun 45° from +x: the shadow lands 750 m toward -x
+const lowSun = { downSun: cs.sampleAt(250, 500), under: cs.sampleAt(1000, 500), upSun: cs.sampleAt(1750, 500) };
+cloud[0].op = 0; cs.update(cloud, O, new THREE.Vector3(0, 1, 0), 0);
+const faded = cs.sampleAt(1000, 500);
+window.__out = { overhead, lowSun, faded, ok: overhead.under > 0.9 && overhead.mirrorZ < 0.05 && overhead.mirrorX < 0.05 && lowSun.downSun > 0.9 && lowSun.under < 0.05 && lowSun.upSun < 0.05 && faded === 0 };
+window.__ready = true;
+</script></body></html>

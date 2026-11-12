@@ -70,6 +70,31 @@ The deck is a real layer: base about 2,300 ft, tops about 7,900 ft. Inside it th
 
 The fog and horizon haze are matched to the sky: the sky's horizon colour is sampled whenever the sun moves and tone-mapped the same way the sky is, so the sea melts into it by day and the horizon goes dark after sunset.
 
+## Sky and clouds
+
+The sky, the fair-weather clouds and the haze come from [`lib/longwind-world`](../../lib/longwind-world/), a small library of sky and atmosphere pieces taken from [长风 Long Wind](https://github.com/jbang2004/long-wind) (MIT) and adapted for flying.
+
+- **Cumulus at real scale.** Trade-wind cumulus with flat bases at about 2,000 ft. They're 300 m to 1.3 km across: mostly small and medium, with the odd towering congestus up to about 5,000 ft, and a few building over the island's ridge. Each cloud is a cluster of lit sphere impostors with:
+  - sunlight that self-shadows through the cloud
+  - grey bases and bright cauliflower tops
+  - a silver lining when you look toward the sun
+  - edges broken up by Long Wind's baked cloud noise
+
+  The field tiles around you forever. The dogfight at 4,000 ft now happens among the towers.
+- **Flying into a cloud.** Inside a cumulus the world goes white. Puffs near the camera fade out and fog takes over, the same way the storm deck does.
+- **Cloud shadows.** Each cloud casts its shadow down-sun onto the sea, the island and the aircraft. Shadows weaken as the sun gets low and are gone under the storm deck.
+- **Haze that thins with height.** The fog is exponential with altitude (scale height 1,100 m), not uniform. From 4,000 ft the sea below is deep blue instead of milky, and the horizon band thins as you climb. In-cloud and in-deck whiteout stay at full strength at any height.
+- **A tropical sky.** The open sky is pre-saturated (Long Wind's trick for keeping blues through the tone mapping), the zenith is deeper, and turbidity is lower. Faint high cirrus drifts with the wind.
+- **The deck tops** are lit billows that catch the sun, instead of a flat sheet, and fade into the haze at a distance.
+
+Quality is picked from the GPU (Intel UHD 6xx gets `low`, Iris and newer Intel `med`, discrete GPUs `high`). Force it with `?q=low`, `?q=med` or `?q=high`. The tiers set the number of clouds and puffs: about 2,600 / 4,300 / 6,700 puffs.
+
+![Among the cumulus at 4,000 ft](docs/screenshots/cumulus-4000ft.png)
+
+![The island from 5,000 ft, cloud shadow on the sea](docs/screenshots/island-cloud-shadows.png)
+
+![A towering cumulus over the approach](docs/screenshots/noon-cumulus.png)
+
 ![Dusk squall](docs/screenshots/dusk-squall.png)
 
 ![Above the deck](docs/screenshots/above-the-deck.png)
@@ -112,4 +137,4 @@ A gamepad works too: left stick flies, and on pads with the standard mapping the
 
 - Target is a Chromebook-class laptop. Below about 20 fps the sim runs slower than real time (frame time is capped at 50 ms).
 - Trees, buildings and the parked aircraft don't collide; terrain, the strip and the sea do.
-- Loads three.js 0.161 from jsDelivr.
+- Loads three.js 0.161 from jsDelivr, and the sky and cloud modules from `lib/longwind-world/` (same site, through the import map).

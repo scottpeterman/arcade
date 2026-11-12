@@ -1,0 +1,12 @@
+{
+  "name": "longwind-world",
+  "version": "0.1.0",
+  "description": "Sky, atmosphere and cloud pieces from the Long Wind three.js game, adapted for flight: flyable lit cumulus, cloud shadows, exponential height fog for stock materials, a saturated Preetham sky, and Long Wind's painted cirrus / distant clouds / night sky as an overlay",
+  "type": "module",
+  "license": "MIT",
+  "exports": { ".": "./src/index.js", "./*": "./src/*" },
+  "files": ["src", "examples", "README.md", "LICENSE"],
+  "scripts": { "test": "node test/run.mjs", "test:browser": "node test/browser.mjs" },
+  "peerDependencies": { "three": ">=0.161.0" },
+  "devDependencies": { "three": "0.161.0", "playwright-core": "^1.63.0" }
+}
