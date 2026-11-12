@@ -3025,7 +3025,7 @@ function aiBrain(type, team) {
 function makeAI(type, team, src) {
   const g = src.clone(true); g.visible = false;
   const e = Object.assign(aiBrain(type, team), {g, quat: g.quaternion});
-  e.propMats = new Map();
+  e.propMats = new Map(); e.propMeshes = [];
   g.traverse(o => {
     if (!o.isMesh) return;
     if (o.material === M.hull) { o.material = M.paint; o.customDepthMaterial = undefined; }        // no cockpit cut-away on clones
@@ -3033,6 +3033,7 @@ function makeAI(type, team, src) {
       const disc = o.material === propDisc.material || o.material === ZERO.disc.material;
       if (!e.propMats.has(o.material)) e.propMats.set(o.material, {m: o.material.clone(), disc});
       o.material = e.propMats.get(o.material).m;
+      e.propMeshes.push(o);
     }
   });
   if (type === 'zero') {
@@ -3123,6 +3124,25 @@ function hitAirframe(a, b, c, q, span) {
 const bandit = makeAI('zero', 1, zeroBody);
 const wing = makeAI('f4u', 0, corsairBody);
 const AIS = [bandit, wing];
+// Prop blades and blur discs are transparent and don't write depth, and the whole cumulus field is one mesh at
+// renderOrder 1, so three can't sort a disc between the clouds behind it and the clouds in front of it: at the default
+// order every cloud blends over the disc, even one 5 km behind it. Per aircraft, draw the prop after the clouds unless
+// enough cloud sits between it and the camera to hide it (then before them, so that cloud covers it). Hysteresis on
+// the coverage keeps a puff rim sweeping across the sight line from flipping it frame to frame.
+const PLAYER_PROP = [];
+aircraft.traverse(o => { if (o.isMesh && (o.material === M.prop || o.material === M.tip || o.material === MZ.prop || o.material === propDisc.material || o.material === ZERO.disc.material)) PLAYER_PROP.push(o); });
+const _pp = V3(0, 0, 0);
+function propSort(meshes, pos) {
+  const cov = CU.mesh.visible ? CU.cloudIn(camera.position, pos) : 0;
+  const behind = meshes.behind ? cov > .35 : cov > .6;
+  if (behind === meshes.behind) return;
+  meshes.behind = behind;
+  for (const m of meshes) m.renderOrder = behind ? 0 : 2;
+}
+function sortProps() {
+  propSort(PLAYER_PROP, propGroup.getWorldPosition(_pp));
+  for (const e of AIS) if (e.g.visible) propSort(e.propMeshes, e.g.position);
+}
 const _wc = V3(0, 0, 0);
 const hitCentre = e => e.isPlayer ? FM.pos : _wc.set(0, 0, e.P.cg).applyQuaternion(e.quat).add(e.pos);
 
@@ -3887,6 +3907,7 @@ function animate() {
   if (WX.p > .005) $('status').innerHTML += `<br>STORM ${Math.round(WX.p * 100)}% · RAIN ${Math.round(WX.kRain * 100)}% · VIS ${Math.round(1.73 / fog.density / 100) / 10} km`;
 
   fightHud(); recTick(); camLabel();
+  if (!bp) sortProps();
   if (mode === 'cockpit') renderCockpit(); else renderer.render(scene, bp ? ortho : camera);
   if (!bp) sealAlpha();
   photoGrab();
