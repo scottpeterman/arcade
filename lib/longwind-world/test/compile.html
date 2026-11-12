@@ -1,0 +1,51 @@
+<!doctype html><html><body>
+<script>
+  const T = new URLSearchParams(location.search).get('three') || 'https://cdn.jsdelivr.net/npm/three@0.161.0/';
+  document.write(`<script type="importmap">${JSON.stringify({ imports: { three: T + 'build/three.module.js' } })}<\/script>`);
+</script>
+<script type="module">
+// Every material patch, alone and stacked, compiled and drawn with shadows, fog and several directional lights.
+// test/browser.mjs reads window.__out. Any shader compile/link error fails it.
+import * as THREE from 'three';
+import { installHeightFog, bakeCloudNoise, createCloudShadow, patchFoliage, patchGroundDetail, createGrass, groundTexture, createCumulus, createSkyOverlay } from '../src/index.js';
+const errors = [];
+installHeightFog(THREE, { seaY: 0, scale: 1000 });
+const r = new THREE.WebGLRenderer(); r.setSize(320, 180); r.shadowMap.enabled = true; document.body.appendChild(r.domElement);
+r.debug.onShaderError = (gl, prog, vs, fs) => errors.push((gl.getProgramInfoLog(prog) || '') + (gl.getShaderInfoLog(fs) || '') + (gl.getShaderInfoLog(vs) || ''));
+const scene = new THREE.Scene(); scene.fog = new THREE.FogExp2(0xcccccc, 0.002);
+const cam = new THREE.PerspectiveCamera(50, 16 / 9, 0.1, 5000); cam.position.set(0, 6, 14); cam.lookAt(0, 0, 0);
+const sun = new THREE.DirectionalLight(0xffffff, 3); sun.position.set(5, 10, 3); sun.castShadow = true; scene.add(sun, new THREE.DirectionalLight(0x88aacc, 0.8), new THREE.HemisphereLight());
+const noise = bakeCloudNoise(THREE, r);
+const cs = createCloudShadow(THREE, { renderer: r, noise });
+const geo = new THREE.PlaneGeometry(10, 10, 8, 8); geo.rotateX(-Math.PI / 2);
+geo.setAttribute('color', new THREE.Float32BufferAttribute(new Float32Array(geo.attributes.position.count * 3).fill(0.6), 3));
+geo.setAttribute('aGround', new THREE.Float32BufferAttribute(new Float32Array(geo.attributes.position.count * 4).fill(0.25), 4));
+const variants = {
+  ground: m => patchGroundDetail(THREE, m, { noise }),
+  groundShadow: m => { patchGroundDetail(THREE, m, { noise }); cs.patch(m); },
+  leaf: m => patchFoliage(THREE, m),
+  leafShadow: m => { patchFoliage(THREE, m); cs.patch(m); },
+  shadowLeaf: m => { cs.patch(m); patchFoliage(THREE, m); },
+  waterIndirect: m => cs.patch(m, { indirect: 0.35 }),
+  lambertLeaf: null,
+};
+let x = -12;
+for (const [k, fn] of Object.entries(variants)) {
+  const m = k === 'lambertLeaf' ? new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide }) : k === 'waterIndirect' ? new THREE.MeshPhysicalMaterial({ clearcoat: 1 }) : new THREE.MeshStandardMaterial({ vertexColors: true, side: THREE.DoubleSide });
+  if (fn) fn(m); else { patchFoliage(THREE, m); cs.patch(m); }
+  const mesh = new THREE.Mesh(geo, m); mesh.position.x = x; x += 4; mesh.receiveShadow = mesh.castShadow = true; scene.add(mesh);
+}
+const gt = groundTexture(THREE, new Float32Array(81), new Float32Array(81).fill(1), 8);
+const grass = createGrass(THREE, { ground: gt, rect: { x0: -10, z0: -10, size: 20 }, n: 16, spacing: 1 });
+patchFoliage(THREE, grass.material); cs.patch(grass.material); scene.add(grass.mesh);
+const cu = createCumulus(THREE, { renderer: r, noise, tile: 4000, base: 100, quality: 'low' }); scene.add(cu.mesh);
+scene.add(createSkyOverlay(THREE, { noise }).mesh);
+for (let i = 0; i < 2; i++) {
+  grass.update(cam, { time: i }); cu.update(cam, cam.position, { sunDir: new THREE.Vector3(0.3, 0.8, 0.5).normalize() });
+  cs.update(cu.casters(), cam.position, new THREE.Vector3(0.3, 0.8, 0.5).normalize(), 0);
+  r.render(scene, cam);
+}
+const programs = r.info.programs.map(p => ({ name: p.name, ok: p.diagnostics ? p.diagnostics.runnable : true }));
+window.__out = { errors, programs: programs.length, bad: programs.filter(p => !p.ok).map(p => p.name), glError: r.getContext().getError(), ok: !errors.length && programs.every(p => p.ok) };
+window.__ready = true;
+</script></body></html>

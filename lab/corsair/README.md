@@ -99,6 +99,21 @@ Quality is picked from the GPU (Intel UHD 6xx gets `low`, Iris and newer Intel `
 
 ![Above the deck](docs/screenshots/above-the-deck.png)
 
+## Island
+
+The island's foliage, ground and shoreline use the ground half of [`lib/longwind-world`](../../lib/longwind-world/).
+
+- **Leaves that let the light through.** Looking toward the sun, the rainforest canopy and palm fronds glow a warm green where the sun shines through them. Light wraps through thin leaves, so crowns have no hard dark side. The effect reads the sun after shadows, so leaves in shadow, or under a cloud shadow, stay dark. Front-lit canopy is unchanged.
+- **Ground detail.** The terrain knows what each patch of ground is: beach sand, grass, worn dirt or rock. Up close it gets grain and hue from Long Wind's baked noise, with a broad drift that hides tiling, and small bumps in the lighting. The detail fades out with distance, so it costs nothing from altitude.
+- **Grass around the strip.** A ring of grass clumps follows you when you're low over the island: lush on the clearings, tufty on the worn dirt by the strip, none on the matting, the taxiway or the beach. It sways with the storm wind. It's one draw call (72×72 clumps on `low`, 96×96 above) and switches off above about 850 ft.
+- **Surf.** Foam lines roll shoreward across the lagoon, and a wash runs up and back on the beach. The lagoon colours, reef breakers and surf now show from every angle. Before, the sea drew over them: it was two triangles 80 km across, too coarse for the depth buffer to tell it from a layer just above it. The sea is now a 64×64 grid.
+
+![Lagoon and surf from 500 ft](docs/screenshots/island-lagoon-surf.png)
+
+![The strip from the west: ground detail and surf](docs/screenshots/island-strip.png)
+
+![Grass along the strip at taxi height](docs/screenshots/island-taxi-grass.png)
+
 ## Sound
 
 Off until you press **M** (browsers need a gesture first). Everything is synthesised with Web Audio, no sample files: the R-2800's nine firing pulses per crank revolution with crank lope and combustion flutter, exhaust roar with power, the prop's blade-pass beat, airflow that builds with airspeed, exhaust crackle when you chop the throttle at high rpm, and the rain, wind and thunder of the storm. Inside the cockpit it's muffled and heavier.

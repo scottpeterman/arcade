@@ -129,7 +129,7 @@ import * as THREE from 'three';
 import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
 import {Sky} from 'three/addons/objects/Sky.js';
 import {DecalGeometry} from 'three/addons/geometries/DecalGeometry.js';
-import {installHeightFog, heightFogRatio, bakeCloudNoise, createCumulus, createSkyOverlay, createCloudShadow, pickQuality, tuneSky} from 'longwind-world/index.js';
+import {installHeightFog, heightFogRatio, bakeCloudNoise, createCumulus, createSkyOverlay, createCloudShadow, pickQuality, tuneSky, patchFoliage, patchGroundDetail, createGrass, groundTexture} from 'longwind-world/index.js';
 
 const showError = m => { const e = document.getElementById('error'); e.style.display = 'block'; e.textContent = String(m); };
 window.addEventListener('error', e => showError(e.message));
@@ -835,7 +835,8 @@ waveA.repeat.set(1320, 1320); waveB.repeat.set(3480, 3480);   // ~60 m and ~23 m
 waveB.center.set(.5, .5); waveB.rotation = .63;                       // layers off-axis so they never line up
 waveA.anisotropy = waveB.anisotropy = renderer.capabilities.getMaxAnisotropy();
 const SEA = 80000;                       // sea plane follows the aircraft; its edge sits past the 40 km far plane
-const water = new THREE.Mesh(new THREE.PlaneGeometry(SEA, SEA), new THREE.MeshPhysicalMaterial({
+// 64x64: two 80 km triangles lose so much depth precision once clipped that the lagoon/surf layer just above never shows
+const water = new THREE.Mesh(new THREE.PlaneGeometry(SEA, SEA, 64, 64), new THREE.MeshPhysicalMaterial({
   color: 0x0a3550, roughness: .16, metalness: 0, normalMap: waveA, normalScale: new THREE.Vector2(.5, .5),
   clearcoat: 1, clearcoatRoughness: .05, clearcoatNormalMap: waveB, clearcoatNormalScale: new THREE.Vector2(.4, .4),
 }));
@@ -937,7 +938,7 @@ const terrain = (() => {
   const p = g.attributes.position;
   for (let i = 0; i < p.count; i++) p.setY(i, isleH(p.getX(i), p.getZ(i)));
   g.computeVertexNormals();
-  const n = g.attributes.normal, col = new Float32Array(p.count * 3), c = new THREE.Color();
+  const n = g.attributes.normal, col = new Float32Array(p.count * 3), gw = new Float32Array(p.count * 4), c = new THREE.Color();   // gw: sand, grass, dirt, rock weights (ground detail)
   const C = {wet: 0x9c8a66, sand: 0xe3d3a8, grass: 0x5f6a38, dirt: 0x7a6844, mud: 0x54452f, floor: 0x24401d, deep: 0x1c3417, rock: 0x3d3b27, road: 0x9b8a62};
   for (const k in C) C[k] = new THREE.Color(C[k]);
   for (let i = 0; i < p.count; i++) {
@@ -949,8 +950,12 @@ const terrain = (() => {
     c.lerp(C.rock, sstep(.5, .35, ny) * sstep(12, 30, h));
     c.multiplyScalar(.86 + .28 * v);
     col.set([c.r, c.g, c.b], i * 3);
+    const kFloor = sstep(2.7, 4.8, h + (v - .5) * 2.2), kClear = cw * sstep(2.6, 3.2, h), kRock = sstep(.5, .35, ny) * sstep(12, 30, h);
+    const dirty = Math.max(sstep(.42, .62, vb * .6 + v * .4), camp * sstep(.35, .6, vb));
+    gw.set([(1 - kFloor) * (1 - kClear) * (1 - kRock), kClear * (1 - dirty) * (1 - kRock), kClear * dirty * (1 - kRock), kRock], i * 4);
   }
   g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  g.setAttribute('aGround', new THREE.BufferAttribute(gw, 4));
   const t = new THREE.Mesh(g, new THREE.MeshStandardMaterial({vertexColors: true, roughness: 1}));
   t.receiveShadow = true; island.add(t);
   return t;
@@ -959,10 +964,12 @@ const terrain = (() => {
 // ---- lagoon / reef / surf: lit, so it darkens with sunset and storm
 {
   const S = ISL.S + 600, N = 512;
+  const shore = new Uint8Array(N * N);              // island-mask value per texel, for the moving surf (rows bottom-up for a DataTexture)
   const reefTex = canvasTex(N, N, x => {
     const img = x.createImageData(N, N);
     for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
       const wx = (i / (N - 1) - .5) * S, wz = (j / (N - 1) - .5) * S, m = isleMask(wx, wz), o = (j * N + i) * 4;
+      shore[(N - 1 - j) * N + i] = Math.round(clamp((m + .4) / .5, 0, 1) * 255);
       const shallow = sstep(-.32, .0, m), surf = sstep(-.012, .004, m) * (1 - sstep(.012, .03, m));
       const reefEdge = Math.exp(-(((m + .2) / .03) ** 2)) * (.5 + .5 * vnoise(wx * .03, wz * .03));   // breakers on the outer reef
       const k = sstep(-.32, -.02, m);
@@ -973,8 +980,29 @@ const terrain = (() => {
     }
     x.putImageData(img, 0, 0);
   });
-  const reef = new THREE.Mesh(new THREE.PlaneGeometry(S, S), new THREE.MeshStandardMaterial({map: reefTex, transparent: true, depthWrite: false, roughness: .22, metalness: 0, polygonOffset: true, polygonOffsetFactor: 0, polygonOffsetUnits: -4}));
-  reef.rotation.x = -Math.PI / 2; reef.position.y = .06; reef.renderOrder = 1; island.add(reef); island.userData.reef = reef;
+  const reefMat = new THREE.MeshStandardMaterial({map: reefTex, transparent: true, depthWrite: false, roughness: .22, metalness: 0, polygonOffset: true, polygonOffsetFactor: 0, polygonOffsetUnits: -4});
+  // moving surf: foam lines rolling shoreward across the lagoon (~23 m apart, ~3 m/s) and a wash that runs up and back on
+  // the beach, broken up by Long Wind's baked cloud noise (set once the clouds section has baked it)
+  const shoreTex = new THREE.DataTexture(shore, N, N, THREE.RedFormat); shoreTex.magFilter = shoreTex.minFilter = THREE.LinearFilter; shoreTex.needsUpdate = true;
+  const reefU = {tShore: {value: shoreTex}, tCN: {value: null}, uT: {value: 0}};
+  island.userData.reefU = reefU;
+  reefMat.onBeforeCompile = sh => {
+    Object.assign(sh.uniforms, reefU);
+    sh.fragmentShader = 'uniform sampler2D tShore, tCN; uniform float uT;\n' + sh.fragmentShader.replace('#include <map_fragment>', `#include <map_fragment>
+    {
+      float m = texture2D(tShore, vMapUv).r * 0.5 - 0.4;
+      float n = texture2D(tCN, vMapUv * 9.0 + vec2(uT * 0.0015, 0.0)).a;
+      float lagoon = smoothstep(-0.12, -0.05, m) * (1.0 - smoothstep(-0.014, -0.004, m));
+      float lines = pow(max(sin(m * 220.0 - uT * 0.8 + n * 2.5), 0.0), 5.0) * lagoon * smoothstep(0.18, 0.55, n) * (0.55 + 0.45 * smoothstep(-0.1, -0.02, m));
+      float edge = 0.002 + 0.005 * sin(uT * 0.45 + n * 3.0);
+      float wash = smoothstep(-0.013, -0.006, m) * (1.0 - smoothstep(edge - 0.004, edge, m)) * (0.55 + 0.45 * n);
+      float foam = clamp(lines * 0.95 + wash * 0.9, 0.0, 1.0);
+      diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.97), foam);
+      diffuseColor.a = max(diffuseColor.a, foam);
+    }`);
+  };
+  const reef = new THREE.Mesh(new THREE.PlaneGeometry(S, S), reefMat);
+  reef.rotation.x = -Math.PI / 2; reef.position.y = .1; reef.renderOrder = 1; island.add(reef); island.userData.reef = reef;
 }
 
 // ---- rainforest: branching trees with leaf-spray cards (after the jungle_tree_prototype study), instanced per variant.
@@ -1099,6 +1127,8 @@ leafMat.onBeforeCompile = sh => {
   sh.fragmentShader = sh.fragmentShader.replace('#include <normal_fragment_begin>',
     THREE.ShaderChunk.normal_fragment_begin.replace('float faceDirection = gl_FrontFacing ? 1.0 : - 1.0;', 'float faceDirection = 1.0;'));
 };
+// leaves let the sun through: back-lit translucency and wrap light from the shadowed sun (Long Wind, lib/longwind-world)
+patchFoliage(THREE, leafMat, {back: 1.3, wrap: .35, trans: .75, glow: .04, tint: [1.04, 1, .72]});
 {
   const defs = [['broad', 11], ['broad', 23], ['broad', 37], ['broad', 51], ['emergent', 61], ['emergent', 73], ['under', 83], ['under', 97]];
   const variants = defs.map(([type, sd]) => treeVariant(sd, type));
@@ -1184,7 +1214,9 @@ const palmSpots = [];
   for (let i = palmSpots.length - 1; i >= 0; i--) if (!dry(palmSpots[i])) palmSpots.splice(i, 1);
   const {trunk, fronds} = palmGeometries();
   const tm = new THREE.InstancedMesh(trunk, new THREE.MeshStandardMaterial({color: 0x6b5e48, roughness: 1}), palmSpots.length);
-  const fm = new THREE.InstancedMesh(fronds, new THREE.MeshStandardMaterial({color: 0x557a32, vertexColors: true, roughness: .8, side: THREE.DoubleSide}), palmSpots.length);
+  const frondMat = new THREE.MeshStandardMaterial({color: 0x557a32, vertexColors: true, roughness: .8, side: THREE.DoubleSide});
+  patchFoliage(THREE, frondMat, {back: 1.5, wrap: .4, trans: 1, glow: .05, tint: [1.04, 1, .72]});   // fronds glow when back-lit, no black undersides
+  const fm = new THREE.InstancedMesh(fronds, frondMat, palmSpots.length);
   const mtx = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), tc = new THREE.Color();
   palmSpots.forEach(([x, z, lean, s, tilt], i) => {
     e.set(0, -lean, -tilt, 'YXZ'); q.setFromEuler(e);
@@ -1544,6 +1576,27 @@ zeroBody.visible = false;
 // The clouds' own shadows fall on the sea, the island and the aircraft. Quality: ?q=low|med|high, otherwise from the GPU.
 const QUAL = pickQuality(renderer);
 const cloudNoise = bakeCloudNoise(THREE, renderer);
+// ground detail on the island (same baked noise): beach speckle, grass clumps and dry patches, dirt, rock relief, and a
+// ~1 km macro drift that breaks up flat colour from altitude; fades out with distance (lib/longwind-world)
+patchGroundDetail(THREE, terrain.material, {noise: cloudNoise, near: 220, far: 1300});
+island.userData.reefU.tCN.value = cloudNoise;   // surf breakup
+// grass in the clearings, drawn only when you're low over the island: a camera-following grid of blade clumps placed on
+// the GPU from a height + grass-weight texture built straight from the terrain grid (no extra sampling at load). None
+// on the Marston mat, the taxiway or its connectors. Leaves-style translucency when back-lit.
+const GRASS = (() => {
+  const g = terrain.geometry, p = g.attributes.position, w = g.attributes.aGround;
+  const hts = new Float32Array(p.count), wts = new Float32Array(p.count), conn = [-RW.half * .78, RW.half * .74];
+  for (let i = 0; i < p.count; i++) {
+    const r = rwLocal(p.getX(i), p.getZ(i));
+    const paved = (Math.abs(r.a) < RW.half + 10 && Math.abs(r.b) < RW.w + 4) || (Math.abs(r.a + 40) < RW.half * .85 + 8 && Math.abs(r.b + 72) < 10) || (conn.some(a0 => Math.abs(r.a - a0) < 10) && r.b > -68 && r.b < -4);
+    hts[i] = p.getY(i); wts[i] = paved ? 0 : clamp(w.getY(i) + .85 * w.getZ(i), 0, 1);   // clearings: lush on grass, tufty on the worn dirt
+  }
+  const gr = createGrass(THREE, {ground: groundTexture(THREE, hts, wts, ISL.SEG), rect: {x0: ISLE.x - ISL.S / 2, z0: ISLE.z - ISL.S / 2, size: ISL.S}, seaY: WATER_Y, n: QUAL.tier === 'low' ? 72 : 96, spacing: 2.4, height: .8});
+  patchFoliage(THREE, gr.material, {back: 1.2, wrap: .4, trans: 1, glow: .04, tint: [1.04, 1, .72]});
+  scene.add(gr.mesh);
+  return gr;
+})();
+const _gw = new THREE.Vector2();
 const CU_BASE = 610, CU_TOPS = 1500;               // m above the sea: bases ~2,000 ft, tallest tops ~4,900 ft
 const CU = createCumulus(THREE, {renderer, noise: cloudNoise, tile: 26000, seaY: WATER_Y, base: CU_BASE, quality: QUAL.tier, seed: 11});
 RIDGE.forEach(([rx, rz], i) => { if (i % 2 === 0) CU.addCluster({x: ISLE.x + rx + 140, z: ISLE.z + rz - 60, w: 640 + 140 * (i % 3), h: 480 + 70 * i, base: CU_BASE + 30}); });
@@ -1586,6 +1639,8 @@ function updateClouds(dt, k, f, hE, bp) {
   u.uHazeH.value = lerp(.012, .05, WX.fogK);
   u.uStorm.value = k; u.uTime.value = WX.uTime.value; u.uWind.value.set(-WX.front.x, -WX.front.y, 1, 0);
   u.uCloudCover.value.set(-.04, 1 - k, .06, .45 * (1 - k)); u.uEye.value.set(hE, CU_BASE, CU_TOPS, 0);   // w = 0: no painted far band (the 3D field reaches the haze)
+  const nearIsle = Math.hypot(camera.position.x - ISLE.x, camera.position.z - ISLE.z) < 1300;
+  GRASS.update(camera, {time: WX.uTime.value, wind: _gw.set(-WX.front.x, -WX.front.y), gust: .6 + 1.6 * k, visible: !bp && island.visible && nearIsle && hE < 260});
   CS.strength = .55 * (1 - k) * sstep(2, 14, BASE.elev);
   CS.update(CU.casters(), aircraft.position, sunDir, WATER_Y);
 }
@@ -2313,7 +2368,7 @@ function updateWeather(dt, bp, speed) {
     stormUI();
   }
   WX.D = frontD(WX.p); domeMat.uniforms.uD.value = WX.D;
-  WX.uTime.value += dt;
+  WX.uTime.value += dt; island.userData.reefU.uT.value = WX.uTime.value;
   const eye = camera.position, c = (eye.x - ISLE.x) * WX.front.x + (eye.z - ISLE.z) * WX.front.y - WX.D;
   const hE = eye.y - WATER_Y, above = sstep(DECK.top - 150, DECK.top + 60, hE);      // climbing out through the tops
   const inCloud = coverAt(eye.x, eye.z) * sstep(0, .04, WX.p) * sstep(DECK.base - 40, DECK.base + 60, hE) * (1 - sstep(DECK.top - 120, DECK.top, hE));
@@ -3729,6 +3784,14 @@ function recUI() {
 function recTick() { if (REC.mr) { const s = Math.floor((performance.now() - REC.t0) / 1000); $('recdot').textContent = `● REC ${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; } }
 // a still: asked for here, taken right after the next frame is drawn — in the same task, before the browser clears the
 // WebGL buffer (toBlob snapshots the canvas when it's called). Simpler and steadier than Six Fleets' capture stream.
+// leaves use alpha-to-coverage, which leaves fractional alpha at every leaf edge in the canvas. The canvas is transparent
+// (blueprint mode shows the page behind it), so those edges came out as a pale outline on each leaf — in the live view
+// over the page colour, and in stills and recordings over whatever they're viewed on. Outside blueprint, set alpha to 1.
+const _gl = renderer.getContext();
+function sealAlpha() {
+  _gl.colorMask(false, false, false, true); _gl.clearColor(0, 0, 0, 1); _gl.clear(_gl.COLOR_BUFFER_BIT);
+  renderer.state.buffers.color.reset();             // three's cached mask/clear colour are stale now: make it set them again
+}
 const PHOTO = {want: false};
 function photo() { PHOTO.want = true; }
 function photoGrab() {
@@ -3825,6 +3888,7 @@ function animate() {
 
   fightHud(); recTick(); camLabel();
   if (mode === 'cockpit') renderCockpit(); else renderer.render(scene, bp ? ortho : camera);
+  if (!bp) sealAlpha();
   photoGrab();
 }
 

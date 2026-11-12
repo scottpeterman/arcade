@@ -41,3 +41,13 @@ Single-file three.js page (`index.html`); three.js 0.161 loads from jsDelivr thr
 - Cost check that means something under SwiftShader: count the fragments the cloud pass shades per pixel. Render `CU.mesh.geometry` with a ShaderMaterial that shares `CU.uniforms` and `CU.material.vertexShader`, an additive 1/255 fragment output, `depthTest: false`, into a 640x360 target, then read it back. Frame times under SwiftShader are meaningless.
 - `?q=low|med|high` forces the cloud tier. Under SwiftShader `pickQuality` returns `low`.
 - `installHeightFog` patches `THREE.ShaderChunk` fog chunks at load, so every fogged material's fog distance is height-weighted. If a new custom ShaderMaterial includes `<fog_vertex>`, it must declare `vec4 mvPosition` before that include.
+
+## Island (foliage, ground, grass, surf)
+
+- Island scenes in the test copy use island-local cameras: `ISLE + (x, WATER_Y + y, z)`. Expose `isleMask`, `GRASS` and `island` in `window.T` for probes (`island.userData.reef`, `island.userData.reefU`).
+- The scene has two 80 km planes: the sea (scene child 1, `MeshPhysicalMaterial`) and the storm deck at ~2,300 m. Don't find the sea by geometry size.
+- `island.userData.reef.material.color` is reset every frame (storm dimming), so a debug colour set on it doesn't stick. Swap the material instead.
+- The sea must stay subdivided (64x64). As two triangles it out-depths the reef/surf layer 10 cm above it, everywhere.
+- Grass weight comes from the terrain's `aGround` attribute (x sand, y grass, z dirt, w rock): `y + .85 z`, zero on the strip, taxiway and connectors. The grass ring is `lwGrass`; check `GRASS.mesh.visible` (off above 260 m or away from the island).
+- `patchFoliage`, `patchGroundDetail` and the cloud-shadow patch chain on one material. Their program keys include the wrapped hook's source; keep that if you add another patch.
+- The canvas is transparent (blueprint mode needs it). Leaf alpha-to-coverage leaves fractional alpha at leaf edges, so `sealAlpha()` forces alpha to 1 after every non-blueprint frame. Without it, stills (`p`) and recordings show a white outline on every leaf. To check: capture with `p` and count pixels with alpha < 255 (should be 0).

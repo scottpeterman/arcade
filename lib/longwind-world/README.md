@@ -5,7 +5,7 @@ camera that flies. Plain ES modules: you pass `THREE` in (r161 or later; tested 
 no other dependencies.
 
 Long Wind's sky was built for a swordsman standing in a field. Its clouds are painted onto the dome, which is right
-for that game but not for an aircraft that flies past and through them. So this package has two parts:
+for that game but not for an aircraft that flies past and through them. The package covers the sky, the clouds and the ground: foliage lighting, ground detail and grass.
 
 | module | what | from Long Wind |
 |---|---|---|
@@ -14,6 +14,9 @@ for that game but not for an aircraft that flies past and through them. So this 
 | `installHeightFog` | Exponential height fog for every material that uses three's fog chunks, keeping `FogExp2` semantics. The fog distance is the view depth times the mean density `exp(-h/H)` along the ray, so haze thins with altitude. | The exact height-fog integral in `atmosphere.js` |
 | `createSkyOverlay` | High cirrus, a painted band of distant cumulus just above the horizon, and the night sky (two star layers, the Milky Way, the moon with maria). A transparent dome over any base sky. | Long Wind's `sky.js` GLSL, unchanged apart from uniforms |
 | `tuneSky` | Saturation and zenith depth for three's `Sky` (Preetham). Plain Preetham plus ACES at a low exposure stays pale grey-blue at any turbidity. | `wx_skySat`: pre-saturating the open-sky stops |
+| `patchFoliage` | Leaf lighting for any stock lit material: warm translucency when you look toward the sun through the leaves, wrap light so thin foliage has no hard terminator, a little self-light so deep canopy never goes black. It reads the *shadowed* sun from three's own light loop, so leaves in shadow (or under a cloud shadow) don't glow. | `foliage.js`'s sunBack / sunWrap terms, moved from a custom shader into a patch |
+| `patchGroundDetail` | Close-range ground detail for a vertex-coloured terrain: a `vec4` attribute of surface weights (sand, grass, dirt, rock) picks per-surface grain and hue from the baked noise, with a macro drift that breaks up tiling and a detail normal. Fades out with distance. | Long Wind's terrain splat idea and noise; the weights-as-attribute patch is new |
+| `createGrass` | A ring of grass clumps around the camera, one instanced draw. Clumps are placed on the GPU from `gl_InstanceID` on a grid snapped to the camera, sit on the ground from a height/weight texture, collapse where there's no grass, fade at the ring edge and sway with the wind. `groundTexture()` builds the texture from a terrain grid. | Long Wind's grass ring, simplified to one draw with no CPU placement |
 | `bakeCloudNoise` | 512² tileable RGBA cloud noise baked once on the GPU: billows, wind streaks, cellular puffs, detail. | Verbatim |
 | `pickQuality` | `low` / `med` / `high` from the GPU name, or forced with `?q=` | — |
 
@@ -40,6 +43,29 @@ cu.update(camera, aircraft.position, { sunDir, sunCol, skyTop, skyBot, dt });
 cs.update(cu.casters(), aircraft.position, sunDir, seaY);
 const whiteout = cu.inside(camera.position);             // 0..1: thicken your fog when you fly into a cloud
 ```
+
+### Foliage, ground and grass
+
+```js
+import { patchFoliage, patchGroundDetail, createGrass, groundTexture } from 'longwind-world/index.js';
+
+patchFoliage(THREE, leafMaterial, { back: 1.3, wrap: 0.35, trans: 1, glow: 0.05 });   // after any onBeforeCompile of your own
+// terrain: geometry.setAttribute('aGround', new THREE.BufferAttribute(weights, 4))  — sand, grass, dirt, rock per vertex
+patchGroundDetail(THREE, terrain.material, { noise, near: 220, far: 1300 });
+const grass = createGrass(THREE, { ground: groundTexture(THREE, heights, grassWeights, seg),
+  rect: { x0, z0, size }, seaY: 0, n: 80, spacing: 2.4, height: 0.8 });
+patchFoliage(THREE, grass.material, { back: 1.2, wrap: 0.4 });
+scene.add(grass.mesh);
+// every frame
+grass.update(camera, { time, wind, gust, visible: camera.position.y < 260 });
+```
+
+The foliage strengths are relative to a sun of intensity ~3 under ACES at exposure ~0.6. Long Wind's own values
+(`back` 2.6, `trans` 1.3) are for its brighter grading and read as neon lime there. Patches chain: `patchFoliage` and
+`createCloudShadow().patch()` can go on the same material in either order. Each patch keeps the wrapped
+`onBeforeCompile`'s source in `customProgramCacheKey`. three's default key is the hook's source text, which after
+wrapping is the same for every patched material, so two materials whose own hooks differ could otherwise share one
+program, and one would silently lose its hook.
 
 `examples/flight.html` is a complete minimal scene. Open it through any static server. It loads three r161 from
 jsDelivr; use `?three=/path/to/three/` to point it elsewhere. Other URL options: `?e=<sun elevation>`,
@@ -75,6 +101,10 @@ draw; the old sprites were one call each. The fragment shader does 3 noise textu
 Puffs fade out inside about 1.6 radii of the camera, so flying into a cloud doesn't flood the screen. Hosts handle
 the whiteout with fog via `inside()`.
 
+Ground pieces, same measurement: the grass ring is one draw call and one program (72² clumps on `low`, 96² above,
+about 36k triangles visible, all culled to nothing off grass). `patchFoliage` adds a handful of ALU to leaf fragments,
+`patchGroundDetail` adds 3 noise taps to terrain fragments. Whole-frame draw calls at the strip went from 500 to 501.
+
 Quality tiers: `low` 70 clouds / ~2,600 puffs, `med` 105 / ~4,300, `high` 150 / ~6,700. On integrated GPUs the
 other big lever is the host's pixel ratio: fill scales with it.
 
@@ -91,5 +121,5 @@ Both suites pass against three r161.0 and r186.
 ## Provenance
 
 Every file that carries Long Wind code says so in its header, with the source path. New: `cumulus.js`,
-`cloudShadow.js`, `heightFog.js` (the chunk patch), `skyTune.js` (the Preetham patch), `quality.js`, the overlay's
+`cloudShadow.js`, `groundDetail.js` (the weights patch), `grass.js` (the GPU-placed ring), `heightFog.js` (the chunk patch), `skyTune.js` (the Preetham patch), `quality.js`, the overlay's
 flight adaptations, the tests and the example. MIT; see `LICENSE`.
