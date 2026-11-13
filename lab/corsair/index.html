@@ -56,11 +56,12 @@ body.clean.ouch::after{display:none}
 @media(max-width:600px){#panel{width:216px;left:8px;top:8px;padding:11px}#help{bottom:8px;left:8px;max-width:70%;font-size:11px}#bpTitle{top:auto;bottom:60px}}
 </style>
 <script type="importmap">
-{"imports":{
-  "three":"https://cdn.jsdelivr.net/npm/three@0.161.0/build/three.module.js",
-  "three/addons/":"https://cdn.jsdelivr.net/npm/three@0.161.0/examples/jsm/",
-  "longwind-world/":"lib/longwind-world/src/"
-}}
+{
+  "imports": {
+   "three": "https://cdn.jsdelivr.net/npm/three@0.161.0/build/three.module.js",
+   "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.161.0/examples/jsm/"
+  }
+}
 </script>
 </head>
 <body>
@@ -129,7 +130,1439 @@ import * as THREE from 'three';
 import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
 import {Sky} from 'three/addons/objects/Sky.js';
 import {DecalGeometry} from 'three/addons/geometries/DecalGeometry.js';
-import {installHeightFog, heightFogRatio, bakeCloudNoise, createCumulus, createSkyOverlay, createCloudShadow, pickQuality, tuneSky, patchFoliage, patchGroundDetail, createGrass, groundTexture} from '../../lib/longwind-world/src/index.js';
+// ==== inlined by tools/dist.py ====
+// ---- lib/longwind-world/src/glsl.js
+const __m_lib_longwind_world_src_glsl = (() => {
+
+// GLSL helpers shared by the longwind-world shaders. From 长风 Long Wind (github.com/jbang2004/long-wind, MIT,
+// (c) 2026 jbang2004): src/core/noise.js (GLSL_NOISE) and wx_fbm3v from src/core/atmosphere.js. Guarded, so any
+// number of chunks can include it in one shader.
+const LW_NOISE_GLSL = /* glsl */`
+#ifndef WX_NOISE
+#define WX_NOISE
+float wx_hash12(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
+vec2 wx_hash22(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * vec3(0.1031, 0.1030, 0.0973)); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.xx + p3.yz) * p3.zy); }
+float wx_hash13(vec3 p3) { p3 = fract(p3 * 0.1031); p3 += dot(p3, p3.zyx + 31.32); return fract((p3.x + p3.y) * p3.z); }
+float wx_vnoise(vec2 p) {
+  vec2 i = floor(p), f = fract(p);
+  vec2 u = f * f * (3.0 - 2.0 * f);
+  float a = wx_hash12(i), b = wx_hash12(i + vec2(1, 0)), c = wx_hash12(i + vec2(0, 1)), d = wx_hash12(i + vec2(1, 1));
+  return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+}
+// value noise with its analytic gradient in one evaluation: (value, d/dx, d/dy)
+vec3 wx_vnoised(vec2 p) {
+  vec2 i = floor(p), f = fract(p);
+  vec2 u = f * f * (3.0 - 2.0 * f), du = 6.0 * f * (1.0 - f);
+  float a = wx_hash12(i), b = wx_hash12(i + vec2(1, 0)), c = wx_hash12(i + vec2(0, 1)), d = wx_hash12(i + vec2(1, 1));
+  float k = a - b - c + d;
+  return vec3(a + (b - a) * u.x + (c - a) * u.y + k * u.x * u.y, du * vec2(b - a + k * u.y, c - a + k * u.x));
+}
+float wx_vnoise3(vec3 p) {
+  vec3 i = floor(p), f = fract(p);
+  vec3 u = f * f * (3.0 - 2.0 * f);
+  float n000 = wx_hash13(i), n100 = wx_hash13(i + vec3(1,0,0)), n010 = wx_hash13(i + vec3(0,1,0)), n110 = wx_hash13(i + vec3(1,1,0));
+  float n001 = wx_hash13(i + vec3(0,0,1)), n101 = wx_hash13(i + vec3(1,0,1)), n011 = wx_hash13(i + vec3(0,1,1)), n111 = wx_hash13(i + vec3(1,1,1));
+  return mix(mix(mix(n000, n100, u.x), mix(n010, n110, u.x), u.y), mix(mix(n001, n101, u.x), mix(n011, n111, u.x), u.y), u.z);
+}
+float wx_fbm(vec2 p) {
+  float s = 0.0, a = 0.5;
+  mat2 r = mat2(0.8, -0.6, 0.6, 0.8);
+  for (int i = 0; i < 5; i++) { s += a * wx_vnoise(p); p = r * p * 2.03 + 17.1; a *= 0.5; }
+  return s;
+}
+float wx_fbm3(vec3 p) {
+  float s = 0.0, a = 0.5;
+  for (int i = 0; i < 4; i++) { s += a * wx_vnoise3(p); p = p * 2.02 + 11.7; a *= 0.5; }
+  return s;
+}
+// 2D simplex (Ashima / Ian McEwan, MIT)
+vec3 wx_mod289(vec3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+vec2 wx_mod289(vec2 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+vec3 wx_permute(vec3 x) { return wx_mod289(((x * 34.0) + 10.0) * x); }
+float wx_snoise(vec2 v) {
+  const vec4 C = vec4(0.211324865405187, 0.366025403784439, -0.577350269189626, 0.024390243902439);
+  vec2 i = floor(v + dot(v, C.yy));
+  vec2 x0 = v - i + dot(i, C.xx);
+  vec2 i1 = (x0.x > x0.y) ? vec2(1.0, 0.0) : vec2(0.0, 1.0);
+  vec4 x12 = x0.xyxy + C.xxzz; x12.xy -= i1;
+  i = wx_mod289(i);
+  vec3 p = wx_permute(wx_permute(i.y + vec3(0.0, i1.y, 1.0)) + i.x + vec3(0.0, i1.x, 1.0));
+  vec3 m = max(0.5 - vec3(dot(x0, x0), dot(x12.xy, x12.xy), dot(x12.zw, x12.zw)), 0.0);
+  m = m * m; m = m * m;
+  vec3 x = 2.0 * fract(p * C.www) - 1.0;
+  vec3 h = abs(x) - 0.5;
+  vec3 ox = floor(x + 0.5);
+  vec3 a0 = x - ox;
+  m *= 1.79284291400159 - 0.85373472095314 * (a0 * a0 + h * h);
+  vec3 g; g.x = a0.x * x0.x + h.x * x0.y; g.yz = a0.yz * x12.xz + h.yz * x12.yw;
+  return 130.0 * dot(m, g);
+}
+#endif
+#ifndef WX_FBM3V
+#define WX_FBM3V
+// 3-octave value fBm (weights .55/.28/.17): blobby, soft, no lattice artefacts
+float wx_fbm3v(vec2 p) {
+  const mat2 R = mat2(0.8, -0.6, 0.6, 0.8);
+  float s = 0.55 * wx_vnoise(p);
+  p = R * p * 2.02 + 3.17; s += 0.28 * wx_vnoise(p);
+  p = R * p * 2.03 + 7.71; s += 0.17 * wx_vnoise(p);
+  return s;
+}
+#endif
+`;
+return { LW_NOISE_GLSL };
+})();
+// ---- lib/longwind-world/src/cloudNoise.js
+const __m_lib_longwind_world_src_cloudNoise = (() => {
+
+// Tileable cloud noise, baked once on the GPU. From 长风 Long Wind (github.com/jbang2004/long-wind, MIT, (c) 2026
+// jbang2004), src/world/sky.js (bakeCloudNoise), made three-agnostic (pass THREE in) and cached per renderer.
+//
+//   const tex = bakeCloudNoise(THREE, renderer)     → 512² RGBA8, RepeatWrapping, mipmapped
+//     R warped billow fBm (cumulus / stratocumulus masses)   G wind-combed streak fBm (x = along the wind, 5:1)
+//     B cellular puffs (inverted Worley, cauliflower tops)    A fine detail fBm (edge erosion, wisps)
+// Every octave hashes its lattice modulo its own period, so all four channels tile exactly at the border.
+const BAKE_FRAG = /* glsl */`
+precision highp float;
+varying vec2 vUv;
+float h12(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
+vec2 h22(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * vec3(0.1031, 0.1030, 0.0973)); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.xx + p3.yz) * p3.zy); }
+float pn(vec2 p, vec2 P) {
+  vec2 i = floor(p), f = fract(p), u = f * f * (3.0 - 2.0 * f);
+  float a = h12(mod(i, P)), b = h12(mod(i + vec2(1.0, 0.0), P)), c = h12(mod(i + vec2(0.0, 1.0), P)), d = h12(mod(i + vec2(1.0, 1.0), P));
+  return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+}
+float pfbm(vec2 p, vec2 P, int oct, float gain) {
+  float s = 0.0, a = 1.0, n = 0.0;
+  for (int i = 0; i < 8; i++) {
+    if (i >= oct) break;
+    s += a * pn(p, P); n += a;
+    p = p * 2.0 + vec2(13.0, 7.0); P *= 2.0; a *= gain;
+  }
+  return s / n;
+}
+float pworley(vec2 p, vec2 P) {
+  vec2 i = floor(p), f = fract(p);
+  float d = 8.0;
+  for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++) {
+    vec2 g = vec2(float(x), float(y));
+    vec2 r = g + h22(mod(i + g, P)) * 0.9 + 0.05 - f;
+    d = min(d, dot(r, r));
+  }
+  return sqrt(d);
+}
+float spread(float v) { return clamp((v - 0.5) * 1.7 + 0.5, 0.0, 1.0); }
+void main() {
+  vec2 uv = vUv;
+  vec2 p = uv * 5.0; vec2 P = vec2(5.0);
+  vec2 w = vec2(pfbm(p + vec2(1.7, 9.2), P, 4, 0.5), pfbm(p + vec2(8.3, 2.8), P, 4, 0.5)) - 0.5;
+  float r = pfbm(p + w * 2.2, P, 6, 0.52);
+  float g = pfbm(uv * vec2(3.0, 15.0) + vec2(0.0, pn(uv * vec2(3.0, 6.0), vec2(3.0, 6.0)) * 2.0), vec2(3.0, 15.0), 5, 0.5);
+  float b = (1.0 - pworley(uv * 9.0, vec2(9.0))) * 0.62 + (1.0 - pworley(uv * 21.0, vec2(21.0))) * 0.38;
+  float a = pfbm(uv * 26.0, vec2(26.0), 4, 0.55);
+  gl_FragColor = vec4(spread(r), spread(g), clamp(b * 1.15 - 0.1, 0.0, 1.0), spread(a));
+}
+`;
+
+const cache = new WeakMap();
+
+function bakeCloudNoise(THREE, renderer, size = 512) {
+  const hit = cache.get(renderer);
+  if (hit && hit.image.width === size) return hit;
+  const rt = new THREE.WebGLRenderTarget(size, size, {
+    type: THREE.UnsignedByteType, format: THREE.RGBAFormat,
+    wrapS: THREE.RepeatWrapping, wrapT: THREE.RepeatWrapping,
+    minFilter: THREE.LinearMipmapLinearFilter, magFilter: THREE.LinearFilter,
+    generateMipmaps: true, depthBuffer: false,
+  });
+  rt.texture.name = 'lwCloudNoise';
+  rt.texture.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+  const mat = new THREE.ShaderMaterial({
+    vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
+    fragmentShader: BAKE_FRAG, depthTest: false, depthWrite: false, toneMapped: false,
+  });
+  const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), mat);
+  quad.frustumCulled = false;
+  const scene = new THREE.Scene();
+  scene.add(quad);
+  const cam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+  const prev = renderer.getRenderTarget();
+  renderer.setRenderTarget(rt);
+  renderer.render(scene, cam);            // three regenerates the mip chain after rendering into rt
+  renderer.setRenderTarget(prev);
+  mat.dispose(); quad.geometry.dispose();
+  cache.set(renderer, rt.texture);
+  return rt.texture;
+}
+return { bakeCloudNoise };
+})();
+// ---- lib/longwind-world/src/heightFog.js
+const __m_lib_longwind_world_src_heightFog = (() => {
+
+// Exponential height fog for every fogged material, keeping three's FogExp2 semantics.
+//
+// Long Wind integrates exponential height fog exactly along each view ray (src/core/atmosphere.js,
+// wx_applyAtmosphereT, github.com/jbang2004/long-wind, MIT). This brings the same integral to stock three.js: the
+// global fog chunks are patched so FogExp2 uses an *effective* distance, the view depth times the mean of
+// exp(-h / H) along the ray. At sea level nothing changes. From altitude, looking down or across, the air is
+// thinner, so the sea under a climbing aircraft clears up and the horizon haze thins with height, as real
+// boundary-layer haze does.
+//
+//   installHeightFog(THREE, { seaY: -80, scale: 1100 })   — call once, BEFORE anything compiles (first lines of the app)
+//   heightFogRatio(y) → exp(-(y - seaY) / scale)          — the fog density ratio at height y. Hosts that add a
+//                                                          uniform local fog (e.g. a whiteout inside a cloud) divide
+//                                                          that extra density by this ratio at the camera to keep it
+//                                                          full strength.
+// Works on any material that includes three's fog chunks (built-ins, Sprites, Points, and ShaderMaterials that
+// include <fog_pars_vertex>/<fog_vertex> with a `mvPosition`). Linear Fog (THREE.Fog) is left untouched.
+// The chunks are identical in three r161 and r186; install throws if the anchors aren't found.
+let state = null;
+
+function installHeightFog(THREE, { seaY = 0, scale = 1000 } = {}) {
+  const C = THREE.ShaderChunk;
+  if (!state) state = { pv: C.fog_pars_vertex, v: C.fog_vertex, pf: C.fog_pars_fragment, f: C.fog_fragment };
+  const need = (src, anchor, name) => { if (!src.includes(anchor)) throw new Error(`installHeightFog: ${name} chunk not recognised`); };
+  need(state.v, 'vFogDepth = - mvPosition.z;', 'fog_vertex');
+  need(state.f, 'float fogFactor = 1.0 - exp( - fogDensity * fogDensity * vFogDepth * vFogDepth );', 'fog_fragment');
+  const S = Number(seaY).toFixed(3), H = Math.max(1, Number(scale)).toFixed(3);
+  C.fog_pars_vertex = state.pv.replace('varying float vFogDepth;', 'varying float vFogDepth;\n\tvarying float vFogWorldY;');
+  C.fog_vertex = state.v.replace('vFogDepth = - mvPosition.z;',
+    'vFogDepth = - mvPosition.z;\n\tvFogWorldY = dot( viewMatrix[ 1 ].xyz, mvPosition.xyz - viewMatrix[ 3 ].xyz );');
+  C.fog_pars_fragment = state.pf.replace('varying float vFogDepth;', 'varying float vFogDepth;\n\tvarying float vFogWorldY;');
+  C.fog_fragment = state.f.replace(
+    'float fogFactor = 1.0 - exp( - fogDensity * fogDensity * vFogDepth * vFogDepth );',
+    `float lwH0 = max( cameraPosition.y - ${S}, 0.0 ), lwH1 = max( vFogWorldY - ${S}, 0.0 );
+		float lwE0 = exp( - lwH0 / ${H} ), lwE1 = exp( - lwH1 / ${H} ), lwDh = lwH1 - lwH0;
+		float lwRatio = abs( lwDh ) > 1.0 ? ${H} * ( lwE0 - lwE1 ) / lwDh : lwE0;
+		float lwD = vFogDepth * lwRatio;
+		float fogFactor = 1.0 - exp( - fogDensity * fogDensity * lwD * lwD );`);
+  state.seaY = seaY; state.scale = Math.max(1, scale);
+  return { seaY, scale: state.scale };
+}
+
+function heightFogRatio(y) {
+  if (!state || state.scale === undefined) return 1;
+  return Math.exp(-Math.max(y - state.seaY, 0) / state.scale);
+}
+return { installHeightFog, heightFogRatio };
+})();
+// ---- lib/longwind-world/src/skyOverlay.js
+const __m_lib_longwind_world_src_skyOverlay = (() => {
+const { LW_NOISE_GLSL } = __m_lib_longwind_world_src_glsl;
+// Sky overlay: high cirrus, a painted band of distant cumulus at the horizon, and the night sky (two star layers,
+// the Milky Way, the moon). Drawn over any base sky (three's Sky/Preetham, a gradient, a cube map) as a transparent
+// dome at infinite distance.
+//
+// The GLSL for the clouds, cirrus and night is Long Wind's painted sky (src/world/sky.js,
+// github.com/jbang2004/long-wind, MIT, (c) 2026 jbang2004), unchanged apart from the uniforms. Differences for a
+// flying camera: the painted cumulus is limited to a band just above the horizon (the 3D cumulus field covers
+// everything nearer), it fades as the eye climbs through the cumulus layer, and the haze at the horizon is blended in
+// display space (after tone mapping), the way three applies fog, so it matches the sea's fog edge.
+//
+//   const sky2 = createSkyOverlay(THREE, { noise })         — noise from bakeCloudNoise()
+//   scene.add(sky2.mesh)                                     — renderOrder -2: after the opaque sky, before other transparents
+//   sky2.uniforms.*                                          — see U below; set them every frame or when they change
+
+const VERT = /* glsl */`
+varying vec3 vDir;
+void main() {
+  vDir = position;
+  vec4 p = projectionMatrix * vec4(mat3(viewMatrix) * position, 1.0);   // rotation only: infinitely far
+  gl_Position = p.xyww;                                                  // depth 1: behind everything opaque
+}`;
+
+const FRAG = /* glsl */`
+uniform vec3 uSunDir, uSunCol, uMoonDir, uCloudLit, uCloudShade, uHorizonGlow, uHaze, uHazeD;
+uniform float uNight, uStorm, uTime, uSunVis, uHazeH;
+uniform vec4 uWind, uCloudCover, uEye;
+uniform sampler2D tCloudNoise;
+varying vec3 vDir;
+${LW_NOISE_GLSL}
+// ---- night: two jittered star layers on cube-face grids, Milky Way band, moon with maria ----
+// One jittered star per cell for the brightest ~(1-thr) of cells; magnitude ramps linearly above the threshold so
+// the field has a few bright stars and many faint ones. Colour temperature varies (blue-white … warm).
+vec3 wx_starLayer(vec2 uv, float cells, float thr, float seed) {
+  vec2 g = uv * cells, id = floor(g), f = g - id;
+  float px = max(fwidth(g.x) + fwidth(g.y), 1e-4) * 0.5;   // ~1 px wide whatever the resolution (uniform flow)
+  float hsh = wx_hash12(id * 1.37 + seed * 0.71);
+  if (hsh < thr) return vec3(0.0);
+  float m = (hsh - thr) / (1.0 - thr);
+  m *= m;
+  vec2 j = wx_hash22(id + seed) * 0.8 + 0.1;
+  vec2 d = (f - j) / px;
+  float tw = 0.7 + 0.3 * sin(uTime * (1.5 + 4.0 * wx_hash12(id + 3.1)) + 6.2832 * wx_hash12(id + 9.7));
+  vec3 tint = mix(vec3(0.75, 0.85, 1.0), vec3(1.0, 0.86, 0.7), wx_hash12(id + 5.3));
+  return tint * m * tw * exp(-dot(d, d));
+}
+vec3 wx_nightSky(vec3 rd, float h) {
+  vec3 a = abs(rd); vec2 uv; float face;
+  if (a.x >= a.y && a.x >= a.z) { uv = rd.yz / a.x; face = rd.x > 0.0 ? 1.0 : 2.0; }
+  else if (a.y >= a.z) { uv = rd.xz / a.y; face = rd.y > 0.0 ? 3.0 : 4.0; }
+  else { uv = rd.xy / a.z; face = rd.z > 0.0 ? 5.0 : 6.0; }
+  // bright stars appear first (blue hour), the faint field only in full night
+  float nb = smoothstep(0.3, 0.75, uNight), nf = smoothstep(0.6, 1.0, uNight);
+  vec3 st = wx_starLayer(uv, 55.0, 0.985, face * 17.0) * 0.9 * nb + wx_starLayer(uv, 150.0, 0.988, face * 31.0 + 5.0) * 0.28 * nf;
+  vec3 col = st * smoothstep(0.0, 0.2, h);
+  // Milky Way: a great-circle band broken by dust lanes (baked noise: cheap)
+  vec3 ax = normalize(vec3(0.55, 0.35, 0.76));
+  float bd = dot(rd, ax);
+  float mw = exp(-(bd * 3.2) * (bd * 3.2));
+  vec2 mp = vec2(atan(rd.z, rd.x) * 0.31831, bd * 0.45);          // x spans exactly 2 tiles: seamless
+  float dust = textureLod(tCloudNoise, mp * 2.0 + 0.3, 1.5).r;
+  float glow = textureLod(tCloudNoise, mp + 0.7, 2.5).a;
+  col += vec3(0.05, 0.06, 0.09) * 0.55 * mw * (0.45 + 1.2 * glow) * (1.0 - 0.75 * smoothstep(0.45, 0.68, dust)) * smoothstep(0.0, 0.3, h) * nf;
+  return col;
+}
+vec3 wx_moon(vec3 rd) {
+  float mu = dot(rd, uMoonDir);
+  vec3 col = vec3(0.5, 0.58, 0.72) * (pow(max(mu, 0.0), 60.0) * 0.06 + pow(max(mu, 0.0), 900.0) * 0.18);
+  if (mu > 0.9998) {
+    vec3 t = normalize(cross(uMoonDir, vec3(0.0, 1.0, 0.0)));
+    vec3 b = cross(t, uMoonDir);
+    vec3 q = rd - uMoonDir * mu;
+    vec2 p = vec2(dot(q, t), dot(q, b)) / 0.0155;                 // disc radius ~0.9 deg
+    float r2 = dot(p, p);
+    float maria = smoothstep(0.42, 0.68, wx_fbm3v(p * 1.6 + 3.0)) * 0.34 + wx_vnoise(p * 7.0) * 0.08;
+    float limb = sqrt(max(1.0 - r2, 0.0));
+    col += vec3(1.9, 2.0, 2.15) * (1.0 - maria) * (0.55 + 0.45 * limb) * smoothstep(1.0, 0.93, sqrt(r2));
+  }
+  return col * smoothstep(-0.02, 0.03, uMoonDir.y);
+}
+
+// ---- clouds: painted, analytic (not raymarched) ----
+// Cloud-plane coordinates: rd.xz/(h+0.06) compresses the deck toward the horizon (perspective), rotated so the
+// texture's streak axis (x) runs downwind; the deck drifts downwind.
+vec2 wx_cloudUV(vec3 rd, float h, out vec2 sunUV) {
+  vec2 W = normalize(uWind.xy + vec2(1e-4, 0.0));
+  vec2 P = vec2(-W.y, W.x);
+  vec2 uv = rd.xz / (h + 0.06) * 0.9;
+  vec2 sxz = normalize(uSunDir.xz + vec2(1e-4, 0.0));
+  sunUV = vec2(dot(sxz, W), dot(sxz, P));
+  return vec2(dot(uv, W), dot(uv, P)) - vec2(uTime * (0.0042 + 0.012 * uStorm) * uWind.z, 0.0);
+}
+// Coverage field from the baked noise (3 taps). Returns (coverage, thickness proxy).
+vec2 wx_cloudField(vec2 uv) {
+  vec4 a = texture2D(tCloudNoise, uv * 0.075);                        // masses, ~13 units per tile
+  vec4 b = texture2D(tCloudNoise, uv * 0.23 + vec2(0.37, 0.61));        // puffs + detail
+  float st = texture2D(tCloudNoise, uv * vec2(0.035, 0.06) + 0.13).g;   // long wind-combed bands
+  float cov = a.r * 0.78 + st * 0.42 + (b.b - 0.5) * 0.22 + (b.a - 0.5) * 0.12 - 0.17;
+  return vec2(cov, a.r * 0.7 + b.b * 0.3);
+}
+// Returns the cloud colour (rgb) and coverage (a). s = dot(rd, sun), band = horizon band, bg = sky behind.
+vec4 wx_clouds(vec3 rd, float h, float s, float band, vec3 bg) {
+  float clear = 1.0 - uStorm;
+  vec2 sunUV;
+  vec2 uv = wx_cloudUV(rd, h, sunUV);
+  vec2 f = wx_cloudField(uv);
+  float cov = f.x + uCloudCover.x + uStorm * 0.55 - uNight * 0.08 * clear;
+  float d = smoothstep(0.52 - 0.3 * uStorm, 0.74 - 0.1 * uStorm, cov);
+  d *= smoothstep(0.0, 0.06, h) * (1.0 - smoothstep(0.26, 0.62, h) * 0.9 * clear);   // mass lives 3–30 deg up
+  if (d < 0.003) return vec4(0.0);
+  float thick = clamp(smoothstep(0.58, 0.95, cov) * 0.85 + (f.y - 0.5) * 0.3 + 0.6 * uStorm, 0.0, 1.0);
+  // self-shadow tap toward the sun (bible §3.1): sun-facing edges light up, far sides and cores deepen
+  vec2 fS = wx_cloudField(uv + sunUV * 0.09);
+  float edge = clamp((f.x - fS.x) * 3.5, -1.0, 1.0);
+  thick = clamp(thick + 0.4 * max(-edge, 0.0), 0.0, 1.0);
+  // front-lit (sun behind the viewer / to the side): gold-cream sun-facing sides, cool violet shade in the cores
+  float litK = clamp(0.62 + 0.55 * edge - 0.75 * thick, 0.0, 1.0);
+  vec3 front = mix(uCloudShade, uCloudLit * (1.0 + 0.25 * max(edge, 0.0)), litK);
+  front += uHorizonGlow * 0.16 * band * (1.0 - thick) * clear;                  // the low sun warms the undersides
+  // backlit (looking toward the sun): thin veils glow a little brighter than the sky behind, thick bodies stand
+  // dark against the glow, every thin edge gets a silver-gold lining
+  float fwd = smoothstep(0.55, 0.98, s);
+  vec3 back = mix(bg * 1.12, uCloudShade * 0.85 + bg * 0.12, smoothstep(0.12, 0.65, thick));
+  back += uSunCol * vec3(1.0, 0.8, 0.55) * pow(s, 10.0) * pow(1.0 - thick, 3.0) * 0.45 * clear;
+  vec3 cc = mix(front, back, fwd * clear);
+  // aerial perspective: the low deck is kilometres away, it melts into the horizon haze
+  cc = mix(cc, bg, smoothstep(0.1, 0.0, h) * 0.55);
+  return vec4(cc, d * (0.92 + 0.06 * uStorm) * uCloudCover.y);
+}
+// High cirrus: thin wind-combed streaks, lit gold near the sun, above the low deck. Finer texture scale than the deck
+// (it stays crisp overhead, where the flatter projection magnifies it).
+vec4 wx_cirrus(vec3 rd, float h, float s) {
+  vec2 W = normalize(uWind.xy + vec2(1e-4, 0.0));
+  vec2 uv = rd.xz / (h + 0.25) * 0.35;
+  uv = vec2(dot(uv, W), dot(uv, vec2(-W.y, W.x))) - vec2(uTime * 0.0012, 0.0);
+  float g = texture2D(tCloudNoise, uv * vec2(0.45, 1.6) + 0.51).g;
+  float a = texture2D(tCloudNoise, uv * vec2(1.8, 3.6) + 0.17).a;
+  float m = texture2D(tCloudNoise, uv * 0.12 + 0.77).r;                  // patchiness: cirrus comes in fields
+  float ci = smoothstep(0.55, 0.85, g * 0.8 + a * 0.35) * smoothstep(0.45, 0.7, m) * 0.32;
+  ci *= smoothstep(0.04, 0.3, h) * (1.0 - uStorm) * (1.0 - 0.6 * uNight) * uCloudCover.y;
+  vec3 c = mix(uCloudLit * 0.9, uSunCol * vec3(1.0, 0.8, 0.6) * 0.35, pow(s, 3.0));
+  return vec4(c, ci);
+}
+
+void main() {
+  vec3 rd = normalize(vDir);
+  float h = rd.y;
+  vec3 hd = normalize(vec3(rd.x, max(h, 0.0), rd.z));
+  vec3 gd = h > 0.0 ? rd : hd;
+  float s = max(dot(gd, uSunDir), 0.0);
+  float band = exp(-max(h, 0.0) * 7.0);
+  vec3 acc = vec3(0.0); float a = 0.0;
+  if (h > -0.01) {
+    vec4 ci = wx_cirrus(gd, max(h, 0.0), s);
+    ci.a *= uCloudCover.w;
+    acc = ci.rgb * ci.a; a = ci.a;
+    // painted distant cumulus: a band above the horizon, gone once the eye is above the cumulus tops
+    vec4 cl = wx_clouds(gd, max(h, 0.0), s, band, uHaze);
+    cl.a *= uEye.w * (1.0 - smoothstep(uCloudCover.z * 0.45, uCloudCover.z, h)) * (1.0 - smoothstep(uEye.y, uEye.z, uEye.x));
+    acc = cl.rgb * cl.a + acc * (1.0 - cl.a); a = cl.a + a * (1.0 - cl.a);
+  }
+  if (uNight > 0.001) {
+    vec3 n = (wx_nightSky(gd, h) + wx_moon(gd) * smoothstep(0.05, 0.45, uNight)) * (1.0 - 0.85 * uStorm) * (1.0 - a);
+    acc += n; a = clamp(a + dot(n, vec3(0.33)) * 1.5, 0.0, 1.0);
+  }
+  if (a < 0.002) discard;
+  gl_FragColor = vec4(acc / max(a, 1e-4), a);
+  #include <tonemapping_fragment>
+  #include <colorspace_fragment>
+  // horizon haze, in display space like three's fog: the far band melts into the same colour as the sea's fog edge
+  gl_FragColor.rgb = mix(uHazeD, gl_FragColor.rgb, smoothstep(0.0, uHazeH, h));
+}`;
+
+function createSkyOverlay(THREE, { noise, radius = 3000 } = {}) {
+  const U = {
+    tCloudNoise: { value: noise },
+    uSunDir: { value: new THREE.Vector3(0, 1, 0) },     // key light direction (toward the sun)
+    uSunCol: { value: new THREE.Vector3(3, 2.6, 2.2) }, // HDR sun radiance (linear), drives cirrus glints and silver linings
+    uMoonDir: { value: new THREE.Vector3(0, -1, 0) },
+    uCloudLit: { value: new THREE.Vector3(1.2, 1.15, 1.1) },   // lit cloud colour (linear)
+    uCloudShade: { value: new THREE.Vector3(0.45, 0.5, 0.6) }, // cloud shade colour (linear)
+    uHorizonGlow: { value: new THREE.Vector3(0, 0, 0) },       // low-sun warmth on undersides
+    uHaze: { value: new THREE.Vector3(0.6, 0.7, 0.8) },        // horizon sky colour, linear (backlit thin cloud, aerial)
+    uHazeD: { value: new THREE.Vector3(0.8, 0.85, 0.9) },      // the same, display space (= the fog colour)
+    uHazeH: { value: 0.035 },                                  // haze band height (rd.y)
+    uNight: { value: 0 }, uStorm: { value: 0 }, uTime: { value: 0 }, uSunVis: { value: 1 },
+    uWind: { value: new THREE.Vector4(1, 0, 1, 0) },           // xy direction, z strength
+    uCloudCover: { value: new THREE.Vector4(0, 1, 0.07, 1) },  // x coverage offset, y overall opacity, z band top (rd.y), w cirrus
+    uEye: { value: new THREE.Vector4(0, 600, 1600, 1) },       // x eye altitude, y cumulus base, z cumulus tops (same units), w painted-band opacity
+  };
+  const material = new THREE.ShaderMaterial({
+    name: 'lwSkyOverlay', uniforms: U, vertexShader: VERT, fragmentShader: FRAG,
+    side: THREE.BackSide, transparent: true, depthWrite: false, depthTest: true, fog: false,
+  });
+  const mesh = new THREE.Mesh(new THREE.SphereGeometry(radius, 48, 24), material);
+  mesh.name = 'lwSkyOverlay'; mesh.frustumCulled = false; mesh.renderOrder = -2;
+  return { mesh, material, uniforms: U };
+}
+return { createSkyOverlay };
+})();
+// ---- lib/longwind-world/src/cumulus.js
+const __m_lib_longwind_world_src_cumulus = (() => {
+
+// Fair-weather cumulus you can fly past and through: lit impostor clouds for flight games.
+//
+// Not raymarched (too costly for integrated GPUs). Each cloud is a cluster of soft sphere impostors ("puffs"): one
+// instanced quad per puff, camera-facing, with a sphere normal reconstructed per pixel. What makes them read as cumulus
+// instead of smoke:
+//   - real shapes and grouping: each cloud is a long low loaf (mostly 0.25-0.5 as tall as wide) on a flat base, with a
+//     few broad humps and cauliflower only along the upper edge; clouds come in families stretched along `streets`
+//     (radians): a dominant cloud, a loose row of neighbours that sometimes touch, and ragged scraps; `towers` of them
+//     (default 4%) grow into congestus: 2-4 turrets of stacked, lumpy cells rising out of the loaf
+//   - one noise field per cloud: every puff cuts its edge from the same lumps (300 m / 120 m / 45 m), sampled in a
+//     camera-facing frame that stays level and is anchored at the cloud's centre, so puffs merge into one surface
+//     instead of reading as separate balls; octaves fade once they're under a few pixels
+//   - sunlight with self-shadowing: per-puff transmittance toward the sun, precomputed on the CPU by marching through
+//     the other puffs (re-baked when the sun moves); shaded sides stay bright (multiple scattering), lumps lighter
+//     than the crevices between them
+//   - grey-blue bases (ambient from the sea below), bright sun-facing tops
+//   - a silver lining (Henyey–Greenstein forward scatter) on thin edges when you look toward the sun
+// Lighting ideas (lit/shade split, silver lining, aerial haze) follow Long Wind's painted clouds (src/world/sky.js,
+// github.com/jbang2004/long-wind, MIT). The impostor field itself is new.
+//
+//   const cu = createCumulus(THREE, { renderer, noise, tile: 24000, seaY: 0, base: 620, quality: 'med', seed: 7,
+//                                     streets: 0.35, towers: 0.04 })
+//   scene.add(cu.mesh)
+//   cu.update(camera, anchor, { sunDir, sunCol, skyTop, skyBot })    — every frame (anchor: where the field centres)
+//   cu.clusters[i].op = 0..1                                          — host fade per cloud (storms, tile edges are automatic)
+//   cu.inside(pos) → 0..1                                             — how deep pos is inside a cloud (whiteout fog)
+//   cu.cloudIn(from, to) → 0..1, cu.occluded(from, to, .5) → bool     — cloud in front of `to` (transparent sort)
+//   cu.casters() →[{x, z, y0, y1, rx, rz, op}]                       — world-space cloud bodies (shadow maps)
+//   cu.addCluster({x, z, w, h, base?, tower?, group?})                — extra clouds (e.g. over an island ridge), tile space;
+//                                                                       a tower brings its companion clouds unless group: false
+//   cu.stats() → {clusters, puffs, drawn}
+//
+// The material includes three's fog chunks after tone mapping (fog blends in display space, as three does for every
+// built-in material), so distant clouds melt into the same haze as the terrain and sea.
+const Q = { low: { clusters: 70, puffK: 0.55, puffs: 2600 }, med: { clusters: 105, puffK: 0.75, puffs: 4300 }, high: { clusters: 150, puffK: 1, puffs: 6700 } };
+const TEXW = 256;
+
+function rngOf(seed) {
+  return () => { seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+}
+
+const VERT = /* glsl */`
+uniform sampler2D tPuff, tClus;
+attribute float aIdx;
+varying vec2 vUv;
+varying vec3 vC;          // puff centre (world)
+varying float vR;         // puff radius
+varying vec4 vCl;         // cluster centre at mid-height (xyz), base altitude (w)
+varying vec3 vExt;        // cluster half extents
+varying vec4 vInfo;       // sun transmittance, ambient occlusion, rag (0 body … 1 scrap), seed
+varying float vA;         // opacity after fades
+#include <fog_pars_vertex>
+ivec2 lwTc(float i, int k) { int n = int(i + 0.5) * 2 + k; return ivec2(n % ${TEXW}, n / ${TEXW}); }
+void main() {
+  vec4 p0 = texelFetch(tPuff, lwTc(aIdx, 0), 0), p1 = texelFetch(tPuff, lwTc(aIdx, 1), 0);
+  vec4 c0 = texelFetch(tClus, lwTc(p1.x, 0), 0), c1 = texelFetch(tClus, lwTc(p1.x, 1), 0);
+  vec3 center = c0.xyz + p0.xyz;
+  float r = p0.w;
+  vec3 right = vec3(viewMatrix[0][0], viewMatrix[1][0], viewMatrix[2][0]);
+  vec3 up = vec3(viewMatrix[0][1], viewMatrix[1][1], viewMatrix[2][1]);
+  float dist = distance(center, cameraPosition);
+  // near fade: puffs the camera is inside (or about to be) dissolve; the host's whiteout fog takes over
+  vA = c0.w * smoothstep(r * 0.55, r * 1.65, dist);
+  vec3 wp = center + (right * position.x + up * position.y) * r * 1.2;
+  vUv = position.xy * 1.2;
+  vC = center; vR = r;
+  vCl = vec4(c0.x, c0.y + c1.y, c0.z, c0.y);
+  vExt = c1.xyz;
+  vInfo = vec4(p1.y, p1.z, c1.w, p1.w);
+  vec4 mvPosition = viewMatrix * vec4(wp, 1.0);
+  gl_Position = projectionMatrix * mvPosition;
+  if (vA < 0.004) gl_Position = vec4(2.0, 2.0, 2.0, 1.0);    // culled: off the raster
+  #include <fog_vertex>
+}`;
+
+const FRAG = /* glsl */`
+uniform sampler2D tNoise;
+uniform vec3 uSunDir, uSunCol, uSkyTop, uSkyBot;
+uniform float uSilver, uDensity, uTime, uSunGain;
+varying vec2 vUv;
+varying vec3 vC;
+varying float vR;
+varying vec4 vCl;
+varying vec3 vExt;
+varying vec4 vInfo;
+varying float vA;
+#include <fog_pars_fragment>
+void main() {
+  float d2 = dot(vUv, vUv);
+  if (d2 > 1.44) discard;
+  float d = sqrt(d2);
+  vec3 right = vec3(viewMatrix[0][0], viewMatrix[1][0], viewMatrix[2][0]);
+  vec3 up = vec3(viewMatrix[0][1], viewMatrix[1][1], viewMatrix[2][1]);
+  vec3 toCam = normalize(cameraPosition - vC);
+  float nz = sqrt(max(1.0 - min(d2, 1.0), 0.0));
+  vec3 Ns = normalize(right * vUv.x + up * vUv.y + toCam * (nz + 0.05));
+  vec3 P = vC + Ns * vR;                                   // sphere surface point
+  vec3 Qp = vC + (right * vUv.x + up * vUv.y) * vR;        // point on the impostor plane
+  vec3 Nc = (P - vCl.xyz) / max(vExt, vec3(1.0));
+  vec3 Ncn = normalize(Nc);
+  // ONE field for the whole cloud: every puff cuts its edge from the same lumps, so the cauliflower comes from the noise
+  // and not from the puffs (per-puff noise made each one a separately wrapped ball). Impostors have no real surface to
+  // project onto (top/side projections streaked and ringed), so the field lives in a frame that faces the camera,
+  // stays level with the horizon (banking doesn't drag it) and is anchored at the cloud's centre: overlapping puffs
+  // agree exactly, nothing stretches, and the pattern only turns as you fly around the cloud.
+  vec3 cdir = normalize(vCl.xyz - cameraPosition);
+  vec3 cR = normalize(cross(cdir, vec3(0.0, 1.0, 0.0)) + vec3(1e-4, 0.0, 0.0));
+  vec3 cU = cross(cR, cdir);
+  vec2 fq = vec2(dot(Qp - vCl.xyz, cR), dot(Qp - vCl.xyz, cU)) + vCl.xz * 0.37 + vec2(uTime * 0.35, 0.0);
+  float o1 = texture2D(tNoise, fq / 300.0).b;
+  float o2 = texture2D(tNoise, fq / 120.0 + 0.31).b;
+  float o3 = texture2D(tNoise, fq / 45.0 + 0.71).a;
+  // octaves smaller than ~8 px fade to their mean: far clouds keep the big lumps, lose the sub-pixel sparkle
+  float mpp = max(length(dFdx(Qp)), length(dFdy(Qp)));           // metres per pixel (planar: smooth, no noise)
+  float w2 = 1.0 - smoothstep(120.0 / 16.0, 120.0 / 6.0, mpp), w3 = 1.0 - smoothstep(45.0 / 24.0, 45.0 / 10.0, mpp);
+  float field = o1 * 0.62 + mix(0.5, o2, w2) * 0.3 + mix(0.5, o3, w3) * 0.08;   // smooth bulges: the fine octave only breaks the outline
+  float hF = clamp((P.y - vCl.w) / max(2.0 * vExt.y, 1.0), 0.0, 1.0);
+  // density = puff kernel + field: edges move by up to ~45% of the radius; crisp on the upper cloud, softer below
+  float D = (1.08 - d) + (0.95 + 0.35 * vInfo.z) * (field - 0.5);
+  float soft = mix(mix(0.26, 0.09, smoothstep(0.15, 0.6, hF)), 0.4, vInfo.z);   // scraps: soft and ragged all over
+  float a = smoothstep(0.0, max(soft, fwidth(D) * 1.5), D);      // never narrower than ~1.5 px: no stair-stepped edges
+  // flat base at the condensation level
+  a *= smoothstep(vCl.w - 0.02 * vR, vCl.w + 0.2 * vR, min(Qp.y, P.y + 0.15 * vR));
+  a *= uDensity * vA;
+  if (a < 0.004) discard;
+
+  // surface normal: the whole cloud's shape. The lumps light through the cavity term below, read from the field
+  // itself (a screen-space bump from the noise flickered in 2x2 blocks).
+  // Big lobes also round over on their own (lit top, shaded underside, so the creases between them read); small
+  // cauliflower puffs stay on the cloud's normal, so they don't turn into bubble-wrap.
+  float lobe = 0.55 * smoothstep(0.1, 0.32, vR / max(min(vExt.x, vExt.z), 1.0));
+  vec3 N = normalize(mix(Ncn, Ns, lobe));
+  float cav = mix(0.88, 1.06, smoothstep(0.3, 0.75, field));
+  vec3 L = uSunDir;
+  float diff = clamp(dot(N, L) * 0.4 + 0.6, 0.0, 1.0);
+  float selfS = mix(0.78, 1.0, smoothstep(-0.45, 0.55, dot(N, L)));      // the cloud's side away from the sun, not each puff's
+  float sunT = mix(0.55, 1.0, vInfo.x) * selfS;            // light that scattered through still arrives (multiple scattering)
+  vec3 col = uSunCol * uSunGain * diff * sunT;
+  // light scattered all through the cloud (bases glow grey, not black); weaker and less coloured with a low sun
+  vec3 ms = mix(uSunCol, vec3(dot(uSunCol, vec3(0.2126, 0.7152, 0.0722))), 0.55) * clamp(L.y * 2.5, 0.2, 1.0);
+  col += ms * uSunGain * 0.24 * mix(0.6, 1.0, vInfo.x);   // cumulus is bright all through: shaded sides ~60-70% of lit
+  col += mix(uSkyBot, uSkyTop, clamp(N.y * 0.5 + 0.5, 0.0, 1.0)) * vInfo.y * mix(0.72, 1.0, hF);
+  col *= mix(0.86, 1.0, smoothstep(0.0, 0.3, hF));         // grey base
+  col *= mix(1.0, cav, smoothstep(0.05, 0.35, hF));          // crevices between lumps darker, lumps catch the light
+  // silver lining: forward scatter through thin edges when looking toward the sun
+  vec3 V = normalize(P - cameraPosition);
+  float mu = dot(V, L), g = 0.7;
+  float hg = (1.0 - g * g) / pow(1.0 + g * g - 2.0 * g * mu, 1.5) * 0.0796;
+  // only the whole cloud's silhouette glows (per-puff rims read as bubble-wrap), even when the body is in its own shadow
+  float rim = pow(1.0 - abs(dot(Ncn, V)), 2.0) * (1.0 - smoothstep(0.0, 0.45, D));
+  col += uSunCol * hg * rim * mix(0.45, 1.0, vInfo.x) * uSilver;
+  gl_FragColor = vec4(col, a);
+  #include <tonemapping_fragment>
+  #include <colorspace_fragment>
+  #include <fog_fragment>
+}`;
+
+function createCumulus(THREE, {
+  renderer, noise, tile = 24000, seaY = 0, base = 620, quality = 'med', seed = 7, coverage = 1, streets = 0.35, towers = 0.04,
+} = {}) {
+  const q = Q[quality] ?? Q.med;
+  const rnd = rngOf(seed * 7919 + 13);
+  const clusters = [];      // {bx, bz, base, w, h, d, op, x, z, puffs: [first, count]}
+  const puffs = [];         // {cl, ox, oy, oz, r, occ, amb, seed}
+
+  // Congestus turrets, as towering cumulus actually builds: not a column of shrinking balls but 2-4 turrets of
+  // different heights rising side by side out of the shared loaf, with sky between them. Each turret is a stack of
+  // cells (a core plus lobes bulging sideways); a cell can be as wide as the one below or wider, so tops overhang;
+  // cauliflower covers the sides as well as the tops, so the creases between lobes shade. One turret leads.
+  function turrets(g, w, h, d, put) {
+    const k = q.puffK, n = 2 + ((g() * 2.6) | 0), lead = (g() * n) | 0, span = w * (0.42 + 0.07 * n);
+    for (let t = 0; t < n; t++) {
+      let u = (t / (n - 1) - 0.5) * span + (g() - 0.5) * w * 0.08, v = (g() - 0.5) * d * 0.3;
+      const top = h + w * (t === lead ? 0.38 + g() * 0.22 : 0.08 + g() * 0.26);
+      let R = w * (0.15 + g() * 0.06) * (t === lead ? 1.2 : 1), y = h * 0.7;
+      const lu = (g() - 0.5) * 0.3, lv = (g() - 0.5) * 0.24;              // the turret leans a little, tier by tier
+      while (y + R * 0.5 < top) {
+        put(u, y, v, R * 0.85);                                           // core
+        for (let i = 0, nl = 3 + ((g() * 3) | 0), a0 = g() * 6.283; i < nl; i++) {   // lobes bulging out
+          const a = a0 + i / nl * 6.283 + (g() - 0.5) * 0.7;
+          put(u + Math.cos(a) * R * 0.75, y + (g() - 0.45) * R * 0.55, v + Math.sin(a) * R * 0.55, R * (0.5 + g() * 0.25));
+        }
+        for (let i = 0, nc = Math.round(2 + 3 * k); i < nc; i++) {        // cauliflower bulging from the face, sides too
+          const a = g() * 6.283, el = -0.15 + g() * 1.45, ce = Math.cos(el), b = 1.0 + g() * 0.15;
+          put(u + Math.cos(a) * ce * R * b, y + Math.sin(el) * R * b * 0.9, v + Math.sin(a) * ce * R * b * 0.75, R * (0.36 + g() * 0.18));
+        }
+        y += R * (0.7 + g() * 0.2); u += lu * R; v += lv * R;
+        R = Math.max(w * 0.08, R * (0.84 + g() * 0.3));                   // next cell: narrower, the same, or wider
+      }
+      for (let i = 0, nc = 3 + ((g() * 3) | 0); i < nc; i++)              // crown: bubbling cauliflower
+        put(u + (g() - 0.5) * R * 1.3, y - R * 0.35 + g() * R * 0.4, v + (g() - 0.5) * R * 0.8, R * (0.4 + g() * 0.22));
+    }
+  }
+
+  // One cloud, built as fair-weather cumulus actually looks: a long low loaf on a flat base, a few broad humps of
+  // different heights, and cauliflower only along the upper edge. Built along its own long axis, then turned to `ang`.
+  //   w: length along the axis, h: top height, rag: 0 a solid body … 1 a soft ragged scrap, tower: a congestus turret
+  function buildCluster(bx, bz, w, h, baseAlt, { ang = 0, rag = 0, tower = false, rng = null } = {}) {
+    const ci = clusters.length, first = puffs.length, k = q.puffK, rg = rng ?? rnd;
+    const d = w * (0.38 + rg() * 0.2);
+    const local = [], extra = [], put = (u, y, v, r) => local.push([u, y, v, r]);
+    if (rag > 0.5) {                                                      // fragment: a few low puffs, no structure
+      const n = 2 + Math.round(rg() * 3 * Math.max(0.6, k));
+      for (let i = 0; i < n; i++) {
+        const r = h * (0.45 + rg() * 0.35);
+        put((rg() - 0.5) * (w - r), r * (0.5 + rg() * 0.3), (rg() - 0.5) * d * 0.5, r);
+      }
+    } else {
+      // base layer: wide flat puffs along the whole length (two rows on fat clouds)
+      const rb = h * (0.42 + rg() * 0.12), step = rb * (1.25 - 0.3 * k), rows = d > rb * 2.2 ? 2 : 1;
+      for (let row = 0; row < rows; row++) for (let u = -w / 2 + rb * 0.8; u <= w / 2 - rb * 0.8; u += step * (0.8 + 0.4 * rg())) {
+        const taper = 1 - 0.35 * Math.pow(Math.abs(u) / (w / 2), 2);      // ends lower and thinner
+        put(u, rb * 0.55 * taper, (rows > 1 ? (row - 0.5) * d * 0.42 : 0) + (rg() - 0.5) * d * 0.18, rb * taper);
+      }
+      // humps: 1-4 broad domes of different heights; the tallest is not always in the middle
+      const nh = Math.max(1, Math.min(4, Math.round(w / (h * 2.2) * (0.7 + rg() * 0.6)))), humps = [];
+      for (let i = 0; i < nh; i++) {
+        const u = (nh === 1 ? (rg() - 0.5) * 0.3 : (i / (nh - 1) - 0.5) * 0.75 + (rg() - 0.5) * 0.15) * w;
+        humps.push({ u, top: h * (i === ((rg() * nh) | 0) ? 1 : 0.55 + rg() * 0.35), wid: w / nh * (0.45 + rg() * 0.25) });
+      }
+      if (!humps.some(m => m.top >= h * 0.99)) humps[(rg() * nh) | 0].top = h;
+      for (const m of humps) {
+        const R = Math.min(m.wid, m.top) * 0.55;
+        const nl = Math.max(1, Math.round((m.top - R) / (R * 0.8)));
+        for (let j = 0; j <= nl; j++) {                                   // a dome: wider low, one crown on top
+          const y = R * 0.6 + (m.top - R * 1.55) * (nl ? j / nl : 1), f = 1 - 0.3 * (nl ? j / nl : 1);
+          const pair = j < nl && R * f > h * 0.18;
+          for (const s of pair ? [-1, 1] : [0]) put(m.u + s * R * 0.45 + (rg() - 0.5) * R * 0.2, y, (rg() - 0.5) * d * 0.2, R * f * (0.9 + rg() * 0.15));
+        }
+      }
+      // cauliflower: small puffs only along the upper envelope
+      const env = (u) => Math.max(h * 0.4, ...humps.map(m => m.top * Math.max(0, 1 - Math.pow((u - m.u) / (m.wid * 1.1), 2))));
+      const nc = Math.round((3 + w / 140) * k);
+      for (let i = 0; i < nc; i++) {
+        const u = (rg() - 0.5) * w * 0.85, r = h * (0.12 + rg() * 0.1);
+        put(u, env(u) - r * (0.55 + rg() * 0.3), (rg() - 0.5) * d * 0.35, r);
+      }
+      if (tower) {                                                        // congestus: turrets rising out of the loaf
+        for (let i = 0; i < 6; i++) rnd();                                // the old turret's draws: keeps the field layout
+        turrets(rngOf(seed * 104729 + ci * 7907 + 1), w, h, d, (u, y, v, r) => extra.push([u, y, v, r]));
+      }
+    }
+    // turn to the family's axis; extents from what was built
+    const ca = Math.cos(ang), sa = Math.sin(ang);
+    let ex = 1, ez = 1, ey = 1;
+    const gx = rngOf(seed * 15485863 + ci * 31 + 5);                    // turret puffs draw from their own stream
+    for (const [j, [u, y, v, r]] of [...local, ...extra].entries()) {
+      const ox = u * ca - v * sa, oz = u * sa + v * ca;
+      puffs.push({ cl: ci, ox, oy: y, oz, r, occ: 1, amb: 1, seed: j < local.length ? rg() : gx() });
+      ex = Math.max(ex, Math.abs(ox) + r * 0.7); ez = Math.max(ez, Math.abs(oz) + r * 0.7); ey = Math.max(ey, y + r * 0.85);
+    }
+    // settle: any puff not resting on a lower one slides toward the nearest lower puff until they overlap
+    const mine = puffs.slice(first).sort((a, b) => a.oy - b.oy);
+    for (const p of mine) {
+      if (p.oy - p.r <= 0.05 * w) continue;
+      let best = null, bd = Infinity;
+      for (const q of mine) {
+        if (q === p || q.oy >= p.oy) continue;
+        const dd = Math.hypot(q.ox - p.ox, q.oy - p.oy, q.oz - p.oz);
+        if (dd < (q.r + p.r) * 0.9) { best = null; bd = -1; break; }
+        if (dd - q.r < bd) { bd = dd - q.r; best = q; }
+      }
+      if (best) {
+        const dx = p.ox - best.ox, dy = p.oy - best.oy, dz = p.oz - best.oz, dd = Math.hypot(dx, dy, dz), want = (best.r + p.r) * 0.75;
+        p.ox = best.ox + dx / dd * want; p.oy = best.oy + dy / dd * want; p.oz = best.oz + dz / dd * want;
+      }
+    }
+    clusters.push({ bx, bz, base: baseAlt, w: ex * 2, h: ey, d: ez * 2, rag, op: 1, x: bx, z: bz, first, count: puffs.length - first });
+  }
+
+  // A tower never stands alone: 2-3 ordinary clouds crowd against it, each overlapping it by about 20% of its own
+  // width — one either side along the axis, sometimes one behind. Own random stream, so the field layout is unchanged.
+  function towerCompanions(bx, bz, W, b0, ang) {
+    const g = rngOf(seed * 7727 + clusters.length * 131 + 3), ca = Math.cos(ang), sa = Math.sin(ang);
+    const at = (u, v, w, a) => buildCluster(bx + u * ca - v * sa, bz + u * sa + v * ca, w, w * (0.32 + g() * 0.16), b0 + (g() - 0.5) * 40, { ang: a, rng: g });
+    for (const s of [-1, 1]) {
+      const w = W * (0.55 + g() * 0.25);
+      at(s * (W / 2 + w * 0.3), (g() - 0.5) * W * 0.25, w, ang + (g() - 0.5) * 0.4);
+    }
+    if (g() < 0.5) {
+      const w = W * (0.5 + g() * 0.2), s = g() < 0.5 ? -1 : 1;
+      at((g() - 0.5) * W * 0.4, s * (W * 0.24 + w * 0.3), w, ang + (g() - 0.5) * 0.6);
+    }
+  }
+
+  // field: families, as fair-weather cumulus actually sits — a dominant cloud stretched along the wind, a loose row of
+  // neighbours that sometimes touch and chain, and scraps around them; a few towers. Fills the tier's puff budget.
+  const budget = q.puffs * coverage, nFam = Math.max(4, Math.round(q.clusters * 0.3 * coverage));
+  const grid = Math.ceil(Math.sqrt(nFam)), cell = tile / grid, cap = (n) => puffs.length < budget && clusters.length < 1000 - n;
+  const mainH = (w, tower) => w * (tower ? 0.3 + rnd() * 0.16 : 0.26 + rnd() * 0.2);   // a tower's loaf is the base its turrets rise from
+  for (let pass = 0; pass < 3 && cap(8); pass++)
+    for (let gz = 0; gz < grid && cap(8); gz++) for (let gx = 0; gx < grid && cap(8); gx++) {
+      if (pass > 0 && rnd() < 0.5) continue;                              // later passes: sparser, in the gaps
+      const cx = -tile / 2 + (gx + 0.1 + 0.8 * rnd()) * cell, cz = -tile / 2 + (gz + 0.1 + 0.8 * rnd()) * cell;
+      const ang = streets + (rnd() - 0.5) * 0.5, ca = Math.cos(ang), sa = Math.sin(ang);
+      const W = (450 + 1100 * Math.pow(rnd(), 1.6)) * (pass ? 0.7 : 1), tower = rnd() < towers, b0 = base + (rnd() - 0.5) * 70;
+      buildCluster(cx, cz, W, mainH(W, tower), b0, { ang, tower });
+      if (tower) towerCompanions(cx, cz, W, b0, ang);
+      let along = W / 2;                                                  // the row: alternately ahead and behind
+      for (let i = 0, nr = (rnd() * 3.2) | 0; i < nr && cap(4); i++) {
+        const w = W * (0.3 + rnd() * 0.45), gap = (rnd() < 0.45 ? -0.15 : 0.1 + rnd() * 0.5) * w, s = i % 2 ? -1 : 1;
+        const u = s * (along + gap + w / 2), v = (rnd() - 0.5) * W * 0.9;   // a loose row, not a string
+        if (s < 0) along += gap + w;
+        buildCluster(cx + u * ca - v * sa, cz + u * sa + v * ca, w, mainH(w, false), b0 + (rnd() - 0.5) * 60, { ang: ang + (rnd() - 0.5) * 0.5 });
+      }
+      for (let i = 0, nf = 2 + ((rnd() * 5) | 0); i < nf && cap(2); i++) {   // scraps, mostly downwind
+        const w = 70 + rnd() * 190, r = W * (0.55 + rnd() * 0.9), a = ang + (rnd() < 0.7 ? 0 : Math.PI) + (rnd() - 0.5) * 1.4;
+        buildCluster(cx + Math.cos(a) * r, cz + Math.sin(a) * r, w, w * (0.35 + rnd() * 0.25), b0 + (rnd() - 0.3) * 60, { ang: ang + (rnd() - 0.5), rag: 1 });
+      }
+    }
+
+  // GPU data: puffs (2 texels each), clusters (2 texels each), sorted index attribute
+  const MAXP = 8192, MAXC = 1024;
+  const puffData = new Float32Array(TEXW * Math.ceil(MAXP * 2 / TEXW) * 4);
+  const clusData = new Float32Array(TEXW * Math.ceil(MAXC * 2 / TEXW) * 4);
+  const mkTex = (data) => {
+    const t = new THREE.DataTexture(data, TEXW, data.length / 4 / TEXW, THREE.RGBAFormat, THREE.FloatType);
+    t.minFilter = t.magFilter = THREE.NearestFilter; t.generateMipmaps = false; t.needsUpdate = true;
+    return t;
+  };
+  const tPuff = mkTex(puffData), tClus = mkTex(clusData);
+  function writePuffs() {
+    puffs.forEach((p, i) => {
+      puffData.set([p.ox, p.oy, p.oz, p.r, p.cl, p.occ, p.amb, p.seed], i * 8);
+    });
+    tPuff.needsUpdate = true;
+  }
+
+  const geo = new THREE.InstancedBufferGeometry();
+  const quad = new THREE.PlaneGeometry(2, 2);
+  geo.index = quad.index; geo.setAttribute('position', quad.attributes.position);
+  const idx = new Float32Array(MAXP);
+  const aIdx = new THREE.InstancedBufferAttribute(idx, 1); aIdx.setUsage(THREE.DynamicDrawUsage);
+  geo.setAttribute('aIdx', aIdx);
+  geo.instanceCount = 0;
+
+  const uniforms = THREE.UniformsUtils.merge([THREE.UniformsLib.fog, {
+    tNoise: { value: null }, tPuff: { value: null }, tClus: { value: null },   // set after the merge (it clones textures)
+    uSunDir: { value: new THREE.Vector3(0, 1, 0) }, uSunCol: { value: new THREE.Color(1, 1, 1) },
+    uSkyTop: { value: new THREE.Color(0.4, 0.5, 0.6) }, uSkyBot: { value: new THREE.Color(0.2, 0.25, 0.3) },
+    uSilver: { value: 1.0 }, uDensity: { value: 0.95 }, uTime: { value: 0 }, uSunGain: { value: 2.0 },
+  }]);
+  uniforms.tNoise.value = noise; uniforms.tPuff.value = tPuff; uniforms.tClus.value = tClus;
+  const material = new THREE.ShaderMaterial({
+    name: 'lwCumulus', uniforms, vertexShader: VERT, fragmentShader: FRAG,
+    transparent: true, depthWrite: false, fog: true,
+  });
+  const mesh = new THREE.Mesh(geo, material);
+  mesh.name = 'lwCumulus'; mesh.frustumCulled = false; mesh.renderOrder = 1;
+
+  // ---- sun transmittance per puff: march toward the sun through the cluster's other puffs ----
+  const sunPrev = new THREE.Vector3(0, -1, 0);
+  function bakeSun(L) {
+    for (const c of clusters) {
+      const sig = 1 / (0.8 * c.w);
+      for (let i = c.first; i < c.first + c.count; i++) {
+        const p = puffs[i];
+        const ox = p.ox + L.x * p.r * 0.35, oy = p.oy + L.y * p.r * 0.35, oz = p.oz + L.z * p.r * 0.35;
+        let tau = 0, above = 0;
+        for (let j = c.first; j < c.first + c.count; j++) {
+          if (j === i) continue;
+          const s = puffs[j], rr = s.r * 0.85;
+          const wx = s.ox - ox, wy = s.oy - oy, wz = s.oz - oz;
+          const t = wx * L.x + wy * L.y + wz * L.z;
+          if (t > 0) {
+            const dd = wx * wx + wy * wy + wz * wz - t * t;
+            if (dd < rr * rr) tau += 2 * Math.sqrt(rr * rr - dd);
+          }
+          if (s.oy > p.oy + p.r * 0.3 && Math.hypot(s.ox - p.ox, s.oz - p.oz) < s.r + p.r * 0.5) above++;
+        }
+        p.occ = Math.exp(-tau * sig);
+        p.amb = Math.max(0.55, 1 - 0.1 * above - 0.18 * (1 - Math.min(1, p.oy / Math.max(c.h, 1))));
+      }
+    }
+    writePuffs();
+  }
+
+  // ---- per frame ----
+  const camF = new THREE.Vector3(), keys = new Float64Array(MAXP);
+  let drawn = 0, elapsed = 0;
+  const wrap = (v) => v - tile * Math.round(v / tile);
+  function update(camera, anchor, { sunDir, sunCol, skyTop, skyBot, silver = 1, density = 0.95, sunGain = 2, dt = 0 } = {}) {
+    elapsed += dt; uniforms.uTime.value = elapsed;
+    if (sunDir) {
+      uniforms.uSunDir.value.copy(sunDir);
+      if (sunDir.angleTo(sunPrev) > 0.03) { sunPrev.copy(sunDir); bakeSun(sunDir); }
+    }
+    if (sunCol) uniforms.uSunCol.value.copy(sunCol);
+    if (skyTop) uniforms.uSkyTop.value.copy(skyTop);
+    if (skyBot) uniforms.uSkyBot.value.copy(skyBot);
+    uniforms.uSilver.value = silver; uniforms.uDensity.value = density; uniforms.uSunGain.value = sunGain;
+    // wrap clusters around the anchor and fade them at the tile edge
+    clusters.forEach((c, i) => {
+      const dx = wrap(c.bx - anchor.x), dz = wrap(c.bz - anchor.z);
+      c.x = anchor.x + dx; c.z = anchor.z + dz;
+      const edge = 1 - smoothstep(0.8, 0.98, Math.max(Math.abs(dx), Math.abs(dz)) / (tile / 2));
+      c.vis = c.op * edge;
+      clusData.set([c.x, seaY + c.base, c.z, c.vis, c.w * 0.5, c.h * 0.5, c.d * 0.5, c.rag ?? 0], i * 8);
+    });
+    tClus.needsUpdate = true;
+    // visible puffs, sorted far to near
+    camera.getWorldDirection(camF);
+    const cp = camera.position;
+    let m = 0;
+    for (let i = 0; i < puffs.length; i++) {
+      const p = puffs[i], c = clusters[p.cl];
+      if (c.vis < 0.004) continue;
+      const x = c.x + p.ox - cp.x, y = seaY + c.base + p.oy - cp.y, z = c.z + p.oz - cp.z;
+      const depth = x * camF.x + y * camF.y + z * camF.z;
+      if (depth < -p.r * 1.3) continue;                    // behind the camera
+      keys[m++] = Math.floor(Math.max(0, 200000 - depth) * 4) * 8192 + i;   // ascending key = far first (0.25 m steps)
+    }
+    const view = keys.subarray(0, m);
+    view.sort();
+    for (let k = 0; k < m; k++) idx[k] = view[k] % 8192;
+    aIdx.needsUpdate = true;
+    geo.instanceCount = drawn = m;
+  }
+
+  function inside(pos) {
+    let best = 0;
+    for (const c of clusters) {
+      if (c.vis < 0.05) continue;
+      const dx = pos.x - c.x, dz = pos.z - c.z;
+      if (Math.abs(dx) > c.w || Math.abs(dz) > c.w) continue;
+      for (let i = c.first; i < c.first + c.count; i++) {
+        const p = puffs[i];
+        const r = Math.hypot(dx - p.ox, pos.y - (seaY + c.base + p.oy), dz - p.oz) / (p.r * 0.95);
+        if (pos.y < seaY + c.base) continue;
+        best = Math.max(best, (1 - smoothstep(0.55, 1, r)) * c.vis);
+      }
+    }
+    return best;
+  }
+
+  // How much cloud is in front of `to`, seen from `from`: 0 clear … 1 solid. The whole field is one transparent mesh,
+  // so a host can't rely on three's per-object sort to put a transparent thing (prop disc, canopy) between the clouds
+  // behind it and the clouds in front of it. Ask this per object instead: low → draw it after the clouds
+  // (renderOrder > 1), high → before them. Each puff counts with the shader's own alpha at the field's mean (kernel
+  // 1.08 - d over the soft band, cluster fade, near fade, density): a big puff whose transparent rim merely clips the
+  // sight line barely counts; the core of a cloud counts fully. Puffs combine like stacked layers. Call after update().
+  function cloudIn(from, to, density = 0.95) {
+    let dx = to.x - from.x, dy = to.y - from.y, dz = to.z - from.z;
+    const L = Math.hypot(dx, dy, dz);
+    if (L < 1e-3) return 0;
+    dx /= L; dy /= L; dz /= L;
+    let clear = 1;
+    for (const c of clusters) {
+      if (c.vis < 0.004) continue;
+      if (c.bR === undefined) {                                             // bounding sphere of the cluster's billboards (puffs never move after build)
+        let r = 0;
+        for (let i = c.first; i < c.first + c.count; i++) { const p = puffs[i]; r = Math.max(r, Math.hypot(p.ox, p.oy - c.h * 0.5, p.oz) + p.r * 1.2); }
+        c.bR = r;
+      }
+      const cy = seaY + c.base + c.h * 0.5, R = c.bR;
+      const qx = c.x - from.x, qy = cy - from.y, qz = c.z - from.z;
+      const t = qx * dx + qy * dy + qz * dz;
+      if (t < -R || t - R > L) continue;
+      if (qx * qx + qy * qy + qz * qz - t * t > R * R) continue;
+      const soft = 0.18 + 0.22 * (c.rag ?? 0);                            // shader: 0.26 base … 0.09 tops, 0.4 on scraps
+      for (let i = c.first; i < c.first + c.count; i++) {
+        const p = puffs[i];
+        const px = c.x + p.ox - from.x, py = seaY + c.base + p.oy - from.y, pz = c.z + p.oz - from.z;
+        const tp = px * dx + py * dy + pz * dz;
+        if (tp <= 0 || tp >= L) continue;                                   // billboard sits at the puff centre's depth
+        const p2 = px * px + py * py + pz * pz, off = Math.sqrt(Math.max(0, p2 - tp * tp)) / p.r;
+        if (off >= 1.08) continue;
+        const a = density * c.vis * smoothstep(p.r * 0.55, p.r * 1.65, Math.sqrt(p2)) * smoothstep(0, soft, 1.08 - off);
+        clear *= 1 - Math.min(1, a);
+        if (clear < 0.01) return 1;
+      }
+    }
+    return 1 - clear;
+  }
+  const occluded = (from, to, threshold = 0.5) => cloudIn(from, to) >= threshold;
+
+  function casters() {
+    // biggest first: the shadow map takes casters until it's full, and the scraps shouldn't crowd out the bodies
+    return clusters.map(c => ({ x: c.x, z: c.z, y0: seaY + c.base, y1: seaY + c.base + c.h, rx: c.w * 0.42, rz: c.d * 0.42, op: c.vis ?? c.op }))
+      .sort((a, b) => b.rx * b.rz - a.rx * a.rz);
+  }
+
+  function addCluster({ x, z, w = 700, h = 300, base: b = base, ang = streets, rag = 0, tower = false, group = true }) {
+    if (puffs.length > MAXP - 400 || clusters.length >= MAXC - 4) return -1;
+    buildCluster(x, z, w, h, b, { ang, rag, tower });
+    const id = clusters.length - 1;
+    if (tower && group) towerCompanions(x, z, w, b, ang);
+    sunPrev.set(0, -1, 0);   // force a re-bake of transmittance
+    return id;
+  }
+
+  writePuffs();
+  return {
+    mesh, material, uniforms, clusters, puffs, update, inside, cloudIn, occluded, casters, addCluster,
+    stats: () => ({ clusters: clusters.length, puffs: puffs.length, drawn }),
+    dispose() { geo.dispose(); material.dispose(); tPuff.dispose(); tClus.dispose(); },
+  };
+}
+
+function smoothstep(a, b, x) { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); }
+return { createCumulus };
+})();
+// ---- lib/longwind-world/src/cloudShadow.js
+const __m_lib_longwind_world_src_cloudShadow = (() => {
+
+// Cloud shadows on the ground and sea, cast by the actual cumulus field.
+//
+// Long Wind darkens the sun under a procedural noise deck (src/core/atmosphere.js, wx_cloudShadow,
+// github.com/jbang2004/long-wind, MIT). Here the shadows come from the clouds themselves: each cloud body is
+// projected along the sun onto the ground as a soft, noise-eroded ellipse in a small top-down map. Lit materials then
+// scale the sun's direct light by it. Only the key light is shadowed; sky light (hemisphere, IBL) still fills in, so
+// shadowed sea and jungle go cooler and darker without going black.
+//
+//   const cs = createCloudShadow(THREE, { renderer, noise, size: 512, extent: 16000, strength: 0.6 })
+//   cs.patch(material, { indirect }) / cs.patchScene(scene)   — once, before first render; chains existing hooks.
+//     indirect 0..1 also dims the material's indirect light under a shadow. Use ~0.3 for water lit mostly by
+//     sky reflection: on real ocean a cloud shadow reads as darker water because the sunlit glow from below goes.
+//   cs.update(casters, anchor, sunDir, groundY) — casters from cumulus.casters(); cheap, call every frame or every few
+//   cs.strength = 0..1                          — e.g. lower it under a full overcast (there's no direct sun anyway)
+// The sun must be the first directional light that casts shadows (three sorts shadow casters first), or the only
+// directional light; `lightIndex` overrides.
+// Inline three's light loop into a shader that still #includes it (idempotent). Shared with foliage.js.
+function expandLights(THREE, src) {
+  return src.includes('#include <lights_fragment_begin>') ? src.replace('#include <lights_fragment_begin>', THREE.ShaderChunk.lights_fragment_begin) : src;
+}
+
+const FOOT_VERT = /* glsl */`
+attribute vec4 aFoot;      // centre x, z (ground plane, already sun-projected), radius x, radius z
+attribute vec2 aFoot2;     // opacity, seed
+varying vec2 vQ; varying vec2 vW; varying vec2 vF;
+void main() {
+  vQ = position.xy;
+  vec2 w = aFoot.xy + position.xy * aFoot.zw * 1.35;
+  vW = w; vF = aFoot2;
+  gl_Position = projectionMatrix * viewMatrix * vec4(w.x, 0.0, w.y, 1.0);
+}`;
+const FOOT_FRAG = /* glsl */`
+uniform sampler2D tNoise;
+varying vec2 vQ; varying vec2 vW; varying vec2 vF;
+void main() {
+  float d = length(vQ * 1.35);
+  float n = texture2D(tNoise, vW * 0.0011 + vF.y * 5.3).r * 0.6 + texture2D(tNoise, vW * 0.0037 + vF.y * 2.1).b * 0.4;
+  float s = 1.0 - smoothstep(0.45 + 0.35 * n, 1.15, d);
+  gl_FragColor = vec4(s * vF.x, 0.0, 0.0, 1.0);
+}`;
+
+function createCloudShadow(THREE, { renderer, noise, size = 512, extent = 16000, strength = 0.6, lightIndex = 0, maxCasters = 1024 } = {}) {
+  const rt = new THREE.WebGLRenderTarget(size, size, {
+    type: THREE.UnsignedByteType, format: THREE.RGBAFormat, depthBuffer: false,
+    minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, generateMipmaps: false,
+  });
+  rt.texture.name = 'lwCloudShadow';
+  const geo = new THREE.InstancedBufferGeometry();
+  const quad = new THREE.PlaneGeometry(2, 2);
+  geo.index = quad.index; geo.setAttribute('position', quad.attributes.position);
+  const foot = new Float32Array(maxCasters * 4), foot2 = new Float32Array(maxCasters * 2);
+  const aFoot = new THREE.InstancedBufferAttribute(foot, 4), aFoot2 = new THREE.InstancedBufferAttribute(foot2, 2);
+  aFoot.setUsage(THREE.DynamicDrawUsage); aFoot2.setUsage(THREE.DynamicDrawUsage);
+  geo.setAttribute('aFoot', aFoot); geo.setAttribute('aFoot2', aFoot2);
+  const mat = new THREE.ShaderMaterial({
+    uniforms: { tNoise: { value: noise } }, vertexShader: FOOT_VERT, fragmentShader: FOOT_FRAG,
+    depthTest: false, depthWrite: false, toneMapped: false, side: THREE.DoubleSide,   // quads are laid face-down on the ground plane
+    blending: THREE.CustomBlending, blendEquation: THREE.MaxEquation, blendSrc: THREE.OneFactor, blendDst: THREE.OneFactor,
+  });
+  const mesh = new THREE.Mesh(geo, mat); mesh.frustumCulled = false;
+  const scene = new THREE.Scene(); scene.add(mesh);
+  const cam = new THREE.OrthographicCamera(-extent / 2, extent / 2, extent / 2, -extent / 2, 1, 4000);
+  cam.up.set(0, 0, -1);
+
+  const uniforms = {
+    tLwCloudShadow: { value: rt.texture },
+    uLwCSRect: { value: new THREE.Vector4(-extent / 2, -extent / 2, 1 / extent, strength) },
+  };
+  const clear = new THREE.Color(0, 0, 0);
+  const prevClear = new THREE.Color();
+
+  function update(casters, anchor, sunDir, groundY = 0) {
+    const texel = extent / size;
+    const ax = Math.round(anchor.x / texel) * texel, az = Math.round(anchor.z / texel) * texel;   // snap: no swimming
+    const sy = Math.max(sunDir.y, 0.08), kx = sunDir.x / sy, kz = sunDir.z / sy;
+    let n = 0;
+    for (const c of casters) {
+      if (c.op < 0.01 || n >= maxCasters) continue;
+      const ym = (c.y0 + c.y1) * 0.5 - groundY, hy = (c.y1 - c.y0) * 0.5;
+      const x = c.x - kx * ym, z = c.z - kz * ym;                      // shadow lands down-sun of the cloud
+      if (Math.abs(x - ax) > extent * 0.6 || Math.abs(z - az) > extent * 0.6) continue;
+      foot.set([x, z, c.rx + Math.abs(kx) * hy * 0.5, c.rz + Math.abs(kz) * hy * 0.5], n * 4);
+      foot2.set([c.op, (c.x * 0.0013 + c.z * 0.0007) % 1], n * 2);
+      n++;
+    }
+    geo.instanceCount = n; aFoot.needsUpdate = aFoot2.needsUpdate = true;
+    cam.position.set(ax, 2000, az); cam.lookAt(ax, 0, az); cam.updateMatrixWorld();
+    uniforms.uLwCSRect.value.set(ax - extent / 2, az - extent / 2, 1 / extent, api.strength);
+    const prevRT = renderer.getRenderTarget(), prevA = renderer.getClearAlpha();
+    renderer.getClearColor(prevClear);
+    renderer.setRenderTarget(rt); renderer.setClearColor(clear, 1); renderer.clear(true, false, false);
+    if (n) renderer.render(scene, cam);
+    renderer.setRenderTarget(prevRT); renderer.setClearColor(prevClear, prevA);
+  }
+
+  const HOOK = 'lwCloudShadow';
+  function patch(material, { indirect = 0 } = {}) {
+    if (!material || material.userData[HOOK] || !(material.isMeshStandardMaterial || material.isMeshLambertMaterial || material.isMeshPhongMaterial)) return false;
+    material.userData[HOOK] = true;
+    const ind = Math.min(1, Math.max(0, indirect));
+    const prev = material.onBeforeCompile, prevKey = material.customProgramCacheKey;
+    // three's default key is onBeforeCompile.toString(), which is this wrapper for every patched material: keep the
+    // wrapped hook's own source in the key, or materials whose original hooks differ would share one program
+    const prevSrc = prev ? String(prev) : '';
+    material.onBeforeCompile = function (sh, r) {
+      if (prev) prev.call(this, sh, r);
+      Object.assign(sh.uniforms, uniforms);
+      // the light loop is still an #include here: inline it so its directional block can be patched (another hook may have)
+      sh.fragmentShader = expandLights(THREE, sh.fragmentShader);
+      sh.vertexShader = 'varying vec3 vLwCsW;\n' + sh.vertexShader.replace('#include <project_vertex>',
+        '#include <project_vertex>\n\tvLwCsW = transpose( mat3( viewMatrix ) ) * ( mvPosition.xyz - viewMatrix[ 3 ].xyz );');
+      sh.fragmentShader = sh.fragmentShader
+        .replace('#include <common>', `#include <common>
+uniform sampler2D tLwCloudShadow; uniform vec4 uLwCSRect; varying vec3 vLwCsW;
+float lwCloudShadow() {
+  vec2 uv = ( vLwCsW.xz - uLwCSRect.xy ) * uLwCSRect.z;
+  if ( uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0 ) return 1.0;
+  return 1.0 - uLwCSRect.w * texture2D( tLwCloudShadow, vec2( uv.x, 1.0 - uv.y ) ).r;
+}`)
+        .replace('getDirectionalLightInfo( directionalLight, directLight );',
+          `getDirectionalLightInfo( directionalLight, directLight );\n\t\t#if UNROLLED_LOOP_INDEX == ${lightIndex}\n\t\tdirectLight.color *= lwCloudShadow();\n\t\t#endif`);
+      if (ind > 0) sh.fragmentShader = sh.fragmentShader.replace('#include <lights_fragment_end>',
+        `#include <lights_fragment_end>\n\t{ float lwCsI = mix( 1.0, lwCloudShadow(), ${ind.toFixed(3)} ); reflectedLight.indirectDiffuse *= lwCsI; reflectedLight.indirectSpecular *= lwCsI; }`);
+    };
+    material.customProgramCacheKey = function () { return (prevKey ? prevKey.call(this) : '') + prevSrc + '|lwcs' + ind; };
+    material.needsUpdate = true;
+    return true;
+  }
+  function patchScene(root, filter = () => true) {
+    let k = 0;
+    root.traverse(o => {
+      if (!o.isMesh || !filter(o)) return;
+      for (const m of Array.isArray(o.material) ? o.material : [o.material]) if (patch(m)) k++;
+    });
+    return k;
+  }
+  // debugging/tests: fraction of the map in shadow (> 0.1) and the mean shadow value; reads the GPU target (slow)
+  function coverage() {
+    const px = new Uint8Array(size * size * 4);
+    renderer.readRenderTargetPixels(rt, 0, 0, size, size, px);
+    let n = 0, s = 0; for (let i = 0; i < px.length; i += 4) { s += px[i]; if (px[i] > 25) n++; }
+    return { shadowedPct: +(100 * n / (size * size)).toFixed(1), mean: +(s / (size * size) / 255).toFixed(3), casters: geo.instanceCount };
+  }
+  // debugging/tests: the shadow value (0..1) a patched material would read at world (x, z), via the same uv mapping
+  function sampleAt(x, z) {
+    const R = uniforms.uLwCSRect.value, u = (x - R.x) * R.z, v = (z - R.y) * R.z;
+    if (u < 0 || v < 0 || u > 1 || v > 1) return 0;
+    const px = new Uint8Array(4);
+    renderer.readRenderTargetPixels(rt, Math.min(size - 1, Math.floor(u * size)), Math.min(size - 1, Math.floor((1 - v) * size)), 1, 1, px);
+    return px[0] / 255;
+  }
+  const api = { texture: rt.texture, uniforms, strength, update, patch, patchScene, coverage, sampleAt, dispose() { rt.dispose(); geo.dispose(); mat.dispose(); } };
+  return api;
+}
+return { expandLights, createCloudShadow };
+})();
+// ---- lib/longwind-world/src/quality.js
+const __m_lib_longwind_world_src_quality = (() => {
+
+// Quality tier from the GPU, overridable with ?q=low|med|high. Integrated GPUs (Intel UHD/Iris, ARM Mali/PowerVR/Adreno,
+// Apple's lowest tiers) start at 'low'/'med'; software renderers at 'low'.
+function pickQuality(renderer, { param = 'q', fallback = 'med' } = {}) {
+  try {
+    const q = new URLSearchParams(globalThis.location?.search ?? '').get(param);
+    if (q === 'low' || q === 'med' || q === 'high') return { tier: q, gpu: gpuName(renderer), forced: true };
+  } catch { /* no location */ }
+  const gpu = gpuName(renderer);
+  let tier = fallback;
+  if (/swiftshader|llvmpipe|software|basic render/i.test(gpu)) tier = 'low';
+  else if (/mali|powervr|adreno|intel.*(hd|uhd) graphics [0-9]{3}\b|intel\(r\) hd/i.test(gpu)) tier = 'low';
+  else if (/intel|iris|uhd/i.test(gpu)) tier = 'med';
+  else if (/nvidia|geforce|rtx|radeon|amd|apple m[1-9]/i.test(gpu)) tier = 'high';
+  return { tier, gpu, forced: false };
+}
+function gpuName(renderer) {
+  try {
+    const gl = renderer.getContext(), e = gl.getExtension('WEBGL_debug_renderer_info');
+    return String(e ? gl.getParameter(e.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER));
+  } catch { return 'unknown'; }
+}
+return { pickQuality, gpuName };
+})();
+// ---- lib/longwind-world/src/skyTune.js
+const __m_lib_longwind_world_src_skyTune = (() => {
+
+// Saturation and zenith depth for three's Sky (Preetham) addon.
+//
+// Preetham's sky ends in a gamma lift (pow(c, 1/(1.2 + 1.2 * sunfade))) that, after ACES at a low exposure, leaves the
+// open sky pale grey-blue whatever the turbidity. Long Wind hit the same thing with its grade and pre-saturates the
+// open-sky gradient stops (wx_skySat in src/world/sky.js, github.com/jbang2004/long-wind, MIT). Same idea here,
+// applied to the Preetham output: open sky gets the saturation, the horizon band (which must keep matching the fog)
+// stays as it is, and the zenith can be deepened.
+//
+//   const tune = tuneSky(sky)          — call before the sky first renders
+//   tune.sat.value = 2.4               — 1 = unchanged; ~2–2.6 for clear tropical air at midday
+//   tune.zen.value = 0.8               — zenith brightness multiplier (deep blue overhead)
+//   tune.from.value / tune.to.value    — direction.y range over which the saturation fades in (default 0.02 → 0.35)
+function tuneSky(sky) {
+  const m = sky.material, U = m.uniforms;
+  // r161: `gl_FragColor = vec4( retColor, 1.0 );` (after the gamma lift) · r18x: `gl_FragColor = vec4( texColor, 1.0 );`
+  const hit = m.fragmentShader.match(/gl_FragColor = vec4\( (\w+), 1\.0 \);/);
+  if (!hit || !/vec3 direction\b/.test(m.fragmentShader)) throw new Error('tuneSky: Sky shader not recognised');
+  const [anchor, c] = hit;
+  U.uLwSat = { value: 1 }; U.uLwZen = { value: 1 }; U.uLwFrom = { value: 0.02 }; U.uLwTo = { value: 0.35 };
+  m.fragmentShader = 'uniform float uLwSat, uLwZen, uLwFrom, uLwTo;\n' + m.fragmentShader.replace(anchor, `{
+			float lwL = dot( ${c}, vec3( 0.2126, 0.7152, 0.0722 ) );
+			${c} = max( vec3( lwL ) + ( ${c} - lwL ) * mix( 1.0, uLwSat, smoothstep( uLwFrom, uLwTo, direction.y ) ), 0.0 );
+			${c} *= mix( 1.0, uLwZen, smoothstep( 0.2, 0.9, direction.y ) );
+			}
+			${anchor}`);
+  m.needsUpdate = true;
+  return { sat: U.uLwSat, zen: U.uLwZen, from: U.uLwFrom, to: U.uLwTo };
+}
+return { tuneSky };
+})();
+// ---- lib/longwind-world/src/foliage.js
+const __m_lib_longwind_world_src_foliage = (() => {
+const { expandLights } = __m_lib_longwind_world_src_cloudShadow;
+// Leaf lighting for stock three.js materials: back-lit translucency and wrap light from the *shadowed* sun.
+//
+// From 长风 Long Wind (github.com/jbang2004/long-wind, MIT, (c) 2026 jbang2004): src/world/foliage.js (sunTermsSetup,
+// FOLIAGE_NORMAL_BEGIN) and the leaf shader in src/world/trees.js. The brightest directional light is captured inside
+// three's light loop right before RE_Direct, after its shadow map (and the cloud shadow, if cloudShadow.js patched the
+// same material) has been applied. So leaves only glow where sunlight actually reaches them. Then:
+//   sunBack — looking toward the sun through the leaf: pow(dot(-view, sun), 4), warm and saturated (transmitted light)
+//   sunWrap — light from behind the leaf surface wraps through it (no hard terminator on thin foliage)
+//   glow    — a little constant self-light, so deep canopy never goes black
+// and both faces use the authored normal (no back-face flip, so undersides aren't black).
+//
+//   patchFoliage(THREE, material, { back: 2.6, wrap: 0.4, trans: 1.3, glow: 0.06, tint: [1.08, 0.94, 0.7] })
+// Works on MeshStandard/Physical/Lambert/Phong, chains any existing onBeforeCompile (wind sway, cloud shadows) in
+// either order, and is idempotent per material. Same three r161 and r186 light loop.
+
+const DIR_BLOCK = '#if ( NUM_DIR_LIGHTS > 0 ) && defined( RE_Direct )';
+const CAP = '{ float lwL = dot( directionalLights[ i ].color, vec3( 0.2126, 0.7152, 0.0722 ) ); ' +
+  'if ( lwL > lwSunBest ) { lwSunBest = lwL; lwSunC = directLight.color; lwSunD = directLight.direction; } }\n\t\t';
+const FOLIAGE_NORMAL_BEGIN = /* glsl */`
+float faceDirection = 1.0;
+#ifdef FLAT_SHADED
+	vec3 normal = normalize( cross( dFdx( vViewPosition ), dFdy( vViewPosition ) ) );   // three >= r17x flat-shades geometry without normals
+#else
+	vec3 normal = normalize( vNormal );
+#endif
+vec3 nonPerturbedNormal = normal;
+`;
+
+/** Insert the shadowed-sun capture into an expanded light loop. Returns null if the layout isn't recognised. */
+function captureSun(src) {
+  const at = src.indexOf(DIR_BLOCK);
+  const re = at >= 0 ? src.indexOf('RE_Direct( directLight', at) : -1;
+  if (re < 0) return null;
+  return src.slice(0, at) + 'vec3 lwSunC = vec3( 0.0 ); vec3 lwSunD = vec3( 0.0, 1.0, 0.0 ); float lwSunBest = -1.0;\n' +
+    src.slice(at, re) + CAP + src.slice(re);
+}
+
+function patchFoliage(THREE, material, { back = 2.6, wrap = 0.4, trans = 1.3, glow = 0.06, tint = [1.08, 0.94, 0.7], normals = true } = {}) {
+  if (!material || material.userData.lwFoliage) return false;
+  material.userData.lwFoliage = true;
+  const f = (x) => Number(x).toFixed(3);
+  const prev = material.onBeforeCompile, prevKey = material.customProgramCacheKey;
+    // three's default key is onBeforeCompile.toString(), which is this wrapper for every patched material: keep the
+    // wrapped hook's own source in the key, or materials whose original hooks differ would share one program
+    const prevSrc = prev ? String(prev) : '';
+  material.onBeforeCompile = function (sh, r) {
+    if (prev) prev.call(this, sh, r);
+    let fs = expandLights(THREE, sh.fragmentShader);
+    const cap = captureSun(fs);
+    if (!cap) { console.warn('patchFoliage: light loop not recognised; leaves keep stock lighting'); return; }
+    fs = cap;
+    if (normals && fs.includes('#include <normal_fragment_begin>')) fs = fs.replace('#include <normal_fragment_begin>', FOLIAGE_NORMAL_BEGIN);
+    const add = `
+	{
+		float lwBack = pow( saturate( dot( - geometryViewDir, lwSunD ) ), 4.0 );
+		float lwWrap = saturate( dot( - normal, lwSunD ) * 0.6 + 0.4 );
+		vec3 lwAlb = diffuseColor.rgb;
+		vec3 lwT = lwAlb * mix( vec3( 1.0 ), vec3( ${f(tint[0])}, ${f(tint[1])}, ${f(tint[2])} ), 0.6 );   // transmitted light is warmer
+		reflectedLight.directDiffuse += lwSunC * lwT * ( lwBack * ${f(back)} + lwWrap * ${f(wrap)} ) * ${f(trans)};
+		reflectedLight.indirectDiffuse += lwAlb * ${f(glow)};
+	}
+	#include <lights_fragment_maps>`;
+    if (!fs.includes('#include <lights_fragment_maps>')) { console.warn('patchFoliage: no lights_fragment_maps anchor'); return; }
+    sh.fragmentShader = fs.replace('#include <lights_fragment_maps>', add);
+  };
+  material.customProgramCacheKey = function () { return (prevKey ? prevKey.call(this) : '') + prevSrc + `|lwleaf${back},${wrap},${trans},${glow},${tint.join(",")},${normals}`; };
+  material.needsUpdate = true;
+  return true;
+}
+return { FOLIAGE_NORMAL_BEGIN, captureSun, patchFoliage };
+})();
+// ---- lib/longwind-world/src/groundDetail.js
+const __m_lib_longwind_world_src_groundDetail = (() => {
+
+// Ground detail for vertex-coloured terrain: macro variation, anti-tiled detail and detail normals per surface type.
+//
+// Long Wind's terrain blends baked ground-texture layers by a splat map with anti-tiling, macro variation and detail
+// normals (src/world/terrain-material.js, github.com/jbang2004/long-wind, MIT). This is the light version for a
+// terrain whose colour already lives in its vertices (and for an integrated-GPU budget): no texture arrays. Detail
+// comes from Long Wind's baked cloud noise (cloudNoise.js), sampled at two rotated scales so it never tiles visibly,
+// and is weighted per vertex by four surface weights you supply in a vec4 attribute:
+//   x sand / beach     fine speckle, almost flat
+//   y grass / clearing clumps and dry patches, soft tufted relief
+//   z dirt / mud       patchy, moderate relief
+//   w rock             high contrast, strong relief
+// (whatever is left of 1 - sum is "other": gets macro variation only). Detail fades out with distance; the macro
+// variation (a ~1 km scale brightness/hue drift) stays at every distance, which is what breaks up flat colour from
+// altitude.
+//
+//   patchGroundDetail(THREE, material, { noise, attribute: 'aGround', strength: 1, near: 250, far: 1400 })
+// Chains existing onBeforeCompile hooks; MeshStandard/Physical/Lambert/Phong with vertexColors.
+const GROUND_PARS_V = /* glsl */`
+attribute vec4 aGround;
+varying vec4 vLwGround;
+varying vec3 vLwGW;
+`;
+const GROUND_PARS_F = /* glsl */`
+uniform sampler2D tLwGN;
+uniform vec4 uLwGParams;   // x strength, y near, z far, w macro strength
+varying vec4 vLwGround;
+varying vec3 vLwGW;
+const mat2 LW_GR = mat2(0.8, -0.6, 0.6, 0.8);
+// one detail sample: two rotated, differently scaled taps averaged (anti-tiling)
+vec4 lwGDet(vec2 p) { return 0.5 * (texture2D(tLwGN, p * 0.031 + 0.17) + texture2D(tLwGN, LW_GR * p * 0.083 + 0.53)); }
+float lwGHeight(vec2 p) {
+  vec4 d = lwGDet(p);
+  return vLwGround.x * d.a * 0.15 + vLwGround.y * (d.b * 0.7 + d.a * 0.3) * 0.4 + vLwGround.z * d.r * 0.35 + vLwGround.w * (d.a * 0.6 + d.b * 0.4) * 0.8;
+}
+`;
+
+function patchGroundDetail(THREE, material, { noise, attribute = 'aGround', strength = 1, near = 250, far = 1400, macro = 1 } = {}) {
+  if (!material || material.userData.lwGround) return false;
+  material.userData.lwGround = true;
+  const uniforms = { tLwGN: { value: noise }, uLwGParams: { value: new THREE.Vector4(strength, near, far, macro) } };
+  const prev = material.onBeforeCompile, prevKey = material.customProgramCacheKey;
+    // three's default key is onBeforeCompile.toString(), which is this wrapper for every patched material: keep the
+    // wrapped hook's own source in the key, or materials whose original hooks differ would share one program
+    const prevSrc = prev ? String(prev) : '';
+  material.onBeforeCompile = function (sh, r) {
+    if (prev) prev.call(this, sh, r);
+    Object.assign(sh.uniforms, uniforms);
+    sh.vertexShader = GROUND_PARS_V.replace('aGround', attribute) + sh.vertexShader
+      .replace('#include <begin_vertex>', `#include <begin_vertex>\n\tvLwGround = ${attribute};`)
+      .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\n\tvLwGW = ( modelMatrix * vec4( transformed, 1.0 ) ).xyz;');
+    sh.fragmentShader = GROUND_PARS_F + sh.fragmentShader
+      .replace('#include <color_fragment>', `#include <color_fragment>
+	{
+		float lwDist = length( vLwGW - cameraPosition );
+		float lwNear = ( 1.0 - smoothstep( uLwGParams.y, uLwGParams.z, lwDist ) ) * uLwGParams.x;
+		vec2 lwP = vLwGW.xz;
+		float lwMacro = texture2D( tLwGN, lwP * 0.0011 + 0.31 ).r;
+		vec3 lwDrift = mix( vec3( 0.92, 0.94, 0.9 ), vec3( 1.08, 1.05, 0.96 ), lwMacro );       // ~1 km brightness / dryness drift
+		diffuseColor.rgb *= mix( vec3( 1.0 ), lwDrift, uLwGParams.w );
+		vec4 lwD = lwGDet( lwP ), lwF = texture2D( tLwGN, LW_GR * lwP * 0.29 + 0.77 );
+		vec4 g = vLwGround;
+		float lwSand = mix( 0.94, 1.06, lwF.a * 0.7 + lwD.a * 0.3 );
+		float lwGrass = mix( 0.76, 1.16, lwD.b * 0.6 + lwF.a * 0.4 );
+		vec3 lwGrassHue = mix( vec3( 1.0 ), vec3( 1.12, 1.06, 0.8 ), smoothstep( 0.55, 0.8, lwD.r ) );   // dry patches
+		float lwDirt = mix( 0.8, 1.14, lwD.r * 0.6 + lwF.b * 0.4 );
+		float lwRock = mix( 0.62, 1.25, lwD.a * 0.5 + lwF.a * 0.5 );
+		vec3 lwMul = vec3( 1.0 ) + g.x * ( lwSand - 1.0 ) + g.y * ( lwGrass * lwGrassHue - 1.0 ) + g.z * ( lwDirt - 1.0 ) + g.w * ( lwRock - 1.0 );
+		diffuseColor.rgb *= mix( vec3( 1.0 ), lwMul, lwNear );
+	}`)
+      .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
+	{
+		float lwNearN = ( 1.0 - smoothstep( uLwGParams.y * 0.6, uLwGParams.z * 0.6, length( vLwGW - cameraPosition ) ) ) * uLwGParams.x;
+		if ( lwNearN > 0.001 ) {
+			float e = 1.5, h0 = lwGHeight( vLwGW.xz );
+			vec3 lwGrad = vec3( lwGHeight( vLwGW.xz + vec2( e, 0.0 ) ) - h0, 0.0, lwGHeight( vLwGW.xz + vec2( 0.0, e ) ) - h0 ) / e;
+			normal = normalize( normal - mat3( viewMatrix ) * lwGrad * 6.0 * lwNearN );
+		}
+	}`);
+  };
+  material.customProgramCacheKey = function () { return (prevKey ? prevKey.call(this) : '') + prevSrc + '|lwground' + attribute; };
+  material.needsUpdate = true;
+  return { uniforms };
+}
+return { patchGroundDetail };
+})();
+// ---- lib/longwind-world/src/grass.js
+const __m_lib_longwind_world_src_grass = (() => {
+
+// Camera-following GPU grass: one instanced draw of blade clumps on a grid snapped around the camera.
+//
+// After Long Wind's GPU-procedural grass tiers and TileRing (src/world/grass.js, src/world/foliage.js,
+// github.com/jbang2004/long-wind, MIT): nothing is scattered on the CPU. Each instance finds its own cell from
+// gl_InstanceID and the snapped camera position, jitters inside it with a hash, reads ground height and a grass
+// weight from a texture, and scales itself to nothing where there's no grass or near the ring's edge. Much smaller
+// than Long Wind's (no tiers, no actor push, no trample), sized for an integrated GPU and a camera that's usually
+// flying, not walking.
+//
+//   const g = createGrass(THREE, { ground, rect: { x0, z0, size }, seaY, n: 80, spacing: 2.5, height: 0.75 })
+//     ground: DataTexture RG32F/RGBA32F, R = height above seaY, G = grass weight 0..1 (row j = z ascending)
+//   scene.add(g.mesh)
+//   g.update(camera, { time, wind: Vector2, gust: 0..2, visible })   — every frame
+//   g.material                                                         — MeshStandardMaterial (patch it: foliage, cloud shadows)
+const PARS = /* glsl */`
+uniform sampler2D tLwGround;
+uniform vec4 uLwRect;     // x0, z0, size, texels per side - 1
+uniform vec4 uLwCam;      // camera xz (snapped), spacing, ring radius
+uniform vec4 uLwWind;     // xy dir * strength, time, blade height
+uniform float uLwSeaY;
+varying float vLwHash;
+float lwH12(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
+vec2 lwGround(vec2 xz) {
+  float N = uLwRect.w;
+  vec2 u = clamp((xz - uLwRect.xy) / uLwRect.z, 0.0, 1.0) * N;
+  ivec2 i0 = ivec2(floor(u)); vec2 f = u - floor(u); int M = int(N);
+  vec2 a = texelFetch(tLwGround, clamp(i0, ivec2(0), ivec2(M)), 0).rg, b = texelFetch(tLwGround, clamp(i0 + ivec2(1, 0), ivec2(0), ivec2(M)), 0).rg;
+  vec2 c = texelFetch(tLwGround, clamp(i0 + ivec2(0, 1), ivec2(0), ivec2(M)), 0).rg, d = texelFetch(tLwGround, clamp(i0 + ivec2(1, 1), ivec2(0), ivec2(M)), 0).rg;
+  return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+}
+`;
+
+function createGrass(THREE, { ground, rect, seaY = 0, n = 80, spacing = 2.5, height = 0.75, color = 0x6f7d3a } = {}) {
+  // one clump: 7 tapered blades leaning out from the centre, root dark → tip light (vertex colour)
+  const pos = [], col = [];
+  for (let k = 0; k < 7; k++) {
+    const a = k / 7 * Math.PI * 2 + 0.4 * Math.sin(k * 3.1), r0 = 0.12 + 0.05 * (k % 3), w = 0.045, lean = 0.28 + 0.1 * (k % 2);
+    const cx = Math.cos(a), cz = Math.sin(a), px = -cz * w, pz = cx * w, h = 0.75 + 0.25 * ((k * 7) % 5) / 4;
+    pos.push(cx * r0 + px, 0, cz * r0 + pz, cx * r0 - px, 0, cz * r0 - pz, cx * (r0 + lean), h, cz * (r0 + lean));
+    col.push(0.42, 0.42, 0.4, 0.42, 0.42, 0.4, 1, 1, 0.92);
+  }
+  const blade = new THREE.BufferGeometry();
+  blade.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  blade.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  const geo = new THREE.InstancedBufferGeometry();
+  // a normal attribute even though the shader overrides it: newer three flat-shades (no vNormal) geometry without one
+  blade.setAttribute('normal', new THREE.Float32BufferAttribute(new Float32Array(pos.length).map((_, i) => (i % 3 === 1 ? 1 : 0)), 3));
+  geo.setAttribute('position', blade.attributes.position); geo.setAttribute('color', blade.attributes.color); geo.setAttribute('normal', blade.attributes.normal);
+  geo.instanceCount = n * n;
+
+  const N = ground.image.width - 1;
+  const uniforms = {
+    tLwGround: { value: ground },
+    uLwRect: { value: new THREE.Vector4(rect.x0, rect.z0, rect.size, N) },
+    uLwCam: { value: new THREE.Vector4(0, 0, spacing, n * spacing * 0.5) },
+    uLwWind: { value: new THREE.Vector4(0.5, 0.2, 0, height) },
+    uLwSeaY: { value: seaY },
+  };
+  const material = new THREE.MeshStandardMaterial({ color, vertexColors: true, roughness: 1, metalness: 0, side: THREE.DoubleSide });
+  material.onBeforeCompile = (sh) => {
+    Object.assign(sh.uniforms, uniforms);
+    sh.vertexShader = PARS + sh.vertexShader
+      .replace('#include <beginnormal_vertex>', 'vec3 objectNormal = vec3( 0.0, 1.0, 0.0 );   // soft, sky-facing: grass reads as a surface')
+      .replace('#include <begin_vertex>', `
+  int lwN = ${n};
+  int lwId = gl_InstanceID;
+  vec2 lwCell = vec2(float(lwId % lwN - lwN / 2), float(lwId / lwN - lwN / 2)) * uLwCam.z + uLwCam.xy;
+  float lwHa = lwH12(lwCell * 0.731), lwHb = lwH12(lwCell * 1.317 + 7.1);
+  vec2 lwXZ = lwCell + (vec2(lwHa, lwHb) - 0.5) * uLwCam.z;
+  vec2 lwG = lwGround(lwXZ);
+  float lwFade = 1.0 - smoothstep(uLwCam.w * 0.62, uLwCam.w, length(lwXZ - uLwCam.xy));
+  float lwS = smoothstep(0.15, 0.6, lwG.g) * lwFade * (0.65 + 0.7 * lwHb);
+  vLwHash = lwHa;
+  float lwA = lwHa * 6.2832, lwC = cos(lwA), lwSn = sin(lwA);
+  vec3 transformed = vec3(lwC * position.x - lwSn * position.z, position.y * uLwWind.w, lwSn * position.x + lwC * position.z) * lwS;
+  float lwSway = position.y * position.y * (0.5 + 0.5 * sin(uLwWind.z * 1.7 + dot(lwXZ, vec2(0.21, 0.17))));
+  transformed.xz += uLwWind.xy * lwSway * lwS;
+  transformed += vec3(lwXZ.x, uLwSeaY + lwG.r - 0.03, lwXZ.y);
+  if (lwS < 0.02) transformed = vec3(0.0, -1e5, 0.0);   // no grass here: collapse off-screen`);
+    sh.fragmentShader = 'varying float vLwHash;\n' + sh.fragmentShader.replace('#include <color_fragment>',
+      '#include <color_fragment>\n\tdiffuseColor.rgb *= mix( vec3( 0.86, 0.92, 0.82 ), vec3( 1.12, 1.06, 0.84 ), vLwHash );   // clump-to-clump hue');
+  };
+  material.customProgramCacheKey = () => `lwgrass${n}`;
+  const mesh = new THREE.Mesh(geo, material);
+  mesh.name = 'lwGrass'; mesh.frustumCulled = false; mesh.receiveShadow = true;
+
+  function update(camera, { time = 0, wind = null, gust = 1, visible = true } = {}) {
+    mesh.visible = visible;
+    if (!visible) return;
+    const s = spacing;
+    uniforms.uLwCam.value.set(Math.floor(camera.position.x / s) * s, Math.floor(camera.position.z / s) * s, s, n * s * 0.5);
+    if (wind) uniforms.uLwWind.value.set(wind.x * 0.18 * gust, wind.y * 0.18 * gust, time, height);
+    else uniforms.uLwWind.value.z = time;
+  }
+  return { mesh, material, uniforms, update, dispose() { geo.dispose(); blade.dispose(); material.dispose(); } };
+}
+
+/** Build the ground texture from a PlaneGeometry-style grid: heights[(j * (seg+1)) + i], weights likewise (0..1). */
+function groundTexture(THREE, heights, weights, seg) {
+  const M = seg + 1, data = new Float32Array(M * M * 4);
+  for (let k = 0; k < M * M; k++) { data[k * 4] = heights[k]; data[k * 4 + 1] = weights[k]; }
+  const t = new THREE.DataTexture(data, M, M, THREE.RGBAFormat, THREE.FloatType);
+  t.minFilter = t.magFilter = THREE.NearestFilter; t.generateMipmaps = false; t.needsUpdate = true;
+  return t;
+}
+return { createGrass, groundTexture };
+})();
+// ---- lib/longwind-world/src/index.js
+const __m_lib_longwind_world_src_index = (() => {
+const { LW_NOISE_GLSL: __re_LW_NOISE_GLSL } = __m_lib_longwind_world_src_glsl;
+const { bakeCloudNoise: __re_bakeCloudNoise } = __m_lib_longwind_world_src_cloudNoise;
+const { installHeightFog: __re_installHeightFog, heightFogRatio: __re_heightFogRatio } = __m_lib_longwind_world_src_heightFog;
+const { createSkyOverlay: __re_createSkyOverlay } = __m_lib_longwind_world_src_skyOverlay;
+const { createCumulus: __re_createCumulus } = __m_lib_longwind_world_src_cumulus;
+const { createCloudShadow: __re_createCloudShadow } = __m_lib_longwind_world_src_cloudShadow;
+const { pickQuality: __re_pickQuality, gpuName: __re_gpuName } = __m_lib_longwind_world_src_quality;
+const { tuneSky: __re_tuneSky } = __m_lib_longwind_world_src_skyTune;
+const { patchFoliage: __re_patchFoliage, captureSun: __re_captureSun, FOLIAGE_NORMAL_BEGIN: __re_FOLIAGE_NORMAL_BEGIN } = __m_lib_longwind_world_src_foliage;
+const { patchGroundDetail: __re_patchGroundDetail } = __m_lib_longwind_world_src_groundDetail;
+const { createGrass: __re_createGrass, groundTexture: __re_groundTexture } = __m_lib_longwind_world_src_grass;
+// longwind-world: sky, atmosphere and cloud pieces from 长风 Long Wind (github.com/jbang2004/long-wind, MIT), adapted
+// for flight. Pass THREE in (any r161+), no other dependencies, no build step.
+return { LW_NOISE_GLSL: __re_LW_NOISE_GLSL, bakeCloudNoise: __re_bakeCloudNoise, installHeightFog: __re_installHeightFog, heightFogRatio: __re_heightFogRatio, createSkyOverlay: __re_createSkyOverlay, createCumulus: __re_createCumulus, createCloudShadow: __re_createCloudShadow, pickQuality: __re_pickQuality, gpuName: __re_gpuName, tuneSky: __re_tuneSky, patchFoliage: __re_patchFoliage, captureSun: __re_captureSun, FOLIAGE_NORMAL_BEGIN: __re_FOLIAGE_NORMAL_BEGIN, patchGroundDetail: __re_patchGroundDetail, createGrass: __re_createGrass, groundTexture: __re_groundTexture };
+})();
+const { installHeightFog, heightFogRatio, bakeCloudNoise, createCumulus, createSkyOverlay, createCloudShadow, pickQuality, tuneSky, patchFoliage, patchGroundDetail, createGrass, groundTexture } = __m_lib_longwind_world_src_index;
+// ==== end inlined ====
+
 
 const showError = m => { const e = document.getElementById('error'); e.style.display = 'block'; e.textContent = String(m); };
 window.addEventListener('error', e => showError(e.message));
