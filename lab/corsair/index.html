@@ -59,7 +59,7 @@ body.clean.ouch::after{display:none}
 {"imports":{
   "three":"https://cdn.jsdelivr.net/npm/three@0.161.0/build/three.module.js",
   "three/addons/":"https://cdn.jsdelivr.net/npm/three@0.161.0/examples/jsm/",
-  "longwind-world/":"../../lib/longwind-world/src/"
+  "longwind-world/":"lib/longwind-world/src/"
 }}
 </script>
 </head>
@@ -129,7 +129,7 @@ import * as THREE from 'three';
 import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
 import {Sky} from 'three/addons/objects/Sky.js';
 import {DecalGeometry} from 'three/addons/geometries/DecalGeometry.js';
-import {installHeightFog, heightFogRatio, bakeCloudNoise, createCumulus, createSkyOverlay, createCloudShadow, pickQuality, tuneSky, patchFoliage, patchGroundDetail, createGrass, groundTexture} from 'longwind-world/index.js';
+import {installHeightFog, heightFogRatio, bakeCloudNoise, createCumulus, createSkyOverlay, createCloudShadow, pickQuality, tuneSky, patchFoliage, patchGroundDetail, createGrass, groundTexture} from '../../lib/longwind-world/src/index.js';
 
 const showError = m => { const e = document.getElementById('error'); e.style.display = 'block'; e.textContent = String(m); };
 window.addEventListener('error', e => showError(e.message));
